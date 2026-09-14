@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>GlobyEdu OS — The Operating System for Modern Schools</title>
+    <meta name="description" content="GlobyEdu OS marketing site — SaaS platform for schools." />
+    <!-- Open Graph / Social placeholders -->
+    <meta property="og:title" content="GlobyEdu OS — School Operating System" />
+    <meta property="og:description" content="Unify school operations, empower educators, and accelerate student success with GlobyEdu OS." />
+    <meta property="og:image" content="/src/assets/images/homepage/homepage-dashboard-preview.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="GlobyEdu OS — School Operating System" />
+    <meta name="twitter:description" content="Unify school operations, empower educators, and accelerate student success with GlobyEdu OS." />
+    <meta name="twitter:image" content="/src/assets/images/homepage/homepage-dashboard-preview.svg" />
+    <meta name="theme-color" content="#0ea5e9" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="apple-touch-icon" href="/src/assets/images/ui/operations-hero.svg" />
+
+    <!-- The marketing shell uses a local stylesheet so the app does not depend on the Tailwind CDN at runtime. -->
+    <link rel="stylesheet" href="./src/styles.generated.css?v=20260911" />
+  </head>
+  <body class="antialiased text-slate-900">
+    <div id="marketing-root"></div>
+
+    <script src="/config/firebase.js"></script>
+    <!-- Marketing SPA entry -->
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

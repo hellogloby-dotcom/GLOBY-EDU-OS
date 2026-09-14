@@ -1,0 +1,5759 @@
+// main.js
+// Entry for the marketing SPA. Implements a small hash router and mounts the landing experience.
+
+import { Nav } from './components/navbar.js';
+import { Hero } from './components/hero.js';
+import { Features } from './components/features.js';
+import { CTA } from './components/cta.js';
+import { Footer } from './components/footer.js';
+import { AppShell } from './components/app-shell.js';
+import { attachSidebarHandlers } from './components/sidebar.js';
+import { LoginPage } from './pages/login.js';
+import { RegisterWizardPage, attachRegisterWizardHandlers } from './pages/register-wizard.js';
+import { ForgotPage } from './pages/forgot.js';
+import { ResetPasswordPage } from './pages/reset-password.js';
+import { ChangePasswordPage } from './pages/change-password.js';
+import { VerifyEmailPage } from './pages/verify-email.js';
+import { AdminPage, attachAdminSectionHandlers, attachWebsiteCMSHandlers } from './pages/admin.js';
+import { getAdminState } from './pages/admin-state.js';
+import { PlatformAdminPage } from './pages/platform-admin.js';
+import { SchoolDashboardPage, SchoolAuthorityDashboard, TeacherDashboard, StudentDashboard } from './pages/school-dashboard.js';
+import { fetchSchoolSummary, fetchSchoolDetails, updateSchoolDetails, searchSchoolData, fetchSchoolEntities, createSchoolEntity, updateSchoolEntity, deleteSchoolEntity, fetchAdminDashboardSummary, fetchAdminSchoolList, createAdminSchool, updateAdminSchool, deleteAdminSchool, activateAdminSchool, fetchWorkspaceMessages, createWorkspaceMessage, updateWorkspaceMessage, deleteWorkspaceMessage, fetchSupportTickets, createSupportTicket, updateSupportTicket, deleteSupportTicket } from './api/school.js';
+import { studentLogin, teacherLogin, schoolAuthorityLogin, schoolLogin as apiLogin, firebaseLogin as apiFirebaseLogin, platformAdminLogin, forgotPassword as apiForgot, register as apiRegister, confirmFirebasePasswordReset, changePassword as apiChangePassword } from './api/auth.js';
+import { isFirebaseConfigured, firebaseSignInWithGoogle, firebaseSendPasswordResetEmail, firebaseApplyActionCode, firebaseConfirmPasswordReset as firebaseConfirmPasswordResetClient } from './firebase/firebase-client.js';
+import { buildChangedFieldsPayload, buildSchoolCollectionPayload, buildSchoolEntityPayload, buildAttendanceRoster, replaceAttendanceSession } from './utils/school-dashboard-actions.js?v=20260718';
+import { showGlobalPwaNotice } from './utils/pwa-notifications.js';
+import { setPwaUpdateAvailable, getPwaUpdateAvailable, clearPwaUpdateAvailable } from './utils/pwa-utils.js';
+import { testimonialImage1, testimonialImage2, testimonialImage3, screenshotAnalyticsImage, screenshotAttendanceImage, screenshotMessagingImage } from './assets/asset-paths.js';
+
+const root = document.getElementById('marketing-root');
+const LANDING_ROUTES = ['home', 'features', 'solutions', 'pricing', 'about', 'contact'];
+const WEBSITE_CMS_STORAGE_KEY = 'globyedu_websiteCms';
+const SESSION_LIMIT = 2;
+const PWA_STATUS_ID = 'globyedu-pwa-status';
+
+document.addEventListener('globyedu-auth-expired', () => {
+  clearAuthenticationState();
+  if (location.hash !== '#/login') location.hash = '#/login';
+});
+
+document.addEventListener('globyedu-school-suspended', () => {
+  clearAuthenticationState();
+  if (location.hash !== '#/login') {
+    renderSuspendedSchoolPage();
+  }
+});
+
+function renderSuspendedSchoolPage() {
+  const appRoot = root;
+  if (!appRoot) return;
+
+  appRoot.innerHTML = `
+    <main class="mx-auto max-w-3xl px-6 py-20">
+      <div class="rounded-[2rem] border border-amber-200 bg-amber-50 p-8 text-center shadow-xl shadow-amber-100/60">
+        <p class="text-sm uppercase tracking-[0.3em] text-amber-700">Access restricted</p>
+        <h1 class="mt-6 text-4xl font-semibold text-slate-900">This school account has been suspended</h1>
+        <p class="mt-4 text-lg text-slate-700">Your school authority, teacher, or student access has been restricted until the issue is resolved.</p>
+        <p class="mt-4 text-slate-600">Please contact the platform administrator for support or try again once the school has been reactivated.</p>
+        <button id="school-suspended-back-to-login" type="button" class="mt-8 inline-flex items-center justify-center rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Return to sign in</button>
+      </div>
+    </main>
+    ${Footer()}
+  `;
+
+  const backButton = document.getElementById('school-suspended-back-to-login');
+  if (backButton) {
+    backButton.addEventListener('click', () => {
+      location.hash = '#/login';
+    });
+  }
+}
+
+async function ensureSchoolAccessIsActive() {
+  const schoolId = localStorage.getItem('globyedu_schoolId');
+  const token = getAccessToken();
+  const role = getUserRole();
+
+  if (!schoolId || !token || !role || getPlatformAdminFlag()) return false;
+  if (!['school_authority', 'teacher', 'student'].includes(role)) return false;
+
+  try {
+    const result = await fetchSchoolDetails(token, schoolId);
+    const school = result.ok && result.data?.status === 'ok' ? result.data.school || {} : {};
+    const schoolStatus = String(school.schoolStatus || school.status || school.subscriptionStatus || 'active').trim().toLowerCase();
+    if (['suspended', 'inactive', 'blocked', 'disabled', 'expired'].includes(schoolStatus)) {
+      renderSuspendedSchoolPage();
+      return true;
+    }
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+const TEACHER_ASSIGNABLE_CLASS_OPTIONS = [
+  {
+    label: 'Nursery & KG',
+    options: [
+      { label: 'Nursery 1', value: 'Nursery 1' },
+      { label: 'Nursery 2', value: 'Nursery 2' },
+      { label: 'KG 1', value: 'KG 1' },
+      { label: 'KG 2', value: 'KG 2' },
+    ],
+  },
+  {
+    label: 'Primary School',
+    options: [1, 2, 3, 4, 5, 6].map((level) => ({ label: `Class ${level}`, value: `Class ${level}` })),
+  },
+  {
+    label: 'Junior High School (JHS)',
+    options: [1, 2, 3].map((level) => ({ label: `JHS ${level}`, value: `JHS ${level}` })),
+  },
+  {
+    label: 'Senior High School (SHS)',
+    options: [1, 2, 3].map((level) => ({ label: `SHS ${level}`, value: `SHS ${level}` })),
+  },
+];
+const DEFAULT_WEBSITE_CMS = {
+  companyName: 'GlobyEdu OS',
+  logoUrl: '/src/assets/images/ui/operations-hero.svg',
+  heroTitle: 'The premium operating system for modern schools.',
+  heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
+  contactEmail: 'hello@globyedu.com',
+  contactPhone: '+1 (555) 123-4567',
+  address: '123 Education Lane, Learning City',
+  businessHours: 'Monday-Friday • 8am to 6pm',
+  website: 'https://globyedu.com',
+  whatsApp: '+1 (555) 123-4567',
+  googleMapsUrl: 'https://maps.google.com',
+  themeColor: '#0ea5e9',
+  socialLinks: 'LinkedIn, Twitter, Facebook, Instagram',
+};
+
+let currentSchoolStudents = [];
+let currentSchoolTeachers = [];
+let routeGeneration = 0;
+
+const WORKSPACE_STORAGE_KEYS = {
+  notifications: 'globyedu_workspace_notifications',
+  messages: 'globyedu_workspace_messages',
+  supportTickets: 'globyedu_workspace_support_tickets',
+  settings: 'globyedu_workspace_settings',
+  activities: 'globyedu_workspace_activity',
+  profile: 'globyedu_workspace_profile',
+};
+
+let swRefreshPending = false;
+
+function readWorkspaceStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeWorkspaceStorage(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function seedWorkspaceData() {
+  const notifications = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, null);
+  if (!Array.isArray(notifications) || notifications.length === 0) {
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, [
+      { id: 'n-1', title: 'Welcome to your workspace', message: 'Your authenticated dashboard is now connected to live workspace tools.', type: 'system', read: false, createdAt: new Date().toISOString() },
+      { id: 'n-2', title: 'New school update', message: 'Academic records, attendance trends, and finance summaries are available from the school authority workspace.', type: 'school', read: false, createdAt: new Date().toISOString() },
+      { id: 'n-3', title: 'Workspace ready', message: 'Review attendance summaries, finance updates, and communications directly from the workspace.', type: 'school', read: true, createdAt: new Date().toISOString() },
+    ]);
+  }
+
+  const messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, null);
+  if (!Array.isArray(messages) || messages.length === 0) {
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, [
+      { id: 'm-1', folder: 'inbox', from: 'Super Admin', to: 'School Authority', subject: 'New support workflow', body: 'Your support inbox is live. Use the workspace to create and track tickets.', unread: true, createdAt: new Date().toISOString(), attachments: [] },
+      { id: 'm-2', folder: 'sent', from: 'School Authority', to: 'Parents', subject: 'Reminder', body: 'Please confirm your child’s attendance for tomorrow.', unread: false, createdAt: new Date().toISOString(), attachments: [] },
+    ]);
+  }
+
+  const tickets = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, null);
+  if (!Array.isArray(tickets)) {
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, []);
+  }
+
+  const profile = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, null);
+  if (!profile || typeof profile !== 'object') {
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, {
+      fullName: localStorage.getItem('globyedu_userFullName') || 'User',
+      email: localStorage.getItem('globyedu_userEmail') || '',
+      phone: '',
+      password: '',
+      twoFactorEnabled: false,
+      securityNote: 'Password updates are protected locally and can be expanded to the backend later.',
+      avatar: '',
+    });
+  } else {
+    profile.fullName = localStorage.getItem('globyedu_userFullName') || profile.fullName || 'User';
+    profile.email = localStorage.getItem('globyedu_userEmail') || profile.email || '';
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
+  }
+
+  const settings = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.settings, null);
+  if (!settings || typeof settings !== 'object') {
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.settings, {
+      theme: 'midnight',
+      notificationsEnabled: true,
+      emailAlerts: true,
+      smsAlerts: false,
+      language: 'English',
+      timezone: 'UTC',
+      securityMode: 'standard',
+    });
+  }
+
+  const history = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.activities, []);
+  if (!Array.isArray(history) || history.length === 0) {
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.activities, [
+      { id: 'a-1', title: 'Workspace ready', detail: 'Personal workspace tools are now active.', createdAt: new Date().toISOString() },
+    ]);
+  }
+}
+
+function recordWorkspaceActivity(title, detail, kind = 'system') {
+  const history = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.activities, []);
+  const next = [{ id: `a-${Date.now()}`, title, detail, kind, createdAt: new Date().toISOString() }, ...history].slice(0, 25);
+  writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.activities, next);
+}
+
+function getWorkspaceProfile() {
+  return readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, {
+    fullName: localStorage.getItem('globyedu_userFullName') || 'User',
+    email: localStorage.getItem('globyedu_userEmail') || '',
+    phone: '',
+    password: '',
+    twoFactorEnabled: false,
+    securityNote: 'Password updates are protected locally and can be expanded to the backend later.',
+    avatar: '',
+  });
+}
+
+function getWorkspaceSettings() {
+  return readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.settings, {
+    theme: 'midnight',
+    notificationsEnabled: true,
+    emailAlerts: true,
+    smsAlerts: false,
+    language: 'English',
+    timezone: 'UTC',
+    securityMode: 'standard',
+  });
+}
+
+function applyWorkspaceTheme() {
+  const settings = getWorkspaceSettings();
+  document.documentElement.dataset.theme = settings.theme || 'midnight';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function createExamRecord(payload = {}) {
+  const normalized = {
+    id: payload.id || `exam-${Date.now()}`,
+    title: payload.title || payload.examName || 'Untitled assessment',
+    examType: payload.examType || payload.type || 'Custom exam',
+    subject: payload.subject || 'General Studies',
+    className: payload.className || payload.class || 'All classes',
+    section: payload.section || 'Main',
+    teacher: payload.teacher || 'Assigned teacher',
+    academicYear: payload.academicYear || '2025/2026',
+    term: payload.term || 'Term 1',
+    date: payload.date || payload.examDate || 'TBD',
+    status: payload.status || 'Draft',
+    maxMarks: Number(payload.maxMarks || payload.maximumMarks || 100),
+    passingMarks: Number(payload.passingMarks || payload.passMarks || 40),
+    remarks: payload.remarks || payload.remark || 'Ready for marking',
+    createdAt: new Date().toISOString(),
+  };
+  return normalized;
+}
+
+function generateReportCard(payload = {}) {
+  const student = payload.student || 'Student';
+  const academicYear = payload.academicYear || '2025/2026';
+  const term = payload.term || 'Term 1';
+  return {
+    id: payload.id || `report-${Date.now()}`,
+    student,
+    academicYear,
+    term,
+    status: payload.status || 'Ready',
+    grade: payload.grade || 'B',
+    remarks: payload.remarks || 'Steady progress observed this term.',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function getWebsiteCMSSettings() {
+  try {
+    const stored = localStorage.getItem(WEBSITE_CMS_STORAGE_KEY);
+    if (!stored) return { ...DEFAULT_WEBSITE_CMS };
+    const settings = { ...DEFAULT_WEBSITE_CMS, ...JSON.parse(stored) };
+    if (settings.companyName === 'Demo Academy') settings.companyName = DEFAULT_WEBSITE_CMS.companyName;
+    if (settings.heroSubtitle === 'Updated subtitle') settings.heroSubtitle = DEFAULT_WEBSITE_CMS.heroSubtitle;
+    ['contactEmail', 'contactPhone', 'whatsApp'].forEach((field) => {
+      if (String(settings[field] || '').includes('*')) settings[field] = DEFAULT_WEBSITE_CMS[field];
+    });
+    return settings;
+  } catch {
+    return { ...DEFAULT_WEBSITE_CMS };
+  }
+}
+
+function saveWebsiteCMSSettings(values = {}) {
+  const merged = { ...getWebsiteCMSSettings(), ...values };
+  localStorage.setItem(WEBSITE_CMS_STORAGE_KEY, JSON.stringify(merged));
+  return merged;
+}
+
+function displayPwaNotice({ title, message, type = 'info', primaryText = 'OK', secondaryText = null, onPrimary = null, onSecondary = null, duration = 6000 }) {
+  showGlobalPwaNotice({
+    title,
+    message,
+    type,
+    primaryText,
+    secondaryText,
+    onPrimary,
+    onSecondary,
+    autoHide: duration > 0,
+    duration,
+  });
+}
+
+function notifyPwaUpdateReady(registration) {
+  displayPwaNotice({
+    title: 'Update ready',
+    message: 'A newer version of GlobyEdu OS is available. Reload to apply the latest features and security updates.',
+    type: 'info',
+    primaryText: 'Reload',
+    secondaryText: 'Later',
+    onPrimary: () => {
+      if (registration?.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+    },
+    onSecondary: () => {
+      setPwaUpdateAvailable(true);
+    },
+    duration: 0,
+  });
+}
+
+function setupNetworkStatusWatcher() {
+  const updateStatus = () => {
+    if (navigator.onLine) {
+      displayPwaNotice({
+        title: 'Back online',
+        message: 'Your connection is restored. Pending changes will sync automatically.',
+        type: 'success',
+        duration: 4500,
+      });
+    } else {
+      displayPwaNotice({
+        title: 'Offline mode',
+        message: 'You are working offline. Changes will queue locally and sync when your network returns.',
+        type: 'warning',
+        primaryText: 'Retry',
+        onPrimary: () => window.location.reload(),
+        duration: 8000,
+      });
+    }
+  };
+
+  window.addEventListener('online', updateStatus);
+  window.addEventListener('offline', updateStatus);
+
+  if (!navigator.onLine) {
+    updateStatus();
+  }
+}
+
+function monitorServiceWorkerRegistration(registration) {
+  if (!registration) return;
+
+  if (registration.waiting) {
+    notifyPwaUpdateReady(registration);
+  }
+
+  registration.addEventListener('updatefound', () => {
+    const installingWorker = registration.installing;
+    if (!installingWorker) return;
+    installingWorker.addEventListener('statechange', () => {
+      if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+        notifyPwaUpdateReady(registration);
+      }
+    });
+  });
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swRefreshPending) return;
+    swRefreshPending = true;
+    window.location.reload();
+  });
+}
+
+function showInstallPromptNotice() {
+  if (!deferredInstallPrompt) return;
+  const snoozedUntil = Number(localStorage.getItem('globyedu_installPromptSnoozedUntil') || 0);
+  if (snoozedUntil > Date.now()) {
+    window.setTimeout(() => showInstallPromptNotice(), snoozedUntil - Date.now());
+    return;
+  }
+
+  const snoozeInstallPrompt = () => {
+    localStorage.setItem('globyedu_installPromptSnoozedUntil', String(Date.now() + 12 * 60 * 60 * 1000));
+  };
+
+  displayPwaNotice({
+    title: 'Install GlobyEdu OS',
+    message: 'Install the app for faster access, offline support, and enterprise-grade reliability.',
+    type: 'success',
+    primaryText: 'Install',
+    secondaryText: 'Dismiss',
+    onPrimary: promptPwaInstall,
+    onSecondary: snoozeInstallPrompt,
+    duration: 0,
+  });
+}
+
+function showPendingUpdateNoticeOnLoad() {
+  if (getPwaUpdateAvailable()) {
+    displayPwaNotice({
+      title: 'Update available',
+      message: 'A new version of GlobyEdu OS is ready to activate. Reload to continue with the latest release.',
+      type: 'info',
+      primaryText: 'Reload',
+      onPrimary: () => window.location.reload(),
+      duration: 0,
+    });
+    clearPwaUpdateAvailable();
+  }
+}
+
+function getSessionLimitStatus() {
+  try {
+    const raw = localStorage.getItem('globyedu_sessionHistory');
+    const sessions = raw ? JSON.parse(raw) : [];
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const recentSessions = sessions.filter((entry) => new Date(entry.timestamp).getTime() > oneWeekAgo);
+    return { active: recentSessions.length, limit: SESSION_LIMIT, exceeded: recentSessions.length >= SESSION_LIMIT };
+  } catch {
+    return { active: 0, limit: SESSION_LIMIT, exceeded: false };
+  }
+}
+
+function markActiveSession() {
+  try {
+    const raw = localStorage.getItem('globyedu_sessionHistory');
+    const sessions = raw ? JSON.parse(raw) : [];
+    const entry = { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, timestamp: new Date().toISOString(), role: getUserRole() || 'school' };
+    const next = [...sessions, entry].slice(-SESSION_LIMIT);
+    localStorage.setItem('globyedu_sessionHistory', JSON.stringify(next));
+  } catch {
+    // Ignore storage issues and continue the auth flow.
+  }
+
+  localStorage.setItem('globyedu_sessionActive', 'true');
+  localStorage.setItem('globyedu_sessionExpiresAt', String(Date.now() + 1000 * 60 * 60 * 24 * 7));
+  seedWorkspaceData();
+  applyWorkspaceTheme();
+  recordWorkspaceActivity('Session started', 'The authenticated workspace was restored for this browser.', 'session');
+}
+
+function renderLanding(activeSection = 'home') {
+  const cms = getWebsiteCMSSettings();
+  root.innerHTML = `
+          ${Nav(cms)}
+    <main class="relative overflow-hidden">
+      <section class="bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_25%),radial-gradient(circle_at_bottom_right,rgba(34,197,94,0.16),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.96))]">
+        <div class="max-w-7xl mx-auto px-6 pb-24 pt-10">
+          ${Hero(cms)}
+          ${Features(cms)}
+          ${renderTrustSection()}
+          ${renderWhyChooseSection()}
+          ${renderSolutions()}
+          ${renderScreenshots()}
+          ${renderPlatformStats()}
+          ${renderTestimonials()}
+          ${renderPricing()}
+          ${renderFAQ(cms)}
+          ${renderContact(cms)}
+          ${renderInstallAppSection()}
+          ${CTA()}
+          ${renderNewsletter()}
+        </div>
+      </section>
+    </main>
+    ${Footer(cms)}
+  `;
+  attachLandingActions(activeSection);
+  // Animate any numeric stats placed as demonstration inside the landing preview
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.animate-number').forEach((el) => {
+      const target = Number(el.getAttribute('data-target') || 0);
+      if (!target || isNaN(target)) return;
+      const duration = 900;
+      const start = performance.now();
+      const from = 0;
+      const tick = (now) => {
+        const t = Math.min(1, (now - start) / duration);
+        const val = Math.round(from + (target - from) * t);
+        el.textContent = String(val);
+        if (t < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  });
+}
+
+function attachLandingActions(activeSection) {
+  document.querySelectorAll('[data-action="get-started"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      location.hash = '#/register';
+    });
+  });
+
+  document.querySelectorAll('[data-action="request-demo"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      location.hash = '#/contact';
+      setTimeout(() => scrollToSection('contact'), 50);
+    });
+  });
+
+  // Remove skeletons for images on load
+  document.querySelectorAll('img[loading="lazy"]').forEach((img) => {
+    if (img.complete) {
+      const sk = img.closest('[data-skeleton]');
+      if (sk) sk.classList.remove('skeleton');
+    } else {
+      img.addEventListener('load', () => {
+        const sk = img.closest('[data-skeleton]');
+        if (sk) sk.classList.remove('skeleton');
+      });
+    }
+  });
+
+  document.querySelectorAll('[data-scroll]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const section = link.getAttribute('data-scroll');
+      if (!section) return;
+      if (section === 'home') {
+        location.hash = '#/';
+      } else {
+        location.hash = `#/${section}`;
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-action="install-app"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (typeof promptPwaInstall === 'function') {
+        promptPwaInstall();
+      }
+    });
+  });
+
+  if (activeSection && activeSection !== 'home') {
+    setTimeout(() => scrollToSection(activeSection), 50);
+  }
+  attachContactHandlers();
+  attachNewsletterHandlers();
+}
+
+function refreshLandingFromCMS() {
+  const { path } = parseHash();
+  if (!path || path === 'home' || LANDING_ROUTES.includes(path)) {
+    renderLanding(path || 'home');
+  }
+}
+
+window.addEventListener('globyedu-cms-updated', refreshLandingFromCMS);
+window.addEventListener('storage', (event) => {
+  if (event.key === WEBSITE_CMS_STORAGE_KEY) refreshLandingFromCMS();
+});
+
+function scrollToSection(sectionId) {
+  const target = document.getElementById(sectionId);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderSolutions() {
+  return `
+    <section id="solutions" class="mt-20 rounded-[2.5rem] border border-slate-200 bg-white/80 p-8 shadow-[0_30px_90px_-50px_rgba(15,23,42,0.30)] backdrop-blur-xl">
+      <div class="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.35em] text-sky-600">Solutions</p>
+          <h2 class="mt-4 text-3xl font-semibold tracking-tight text-slate-900">A complete platform for every school stakeholder.</h2>
+          <p class="mt-4 max-w-2xl text-slate-600">GlobyEdu OS blends school operations, communication, and reporting into one premium experience built for modern education.</p>
+          <div class="mt-8 grid gap-4 sm:grid-cols-2">
+            ${renderSolutionCard('Student Management', 'Smart profiles, attendance, behavior tracking and classroom workflows.')}
+            ${renderSolutionCard('Teacher Management', 'Scheduling, lesson planning, staff performance, and analytics.')}
+            ${renderSolutionCard('School Insights', 'Clear operational reporting for students, staff, and leadership teams.')}
+            ${renderSolutionCard('Multi-Tenant Architecture', 'Securely manage multiple schools, branches and campuses from one platform.')}
+          </div>
+        </div>
+        <div class="grid gap-4">
+          ${renderPanelCard('Security first', 'Enterprise-grade data protection with role-based access control and audit-ready logs.')}
+          ${renderPanelCard('Responsive design', 'Built to work beautifully on desktop, tablet, and mobile without compromise.')}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderSolutionCard(title, description) {
+  return `
+    <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg">
+      <div class="inline-flex items-center justify-center rounded-2xl bg-sky-600/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-sky-700">${title.split(' ')[0]}</div>
+      <p class="mt-5 text-lg font-semibold text-slate-900">${title}</p>
+      <p class="mt-3 text-sm leading-6 text-slate-600">${description}</p>
+    </div>
+  `;
+}
+
+function renderPanelCard(title, description) {
+  return `
+    <div class="rounded-[1.75rem] border border-slate-200 bg-linear-to-br from-white to-slate-50 p-6 shadow-lg shadow-slate-200/50">
+      <p class="text-lg font-semibold text-slate-900">${title}</p>
+      <p class="mt-3 text-sm leading-6 text-slate-600">${description}</p>
+    </div>
+  `;
+}
+
+function renderTrustSection() {
+  return `
+    <section id="trust" class="mt-20 rounded-[2.5rem] border border-slate-200 bg-white/90 p-8 shadow-[0_30px_90px_-50px_rgba(15,23,42,0.24)] backdrop-blur-xl">
+      <div class="grid gap-8 lg:grid-cols-[0.8fr_0.6fr] lg:items-center">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.35em] text-sky-600">Trusted by schools</p>
+          <h2 class="mt-4 text-3xl font-semibold tracking-tight text-slate-900">Powering operations for growing school networks.</h2>
+          <p class="mt-4 max-w-2xl text-slate-600">GlobyEdu OS is trusted by admissions, finance, and leadership teams looking for a polished platform with enterprise controls and fast deployment.</p>
+          <div class="mt-8 grid gap-4 sm:grid-cols-3">
+            ${renderTrustMetric('35+', 'Campuses live', 'Enterprise-scale deployment with multi-campus operations.')}
+            ${renderTrustMetric('120k', 'Students managed', 'Secure student and academic records across every campus.')}
+            ${renderTrustMetric('99.9%', 'Uptime guarantee', 'Reliable platform availability for school operations and parent engagement.')}
+          </div>
+        </div>
+        <div class="rounded-4xl bg-slate-950 p-8 text-white shadow-xl shadow-slate-950/10">
+          <p class="text-sm uppercase tracking-[0.35em] text-emerald-300">Platform confidence</p>
+          <h3 class="mt-4 text-2xl font-semibold">Secure, compliant, and user-friendly.</h3>
+          <ul class="mt-6 space-y-4 text-sm text-slate-300">
+            <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-400"></span>Role-based access and audit-ready activity logs.</li>
+            <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-400"></span>Flexible cloud and on-premise-ready architecture.</li>
+            <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-400"></span>Dedicated onboarding and ongoing support for campus teams.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderTrustMetric(value, title, description) {
+  return `
+    <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+      <p class="text-3xl font-semibold text-slate-900">${value}</p>
+      <p class="mt-2 text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">${title}</p>
+      <p class="mt-3 text-sm leading-6 text-slate-600">${description}</p>
+    </div>
+  `;
+}
+
+function renderWhyChooseSection() {
+  return `
+    <section id="why-choose" class="mt-20 rounded-[2.5rem] border border-slate-200 bg-linear-to-br from-slate-950/95 to-slate-900/90 p-8 text-white shadow-xl shadow-slate-950/15">
+      <div class="grid gap-10 lg:grid-cols-[0.9fr_0.7fr] lg:items-center">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.35em] text-cyan-300">Why choose GlobyEdu</p>
+          <h2 class="mt-4 text-3xl font-semibold tracking-tight text-white">Built for modern school teams and enterprise-scale operations.</h2>
+          <p class="mt-4 max-w-2xl text-slate-300">A premium school OS with cloud-first infrastructure, secure access controls, and workflow automation across admissions, attendance, finance, and communication.</p>
+        </div>
+        <div class="grid gap-4">
+          ${renderReasonCard('Unified school operations', 'All core workflows in one platform with clean, configurable dashboards for each role.')}
+          ${renderReasonCard('Real-time decision support', 'Live analytics, attendance trends, and finance snapshots help leaders act faster.')}
+          ${renderReasonCard('Guided demo architecture', 'Book a walkthrough to see end-to-end workflows and how the platform fits your school network.')}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderReasonCard(title, description) {
+  return `
+    <div class="rounded-[1.75rem] border border-slate-800/60 bg-slate-950/70 p-6 shadow-lg shadow-slate-950/20 transition duration-200 hover:-translate-y-1">
+      <p class="text-lg font-semibold text-white">${title}</p>
+      <p class="mt-3 text-sm leading-6 text-slate-300">${description}</p>
+    </div>
+  `;
+}
+
+function renderPlatformStats() {
+  return `
+    <section id="platform-stats" class="mt-20 rounded-[2.5rem] border border-slate-200 bg-white/95 p-8 shadow-[0_30px_90px_-50px_rgba(15,23,42,0.28)] backdrop-blur-xl">
+      <div class="grid gap-8 lg:grid-cols-[0.9fr_0.8fr] lg:items-center">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.35em] text-sky-600">Platform stats</p>
+          <h2 class="mt-4 text-3xl font-semibold tracking-tight text-slate-900">Demo data that tells a powerful story.</h2>
+          <p class="mt-4 max-w-2xl text-slate-600">See how GlobyEdu OS surfaces attendance, finance, and messaging insights with an interface built for speed and clarity.</p>
+          <div class="mt-8 grid gap-4 sm:grid-cols-3">
+            ${renderPlatformStat('Attendance rate', '98%', 'Accuracy for daily tracking and alerting.', '98', '%')}
+            ${renderPlatformStat('Active users', '12,480', 'Students, parents and staff connected.', '12480')}
+            ${renderPlatformStat('Messages sent', '4.2k', 'Centralized communications delivered across teams.', '4200')}
+          </div>
+        </div>
+        <div class="rounded-4xl border border-slate-200 bg-slate-950 p-6 shadow-xl shadow-slate-950/15">
+          <div class="flex items-center justify-between gap-4 rounded-3xl bg-slate-900/80 p-4 text-white">
+            <div>
+              <p class="text-xs uppercase tracking-[0.35em] text-cyan-300">Live preview</p>
+              <p class="mt-2 text-xl font-semibold">Dashboard pulse</p>
+            </div>
+            <span class="inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-200">Updated 2m ago</span>
+          </div>
+          <div class="mt-6 space-y-4">
+            ${renderPlatformMiniRow('Attendance today', '98.4%', 'progress')}
+            ${renderPlatformMiniRow('Fee collections', '$24.8k', 'progress')}
+            ${renderPlatformMiniRow('Open tickets', '9', 'progress')}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderPlatformStat(title, value, description, target, suffix = '') {
+  return `
+    <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+      <p class="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">${title}</p>
+      <p class="mt-3 text-3xl font-semibold text-slate-900 animate-number" data-target="${target}" data-suffix="${suffix}">${value}</p>
+      <p class="mt-3 text-sm leading-6 text-slate-600">${description}</p>
+    </div>
+  `;
+}
+
+function renderPlatformMiniRow(label, value, style) {
+  return `
+    <div class="rounded-3xl bg-slate-900/80 p-4 text-slate-100">
+      <div class="flex items-center justify-between gap-4">
+        <p class="text-sm text-slate-400">${label}</p>
+        <p class="text-lg font-semibold text-white">${value}</p>
+      </div>
+      <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+        <div class="h-full rounded-full bg-linear-to-r from-cyan-400 to-emerald-400" style="width:${style === 'progress' ? '84%' : '50%'}"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInstallAppSection() {
+  return `
+    <section id="install-app" class="mt-20 rounded-[2.5rem] border border-slate-200 bg-slate-950 p-8 text-white shadow-xl shadow-slate-950/15">
+      <div class="grid gap-8 lg:grid-cols-[0.9fr_0.7fr] lg:items-center">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.35em] text-cyan-300">Install the app</p>
+          <h2 class="mt-4 text-3xl font-semibold tracking-tight text-white">Use GlobyEdu OS as a fast, installable PWA.</h2>
+          <p class="mt-4 max-w-2xl text-slate-300">Install the web app for offline-ready access, quicker launch times, and the same premium experience across notebook, tablet, and desktop.</p>
+          <ul class="mt-8 space-y-4 text-sm text-slate-300">
+            <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400"></span>Tap install to launch GlobyEdu OS like a native application.</li>
+            <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400"></span>Enjoy offline-friendly caching and fast repeat visits.</li>
+            <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400"></span>Secure sessions and enterprise delivery for school operations teams.</li>
+          </ul>
+        </div>
+        <div class="rounded-[1.75rem] bg-slate-900/90 p-6">
+          <div class="rounded-[1.75rem] bg-slate-950/90 p-6 text-center shadow-lg shadow-slate-950/20">
+            <p class="text-sm uppercase tracking-[0.35em] text-cyan-300">Ready to install</p>
+            <h3 class="mt-4 text-xl font-semibold text-white">GlobyEdu OS app</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-400">Fast access, offline support, and a clean desktop/tablet experience.</p>
+            <button data-action="install-app" class="mt-8 inline-flex items-center justify-center rounded-full bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400">Install App</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderScreenshots() {
+  return `
+    <section id="overview" class="mt-20">
+      <div class="grid gap-10 lg:grid-cols-[0.95fr_0.9fr] lg:items-end">
+        <div class="max-w-2xl">
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">Platform overview</p>
+          <h2 class="mt-4 text-3xl font-semibold text-slate-900">Beautiful dashboards for every team.</h2>
+          <p class="mt-4 text-slate-600">Get everything from attendance snapshots to finance summaries with at-a-glance visual reports and unified school operations.</p>
+        </div>
+        <div class="rounded-full bg-slate-900/5 px-6 py-4 text-sm text-slate-600">Premium, responsive previews ready for future imagery.</div>
+      </div>
+      <div class="mt-10 grid gap-6 lg:grid-cols-3">
+        ${renderScreenshotCard('Analytics', 'Insightful charts for leaders.', screenshotAnalyticsImage)}
+        ${renderScreenshotCard('Attendance', 'Rapid attendance tracking and review.', screenshotAttendanceImage)}
+        ${renderScreenshotCard('Messaging', 'Communicate with staff, students and parents.', screenshotMessagingImage)}
+      </div>
+    </section>
+  `;
+}
+
+function renderScreenshotCard(title, description, image) {
+  return `
+    <div class="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg">
+      <div class="relative overflow-hidden bg-slate-950 ${['Analytics', 'Messaging'].includes(title) ? `${title.toLowerCase()}-screenshot-media` : ''}">
+        <img src="${image}" alt="${title}" loading="lazy" decoding="async" class="h-44 w-full object-cover opacity-90 ${['Analytics', 'Messaging'].includes(title) ? `${title.toLowerCase()}-screenshot-image` : ''}" />
+        <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-slate-950/90 to-transparent px-4 py-3 text-white">
+          <p class="text-sm font-semibold uppercase tracking-[0.25em]">${title}</p>
+        </div>
+      </div>
+      <div class="p-6">
+        <h3 class="text-xl font-semibold text-slate-900">${title}</h3>
+        <p class="mt-3 text-sm text-slate-600">${description}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderTestimonials() {
+  return `
+    <section class="mt-20" id="about">
+      <div class="mx-auto max-w-7xl px-6">
+        <div class="grid gap-8 lg:grid-cols-[0.6fr_0.4fr] lg:items-start">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">About GlobyEdu OS</p>
+            <h2 class="mt-4 text-3xl font-semibold text-slate-900">A next-generation school operating system</h2>
+            <p class="mt-4 text-slate-600">GlobyEdu OS is built to simplify administration, enhance communication, and improve learning outcomes across all school sizes.</p>
+            <ul class="mt-6 grid gap-3 text-sm text-slate-600">
+              <li class="flex items-start gap-3"><span class="mt-1 h-3 w-3 rounded-full bg-emerald-500"></span>Built for schools of all sizes</li>
+              <li class="flex items-start gap-3"><span class="mt-1 h-3 w-3 rounded-full bg-emerald-500"></span>Secure, scalable, and reliable</li>
+              <li class="flex items-start gap-3"><span class="mt-1 h-3 w-3 rounded-full bg-emerald-500"></span>Actionable insights and dependable support</li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">What our schools say</p>
+            <div class="mt-6 grid gap-4">
+              ${renderTestimonial(testimonialImage1, 'A modern control center for every school team.', 'Meridian School', 5)}
+              ${renderTestimonial(testimonialImage2, 'Operations finally feel calm and measurable.', 'Horizon Prep', 4.5)}
+              ${renderTestimonial(testimonialImage3, 'Our teams can manage attendance, messaging, and billing from one place.', 'Sage Academy', 4)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderTestimonial(image, message = '', author = '', score = 5) {
+  const stars = Math.round(score);
+  const starHtml = Array.from({ length: 5 }).map((_, i) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="${i < stars ? '#f59e0b' : 'none'}" stroke="#f59e0b" stroke-width="1"><path d="M12 .587l3.668 7.431L24 9.75l-6 5.85L19.335 24 12 20.01 4.665 24 6 15.6 0 9.75l8.332-1.732z"/></svg>`).join('');
+
+  return `
+    <article class="rounded-[1.25rem] border border-slate-200 p-6 bg-white shadow-sm" role="article" aria-label="Testimonial card">
+      <div class="flex items-start gap-4">
+        <div class="h-14 w-14 flex-none overflow-hidden rounded-full border bg-slate-50">
+          <img src="${image}" alt="Customer photo" class="h-full w-full object-cover" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-semibold text-slate-900">${author || 'Verified Customer'}</p>
+              <p class="mt-1 text-xs text-slate-500">${message || 'Customer feedback will appear here once available.'}</p>
+            </div>
+            <div class="flex items-center gap-2 text-sm text-slate-500" aria-hidden="true">${starHtml}<span class="text-slate-700 font-semibold">${score}</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderPricing() {
+  const state = getAdminState();
+  const plans = Array.isArray(state.pricingPlans) ? state.pricingPlans.filter((plan) => plan.enabled) : [];
+  const planCards = plans.length > 0 ? plans.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map((plan) => renderPricingCard(plan)).join('') : `
+      <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm">
+        <p class="text-sm font-semibold uppercase tracking-[0.3em] text-slate-600">Pricing</p>
+        <h2 class="mt-6 text-2xl font-semibold text-slate-900">No pricing plans have been configured yet.</h2>
+        <p class="mt-4 text-slate-600">Visit the Super Admin pricing console to define product plans and publish them here.</p>
+      </article>
+    `;
+
+  return `
+    <section class="mt-20" id="pricing">
+      <div class="grid gap-8 lg:grid-cols-3">
+        ${planCards}
+      </div>
+    </section>
+  `;
+}
+
+function renderPricingCard(plan) {
+  const priceLabel = plan.monthlyPrice === '0' ? 'Free trial' : plan.monthlyPrice.startsWith('$') ? plan.monthlyPrice : `${plan.currency || 'USD'} ${plan.monthlyPrice}/${plan.billingCycle || 'mo'}`;
+  const features = [];
+  if (plan.features) {
+    Object.entries(plan.features).forEach(([key, enabled]) => {
+      if (enabled) {
+        features.push(key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase()));
+      }
+    });
+  }
+
+  return `
+    <div class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm hover:shadow-lg transition">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">${plan.name}</p>
+          <p class="mt-2 text-sm text-slate-500">${plan.shortDescription}</p>
+        </div>
+        ${plan.recommendedBadge ? `<span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">Recommended</span>` : ''}
+      </div>
+      <p class="mt-6 text-4xl font-semibold text-slate-900">${priceLabel}</p>
+      <p class="mt-2 text-sm text-slate-500">${plan.freeTrialDays ? `${plan.freeTrialDays}-day free trial` : 'No trial offered'}</p>
+      <ul class="mt-6 space-y-3 text-sm text-slate-600">
+        ${features.slice(0, 6).map((item) => `<li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>${item}</li>`).join('')}
+      </ul>
+      <button data-action="get-started" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
+    </div>
+  `;
+}
+
+function renderFAQ(cms = getWebsiteCMSSettings()) {
+  return `
+    <section class="mt-20 rounded-4xl bg-white p-8 shadow-xl shadow-slate-200/50" id="faq">
+      <div class="grid gap-8 lg:grid-cols-[0.95fr_0.95fr]">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">FAQ</p>
+          <h2 class="mt-4 text-3xl font-semibold text-slate-900">Answers for modern school teams.</h2>
+          <div class="mt-8 space-y-4 text-slate-600">
+            ${renderFAQItem('Can parents login?', 'Yes. Parents can have secure portals to monitor attendance, grades, and messages for their children.')}
+            ${renderFAQItem('Can I manage multiple campuses?', 'Yes. GlobyEdu is built for multi-campus and multi-tenant operations from the start.')}
+            ${renderFAQItem('Can I use my own cloud?', 'Yes. The platform supports flexible deployment options including private and hybrid cloud hosting.')}
+            ${renderFAQItem('How secure is my data?', 'We use role-based access, encrypted data storage, and enterprise-grade security controls.')}
+            ${renderFAQItem('Does it work on phones?', 'Yes. The platform is fully responsive and optimized for tablet and mobile devices.')}
+            ${renderFAQItem('Can I install it as an App?', 'Yes. The homepage is PWA-ready and can prompt users to install the app when supported.')}
+            ${renderFAQItem('Can I migrate existing school data?', 'Yes. The platform supports import workflows for student, staff, and academic data.')}
+          </div>
+        </div>
+        <div class="rounded-[1.75rem] bg-slate-950 p-8 text-white">
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-300">Need help?</p>
+          <h3 class="mt-4 text-2xl font-semibold">Contact our team.</h3>
+          <p class="mt-4 text-slate-300">Send a note if you need a demo, pricing details, or onboarding help.</p>
+          <div class="mt-8 space-y-4 text-sm text-slate-300">
+            <p><span class="font-semibold">Email:</span> ${cms.contactEmail}</p>
+            <p><span class="font-semibold">Phone:</span> ${cms.contactPhone}</p>
+            <p><span class="font-semibold">Address:</span> ${cms.address}</p>
+            <p><span class="font-semibold">Hours:</span> ${cms.businessHours}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderFAQItem(question, answer) {
+  return `
+    <details class="faq-item rounded-3xl border border-slate-200 bg-slate-50 p-4 transition duration-200 open:bg-white">
+      <summary class="flex cursor-pointer items-center justify-between gap-4 text-left font-semibold text-slate-900 outline-none">
+        <span>${question}</span>
+        <span class="text-slate-500">+</span>
+      </summary>
+      <div class="mt-4 text-sm leading-6 text-slate-600">${answer}</div>
+    </details>
+  `;
+}
+
+function renderContact(cms = getWebsiteCMSSettings()) {
+  const socialLinks = String(cms.socialLinks || 'LinkedIn, Twitter, Facebook, Instagram')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return `
+    <section class="mt-20 rounded-4xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/60 p-8 text-slate-900 shadow-[0_30px_90px_-45px_rgba(14,165,233,0.28)]">
+      <div class="grid gap-8 lg:grid-cols-2 lg:items-center">
+        <div class="rounded-[1.75rem] border border-slate-200 bg-white/90 p-6 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.18)] sm:p-8">
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">Contact</p>
+          <h2 class="mt-4 text-3xl font-semibold text-slate-900">Let us build your school's digital future.</h2>
+          <p class="mt-4 max-w-xl text-slate-600">Share your details and our team will follow up with a tailored onboarding plan for your campus.</p>
+          <div class="mt-8 space-y-3 text-sm text-slate-600">
+            <p class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"><span class="font-semibold text-slate-900">Email:</span> ${cms.contactEmail}</p>
+            <p class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"><span class="font-semibold text-slate-900">Phone:</span> ${cms.contactPhone}</p>
+            <p class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"><span class="font-semibold text-slate-900">Address:</span> ${cms.address}</p>
+            <p class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"><span class="font-semibold text-slate-900">Hours:</span> ${cms.businessHours}</p>
+            <p class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"><span class="font-semibold text-slate-900">Social:</span> ${socialLinks.join(' • ')}</p>
+          </div>
+        </div>
+        <div class="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/80 sm:p-8">
+          <form id="contact-form" class="space-y-4">
+            <label class="block text-sm text-slate-700">Name<input class="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" type="text" id="contact-name" placeholder="Your name" required></label>
+            <label class="block text-sm text-slate-700">Email<input class="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" type="email" id="contact-email" placeholder="you@school.edu" required></label>
+            <label class="block text-sm text-slate-700">Message<textarea class="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" id="contact-message" rows="4" placeholder="Tell us about your school" required></textarea></label>
+            <button type="submit" class="inline-flex w-full items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Send Message</button>
+            <div id="contact-status" class="text-sm text-slate-600"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderNewsletter() {
+  return `
+    <section class="mt-20 rounded-4xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">Newsletter</p>
+          <h2 class="mt-4 text-3xl font-semibold text-slate-900">Get product updates, insights, and launch news.</h2>
+        </div>
+        <form id="newsletter-form" class="flex flex-col gap-3 sm:flex-row">
+          <input id="newsletter-email" type="email" required placeholder="Email address" class="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+          <button type="submit" class="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Subscribe</button>
+        </form>
+        <p id="newsletter-status" class="text-sm text-slate-500"></p>
+      </div>
+    </section>
+  `;
+}
+
+function renderLoginPage() {
+  root.innerHTML = `${Nav()}${LoginPage()}${Footer()}`;
+  attachLoginHandlers();
+}
+
+function renderPlatformAdminPage() {
+  root.innerHTML = `${Nav()}${PlatformAdminPage()}${Footer()}`;
+  attachPlatformAdminHandlers();
+}
+
+function renderAuthenticatedAppShell(section = 'overview', role = 'super_admin', childrenContent = null) {
+  seedWorkspaceData();
+  applyWorkspaceTheme();
+  const userName = localStorage.getItem('globyedu_userFullName') || 'User';
+  const roleKey = role === 'school_authority' ? 'school_authority' : role === 'teacher' ? 'teacher' : role === 'student' ? 'student' : 'super_admin';
+  const navItems = getAppNavItems(roleKey);
+
+  const content = childrenContent ?? getAuthenticatedModuleContent(section, roleKey, userName);
+  root.innerHTML = `
+    <div id="${PWA_STATUS_ID}" class="hidden fixed inset-x-0 top-16 z-50 mx-auto w-full max-w-4xl rounded-b-3xl bg-slate-900/95 px-4 py-3 text-sm text-white shadow-2xl transition-transform duration-300 sm:left-1/2 sm:-translate-x-1/2"></div>
+    ${AppShell({
+      role: roleKey,
+      title: section === 'overview' ? 'Workspace' : 'Workspace tools',
+      subtitle: getWorkspaceTitle(section, roleKey),
+      navItems,
+      activeItem: section,
+      profileName: userName.split(' ')[0] || 'User',
+      children: content,
+    })}
+  `;
+  attachAuthenticatedShellHandlers(roleKey, section);
+}
+
+function getWorkspaceTitle(section, role) {
+  if (role === 'school_authority') return 'School Authority Workspace';
+  if (role === 'teacher') return 'Teacher Workspace';
+  if (role === 'student') return 'Student Workspace';
+  return 'Super Admin Workspace';
+}
+
+function getAppNavItems(role) {
+  if (role === 'school_authority') {
+    return [
+      { id: 'overview', label: 'Dashboard', path: '#/school/overview', icon: '◉' },
+      { id: 'profile', label: 'Profile', path: '#/school/profile', icon: '⌂' },
+      { id: 'students', label: 'Students', path: '#/school/students', icon: '👥' },
+      { id: 'teachers', label: 'Teachers', path: '#/school/teachers', icon: '🧑‍🏫' },
+      { id: 'classes', label: 'Class Management', path: '#/school/classes', icon: '🏫' },
+      { id: 'attendance', label: 'Attendance', path: '#/school/attendance', icon: '✓' },
+      { id: 'finance', label: 'Finance & Billing', path: '#/school/finance', icon: '💳' },
+      { id: 'exams', label: 'Examination & Grading', path: '#/school/exams', icon: '📝' },
+      { id: 'announcements', label: 'Announcements', path: '#/school/announcements', icon: '📣' },
+      { id: 'notifications', label: 'Notifications', path: '#/school/notifications', icon: '🔔' },
+      { id: 'messages', label: 'Messaging', path: '#/school/messages', icon: '💬' },
+      { id: 'reports', label: 'Reports', path: '#/school/reports', icon: '📄' },
+      { id: 'settings', label: 'Settings', path: '#/school/settings', icon: '⚙️' },
+    ];
+  }
+
+  if (role === 'teacher') {
+    return [
+      { id: 'overview', label: 'Dashboard', path: '#/role/teacher', icon: '◉' },
+      { id: 'classes', label: 'Classes', path: '#/role/teacher/classes', icon: '🏫' },
+      { id: 'students', label: 'Students', path: '#/role/teacher/students', icon: '👥' },
+      { id: 'attendance', label: 'Attendance', path: '#/role/teacher/attendance', icon: '✓' },
+      { id: 'exams', label: 'Exams / Marks', path: '#/role/teacher/exams', icon: '📝' },
+      { id: 'notifications', label: 'Notifications', path: '#/role/teacher/notifications', icon: '🔔' },
+      { id: 'messages', label: 'Messages', path: '#/role/teacher/messages', icon: '💬' },
+      { id: 'announcements', label: 'Announcements', path: '#/role/teacher/announcements', icon: '📣' },
+      { id: 'support', label: 'Support', path: '#/role/teacher/support', icon: '🛟' },
+      { id: 'reports', label: 'Reports', path: '#/role/teacher/reports', icon: '📄' },
+      { id: 'profile', label: 'Profile', path: '#/role/teacher/profile', icon: '⌂' },
+      { id: 'settings', label: 'Settings', path: '#/role/teacher/settings', icon: '⚙️' },
+    ];
+  }
+
+  if (role === 'student') {
+    return [
+      { id: 'overview', label: 'Dashboard', path: '#/role/student', icon: '◉' },
+      { id: 'classes', label: 'Classes', path: '#/role/student/classes', icon: '🏫' },
+      { id: 'assignments', label: 'Assignments', path: '#/role/student/assignments', icon: '📝' },
+      { id: 'results', label: 'Results', path: '#/role/student/results', icon: '📈' },
+      { id: 'notifications', label: 'Notifications', path: '#/role/student/notifications', icon: '🔔' },
+      { id: 'messages', label: 'Messages', path: '#/role/student/messages', icon: '💬' },
+      { id: 'support', label: 'Support', path: '#/role/student/support', icon: '🛟' },
+      { id: 'settings', label: 'Settings', path: '#/role/student/settings', icon: '⚙️' },
+    ];
+  }
+
+  return [
+    { id: 'overview', label: 'Dashboard', path: '#/admin/overview', icon: '◉' },
+    { id: 'schools', label: 'Schools', path: '#/admin/schools', icon: '🏢' },
+    { id: 'users', label: 'Users', path: '#/admin/users', icon: '👥' },
+    { id: 'subscriptions', label: 'Subscriptions', path: '#/admin/subscriptions', icon: '✨' },
+    { id: 'payments', label: 'Payments', path: '#/admin/payments', icon: '💳' },
+    { id: 'pricing', label: 'Pricing', path: '#/admin/pricing', icon: '💲' },
+    { id: 'website-cms', label: 'Website CMS', path: '#/admin/website-cms', icon: '🌐' },
+    { id: 'ai-settings', label: 'AI Settings', path: '#/admin/ai-settings', icon: '🤖' },
+    { id: 'analytics', label: 'Analytics', path: '#/admin/analytics', icon: '📊' },
+    { id: 'reports', label: 'Reports', path: '#/admin/reports', icon: '📄' },
+    { id: 'messages', label: 'Messages', path: '#/admin/messages', icon: '💬' },
+    { id: 'announcements', label: 'Announcements', path: '#/admin/announcements', icon: '📣' },
+    { id: 'support', label: 'Support', path: '#/admin/support', icon: '🛟' },
+    { id: 'plugins', label: 'Plugin Marketplace', path: '#/admin/plugins', icon: '🧩' },
+    { id: 'audit-logs', label: 'Audit Logs', path: '#/admin/audit-logs', icon: '🗂️' },
+    { id: 'settings', label: 'Settings', path: '#/admin/settings', icon: '⚙️' },
+    { id: 'backups', label: 'Backups', path: '#/admin/backups', icon: '📥' },
+    { id: 'security', label: 'Security', path: '#/admin/security', icon: '🛡️' },
+  ];
+}
+
+function getAuthenticatedModuleContent(section, role, userName) {
+  if (role === 'school_authority') {
+    return `
+      <section class="space-y-6">
+        <div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Authority Workspace</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">${userName}, manage your school operations in one place.</h2>
+          <p class="mt-3 text-slate-600">The authenticated workspace now loads without the marketing header or footer and exposes role-aware navigation.</p>
+        </div>
+        <div class="grid gap-6 lg:grid-cols-2">
+          <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6">
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Profile</p>
+            <p class="mt-3 text-slate-600">Update school details, branding, and contact information from a single place.</p>
+          </div>
+          <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6">
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Quick Actions</p>
+            <p class="mt-3 text-slate-600">Create classes, manage attendance, record payments, and send announcements instantly.</p>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  if (role === 'teacher') {
+    return `
+      <section class="space-y-6">
+        <div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Teacher Workspace</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">${userName}, your classroom tools are ready.</h2>
+          <p class="mt-3 text-slate-600">Use the role-specific navigation to open lessons, attendance, messages, and reports directly.</p>
+        </div>
+      </section>
+    `;
+  }
+
+  if (role === 'student') {
+    return `
+      <section class="space-y-6">
+        <div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Student Workspace</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">Welcome back, ${userName}.</h2>
+          <p class="mt-3 text-slate-600">Review your classes, assignments, results, and messages in the dedicated student workspace.</p>
+        </div>
+        <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Account & Login</p>
+              <h3 class="mt-2 text-xl font-semibold text-slate-900">Google sign-in and secure account access</h3>
+            </div>
+            <button type="button" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Connect Google</button>
+          </div>
+          <div class="mt-4 grid gap-4 md:grid-cols-2">
+            <div class="rounded-2xl border border-slate-200 bg-white p-4">
+              <p class="text-sm font-semibold text-slate-900">Email + password login</p>
+              <p class="mt-2 text-sm text-slate-600">This remains the primary secure sign-in method for your school portal.</p>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4">
+              <p class="text-sm font-semibold text-slate-900">Google account</p>
+              <p class="mt-2 text-sm text-slate-600">Optional future login option for faster access once connected to your Google account.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Super Admin Workspace</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">${userName}, all platform modules are now reachable from the authenticated application shell.</h2>
+        <p class="mt-3 text-slate-600">The admin experience uses the dedicated workspace navigation and no longer mixes in the public marketing menu.</p>
+      </div>
+      <div class="grid gap-6 lg:grid-cols-3">
+        <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Schools</p>
+          <p class="mt-3 text-slate-600">Provision and manage tenant schools from the admin dashboard.</p>
+        </div>
+        <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Payments</p>
+          <p class="mt-3 text-slate-600">Track subscriptions and payments for every school.</p>
+        </div>
+        <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Website CMS</p>
+          <p class="mt-3 text-slate-600">Update marketing content and launch information for the public site.</p>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function attachAuthenticatedShellHandlers(role, section) {
+  const sidebar = document.getElementById('app-sidebar');
+  const backdrop = document.getElementById('app-sidebar-backdrop');
+
+  const setSidebarOpen = (open) => {
+    if (!sidebar) return;
+    if (window.innerWidth < 1024) {
+      sidebar.classList.toggle('-translate-x-full', !open);
+      sidebar.classList.toggle('translate-x-0', open);
+      backdrop?.classList.toggle('hidden', !open);
+    } else {
+      sidebar.classList.remove('-translate-x-full', 'translate-x-0');
+      backdrop?.classList.add('hidden');
+    }
+  };
+
+  document.querySelectorAll('[data-app-sidebar-toggle]').forEach((button) => {
+    button.addEventListener('click', () => setSidebarOpen(true));
+  });
+
+  document.querySelectorAll('[data-app-sidebar-close]').forEach((button) => {
+    button.addEventListener('click', () => setSidebarOpen(false));
+  });
+
+  backdrop?.addEventListener('click', () => setSidebarOpen(false));
+  window.addEventListener('resize', () => setSidebarOpen(window.innerWidth >= 1024));
+
+  document.querySelectorAll('[data-app-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.getAttribute('data-app-action');
+      if (action === 'logout') {
+        clearAuthenticationState();
+        location.hash = '#/login';
+        return;
+      }
+      if (action === 'notifications') {
+        if (role === 'school_authority') {
+          location.hash = '#/school/notifications';
+        } else if (role === 'teacher') {
+          location.hash = '#/role/teacher/notifications';
+        } else if (role === 'student') {
+          location.hash = '#/role/student/notifications';
+        } else {
+          location.hash = '#/admin/notifications';
+        }
+      }
+      if (action === 'messages') {
+        if (role === 'school_authority') {
+          location.hash = '#/school/messages';
+        } else if (role === 'teacher') {
+          location.hash = '#/role/teacher/messages';
+        } else if (role === 'student') {
+          location.hash = '#/role/student/messages';
+        } else {
+          location.hash = '#/admin/messages';
+        }
+      }
+      if (action === 'profile') {
+        if (role === 'school_authority') {
+          location.hash = '#/school/profile';
+        } else if (role === 'teacher') {
+          location.hash = '#/role/teacher/profile';
+        } else if (role === 'student') {
+          location.hash = '#/role/student/profile';
+        } else {
+          location.hash = '#/admin/profile';
+        }
+      }
+      if (action === 'settings') {
+        if (role === 'school_authority') {
+          location.hash = '#/school/settings';
+        } else if (role === 'teacher') {
+          location.hash = '#/role/teacher/settings';
+        } else if (role === 'student') {
+          location.hash = '#/role/student/settings';
+        } else {
+          location.hash = '#/admin/settings';
+        }
+      }
+      if (action === 'help') {
+        if (role === 'school_authority') {
+          location.hash = '#/school/support';
+        } else if (role === 'teacher') {
+          location.hash = '#/role/teacher/support';
+        } else if (role === 'student') {
+          location.hash = '#/role/student/support';
+        } else {
+          location.hash = '#/admin/support';
+        }
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-app-nav]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const id = link.getAttribute('data-app-nav');
+      if (role === 'school_authority') {
+        if (id === 'overview') {
+          location.hash = '#/school/overview';
+        } else if (id === 'profile') {
+          location.hash = '#/school/profile';
+        } else if (id === 'students') {
+          location.hash = '#/school/students';
+        } else if (id === 'teachers') {
+          location.hash = '#/school/teachers';
+        } else if (id === 'classes') {
+          location.hash = '#/school/classes';
+        } else if (id === 'attendance') {
+          location.hash = '#/school/attendance';
+        } else if (id === 'finance') {
+          location.hash = '#/school/finance';
+        } else if (id === 'exams') {
+          location.hash = '#/school/exams';
+        } else if (id === 'announcements') {
+          location.hash = '#/school/announcements';
+        } else if (id === 'messages') {
+          location.hash = '#/school/messages';
+        } else if (id === 'messaging') {
+          location.hash = '#/school/messages';
+        } else if (id === 'reports') {
+          location.hash = '#/school/reports';
+        } else if (id === 'settings') {
+          location.hash = '#/school/settings';
+        }
+      } else if (role === 'teacher') {
+        location.hash = `#/role/teacher/${id}`;
+      } else if (role === 'student') {
+        location.hash = `#/role/student/${id}`;
+      } else {
+        location.hash = `#/admin/${id}`;
+      }
+    });
+  });
+}
+
+function renderRegisterPage() {
+  root.innerHTML = `${Nav()}${RegisterWizardPage()}${Footer()}`;
+  attachRegisterWizardHandlers();
+}
+
+function renderForgotPage(loginType = 'school') {
+  root.innerHTML = `${Nav()}${ForgotPage(loginType)}${Footer()}`;
+  attachForgotHandlers(loginType);
+}
+
+function renderResetPasswordPage(token = '', loginType = 'school') {
+  root.innerHTML = `${Nav()}${ResetPasswordPage(token, loginType)}${Footer()}`;
+  attachResetPasswordHandlers(token, loginType);
+}
+
+function renderVerifyEmailPage(status = 'pending', message = 'Verifying your email...') {
+  root.innerHTML = `${Nav()}${VerifyEmailPage(status, message)}${Footer()}`;
+}
+
+async function renderAdminPage(section = 'overview', navigationId = routeGeneration) {
+  const userFullName = localStorage.getItem('globyedu_userFullName') || 'Benjamin';
+  let summary = {};
+  let schools = [];
+  const token = getAccessToken();
+
+  if (token) {
+    const [summaryResult, schoolListResult] = await Promise.all([
+      fetchAdminDashboardSummary(token),
+      fetchAdminSchoolList(token),
+    ]);
+
+    if (summaryResult.ok && summaryResult.data?.status === 'ok') {
+      summary = summaryResult.data.summary || {};
+    }
+    if (schoolListResult.ok && schoolListResult.data?.status === 'ok') {
+      schools = schoolListResult.data.schools || [];
+      localStorage.setItem('globyedu_schoolDirectory', JSON.stringify(schools));
+    } else {
+      localStorage.removeItem('globyedu_schoolDirectory');
+    }
+  }
+
+  if (navigationId !== routeGeneration) return;
+
+  renderAuthenticatedAppShell(section, 'super_admin', AdminPage(section, userFullName, summary, schools));
+  attachAdminHandlers();
+  attachWebsiteCMSHandlers();
+  attachAdminSectionHandlers(section);
+}
+
+function renderRegisterSuccess() {
+  const schoolName = localStorage.getItem('globyedu_schoolName') || 'your school';
+  const trialEnds = localStorage.getItem('globyedu_trialEnds');
+  const schoolId = localStorage.getItem('globyedu_schoolId') || '---';
+  root.innerHTML = `${Nav()}<main class="max-w-3xl mx-auto px-6 py-20 text-center"><div class="rounded-4xl border border-slate-200 bg-white p-10 shadow-xl"><p class="text-sm uppercase tracking-[0.3em] text-sky-600">Trial activated</p><h1 class="mt-6 text-4xl font-semibold text-slate-900">Welcome to GlobyEdu OS</h1><p class="mt-4 text-slate-600">Your school account for <strong>${schoolName}</strong> is active and includes a 3-day free trial.</p><p class="mt-4 text-slate-500">Your School ID has been created automatically. Save this ID to sign in later.</p><div class="mt-8 rounded-4xl border border-slate-200 bg-slate-50 p-6 text-left text-slate-700 shadow-sm"><p class="text-sm uppercase tracking-[0.3em] text-slate-500">School ID</p><div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center"><code id="school-id-value" class="w-full break-all rounded-3xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-900">${schoolId}</code><button id="copy-school-id" class="inline-flex shrink-0 items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Copy ID</button></div></div><div class="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-center"><a href="#/login" class="inline-flex items-center justify-center rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Go to Login</a><a href="#/" class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50">Return to homepage</a></div></div></main>${Footer()}`;
+  attachRegisterSuccessHandlers();
+}
+
+function attachRegisterSuccessHandlers() {
+  const copyButton = document.getElementById('copy-school-id');
+  const schoolIdValue = document.getElementById('school-id-value');
+  if (!copyButton || !schoolIdValue) return;
+
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(schoolIdValue.textContent || '');
+      copyButton.textContent = 'Copied!';
+      setTimeout(() => { copyButton.textContent = 'Copy ID'; }, 2000);
+    } catch {
+      alert('Unable to copy School ID. Please copy it manually.');
+    }
+  });
+}
+
+async function renderRolePage(role = 'super_admin', section = 'overview', navigationId = routeGeneration) {
+  const userName = localStorage.getItem('globyedu_userFullName') || 'User';
+  const schoolName = localStorage.getItem('globyedu_schoolName') || 'School';
+  const schoolId = localStorage.getItem('globyedu_schoolId') || '';
+  
+  if (navigationId !== routeGeneration) return;
+
+  let dashboardContent = '';
+  let schoolData = { schoolName, schoolId, announcements: [], messages: [], students: [], teachers: [], classes: [] };
+  const token = getAccessToken();
+  if (token && schoolId) {
+    const result = await fetchSchoolDetails(token, schoolId);
+    if (navigationId !== routeGeneration) return;
+    if (result.ok && result.data?.status === 'ok') {
+      const school = result.data.school || {};
+      const audience = role === 'teacher' ? 'teachers' : role === 'student' ? 'students' : 'all';
+      const visible = (entry) => {
+        const target = String(entry.audience || entry.recipientType || entry.recipient || 'all').toLowerCase();
+        return target === 'all' || target === audience || target === 'everyone';
+      };
+      schoolData = {
+        ...schoolData,
+        schoolName: school.name || schoolName,
+        announcements: (Array.isArray(school.announcements) ? school.announcements : []).filter(visible),
+        messages: (Array.isArray(school.messages) ? school.messages : []).filter(visible),
+        students: Array.isArray(school.students) ? school.students : [],
+        teachers: Array.isArray(school.teachers) ? school.teachers : [],
+        classes: Array.isArray(school.classes) ? school.classes : [],
+        examRecords: Array.isArray(school.examRecords) ? school.examRecords : [],
+        examResults: Array.isArray(school.examResults) ? school.examResults : [],
+      };
+    }
+  }
+  
+  if (role === 'teacher') {
+    const teacherData = {
+      teacherName: userName,
+      schoolName: schoolData.schoolName,
+      classes: schoolData.classes,
+      students: schoolData.students,
+      messages: schoolData.messages,
+      announcements: schoolData.announcements,
+      teacherProfile: schoolData.teachers[0] || null,
+      examRecords: schoolData.examRecords || [],
+      examResults: schoolData.examResults || [],
+    };
+    dashboardContent = TeacherDashboard(section, teacherData);
+  } else if (role === 'student') {
+    const studentRecord = schoolData.student || schoolData.profile || schoolData.students?.find((entry) => {
+      const currentStudentId = localStorage.getItem('globyedu_studentId') || '';
+      return String(entry.studentId || '').toLowerCase() === String(currentStudentId).toLowerCase() || String(entry.email || '').toLowerCase() === String(localStorage.getItem('globyedu_userEmail') || '').toLowerCase();
+    }) || schoolData.students?.[0] || {};
+    const studentData = {
+      student: {
+        ...studentRecord,
+        fullName: studentRecord.fullName || userName,
+        studentId: studentRecord.studentId || localStorage.getItem('globyedu_studentId') || 'STU001',
+        schoolName: schoolData.schoolName,
+        className: studentRecord.className || localStorage.getItem('globyedu_studentClass') || 'Class',
+        profilePhoto: studentRecord.profilePhoto || localStorage.getItem('globyedu_profilePhoto') || '',
+      },
+      studentName: studentRecord.fullName || userName,
+      studentId: studentRecord.studentId || localStorage.getItem('globyedu_studentId') || 'STU001',
+      schoolName: schoolData.schoolName,
+      className: studentRecord.className || localStorage.getItem('globyedu_studentClass') || 'Class',
+      profilePhoto: studentRecord.profilePhoto || localStorage.getItem('globyedu_profilePhoto') || '',
+      classes: schoolData.classes || [],
+      attendanceRecords: schoolData.attendanceRecords || [],
+      examResults: schoolData.examResults || [],
+      announcements: schoolData.announcements || [],
+      messages: schoolData.messages || [],
+      payments: schoolData.payments || [],
+      subjects: Array.from(new Set((schoolData.classes || []).flatMap((entry) => [entry.subject || entry.subjectName || entry.name || entry.className]).filter(Boolean))),
+    };
+    dashboardContent = StudentDashboard(section, studentData);
+  } else {
+    // Fallback to school authority dashboard
+    dashboardContent = SchoolAuthorityDashboard(section, schoolData);
+  }
+
+  renderAuthenticatedAppShell(section, role, dashboardContent);
+  attachSchoolHandlers();
+  if (role === 'teacher') initializeTeacherWorkspaceHandlers();
+}
+
+function normalizeSchoolSection(section = 'overview') {
+  const key = String(section || 'overview').toLowerCase();
+  if (['profile', 'school-profile', 'school_profile'].includes(key)) return 'profile';
+  if (['academic', 'academics', 'structure', 'academic-management'].includes(key)) return 'academic';
+  if (['classes', 'class', 'class-management'].includes(key)) return 'classes';
+  if (['students', 'student'].includes(key)) return 'students';
+  if (['teachers', 'teacher'].includes(key)) return 'teachers';
+  if (['attendance', 'attendances'].includes(key)) return 'attendance';
+  if (['finance', 'fees', 'payments'].includes(key)) return 'finance';
+  if (['exams', 'exam', 'grading', 'gradebook', 'report-card', 'report-cards', 'transcript', 'transcripts'].includes(key)) return 'exams';
+  if (['notifications', 'alerts', 'alert'].includes(key)) return 'notifications';
+  if (['messages', 'messaging', 'message'].includes(key)) return 'messages';
+  if (['support', 'help', 'help-support', 'tickets'].includes(key)) return 'support';
+  if (['communications', 'announcements', 'announcement', 'communication'].includes(key)) return 'communications';
+  if (['reports', 'report'].includes(key)) return 'reports';
+  if (['settings', 'configuration', 'config'].includes(key)) return 'settings';
+  if (['ai', 'assistant', 'ai-assistant'].includes(key)) return 'ai';
+  if (['activity', 'activity-log', 'logs'].includes(key)) return 'activity';
+  return 'overview';
+}
+
+async function renderSchoolDashboardPage(section = 'overview', navigationId = routeGeneration) {
+  const schoolId = localStorage.getItem('globyedu_schoolId') || '';
+  const schoolName = localStorage.getItem('globyedu_schoolName') || 'School';
+  const role = getUserRole() || 'school_authority';
+  const normalizedSection = normalizeSchoolSection(section);
+
+  if (navigationId !== routeGeneration) return;
+
+  let summary = {
+    name: schoolName,
+    schoolStatus: 'active',
+    studentCount: 0,
+    teacherCount: 0,
+    classCount: 0,
+  };
+  let sectionData = {
+    school: { name: schoolName, schoolId, status: 'active' },
+    students: [],
+    teachers: [],
+    classes: [],
+    attendanceRecords: [],
+    announcements: [],
+    payments: [],
+    financeCategories: [],
+    invoices: [],
+    receipts: [],
+    refunds: [],
+    messages: [],
+    reports: [],
+    examRecords: [],
+    examResults: [],
+    gradeEntries: [],
+    reportCards: [],
+    academicRecords: [],
+  };
+
+  const token = getAccessToken();
+  if (schoolId && token) {
+    const [summaryResult, schoolResult] = await Promise.all([
+      fetchSchoolSummary(token, schoolId),
+      fetchSchoolDetails(token, schoolId),
+    ]);
+
+    if (summaryResult.ok && summaryResult.data?.status === 'ok') {
+      summary = summaryResult.data.summary || summary;
+    }
+
+    if (schoolResult.ok && schoolResult.data?.status === 'ok') {
+      const school = schoolResult.data.school || {};
+      const students = Array.isArray(school.students) ? school.students : [];
+      const teachers = Array.isArray(school.teachers) ? school.teachers : [];
+      const classes = Array.isArray(school.classes) ? school.classes : [];
+      const attendanceRecords = Array.isArray(school.attendanceRecords) ? school.attendanceRecords : [];
+      const announcements = Array.isArray(school.announcements) ? school.announcements : [];
+      const payments = Array.isArray(school.payments) ? school.payments : [];
+      const financeCategories = Array.isArray(school.financeCategories) ? school.financeCategories : [];
+      const invoices = Array.isArray(school.invoices) ? school.invoices : [];
+      const receipts = Array.isArray(school.receipts) ? school.receipts : [];
+      const refunds = Array.isArray(school.refunds) ? school.refunds : [];
+      const messages = Array.isArray(school.messages) ? school.messages : [];
+      const reports = Array.isArray(school.reports) ? school.reports : [];
+      let academicRecords = Array.isArray(school.academicRecords) ? school.academicRecords : [];
+
+      if (normalizedSection === 'academic') {
+        const academicEntityTypes = ['academic-years', 'terms', 'semesters', 'departments', 'streams', 'subjects', 'classes'];
+        const academicEntityResults = await Promise.all(academicEntityTypes.map((entityType) => fetchSchoolEntities(token, schoolId, entityType, { pageSize: 100 })));
+        academicRecords = academicEntityResults.flatMap((result, index) => {
+          if (!result.ok || result.data?.status !== 'ok') return [];
+          return (Array.isArray(result.data.items) ? result.data.items : []).map((item) => ({
+            ...item,
+            recordType: academicEntityTypes[index],
+          }));
+        });
+      }
+
+      sectionData = {
+        school,
+        students,
+        teachers,
+        classes,
+        attendanceRecords,
+        announcements,
+        payments,
+        financeCategories,
+        invoices,
+        receipts,
+        refunds,
+        messages,
+        reports,
+        examRecords: Array.isArray(school.examRecords) ? school.examRecords : [],
+        examResults: Array.isArray(school.examResults) ? school.examResults : [],
+        gradeEntries: Array.isArray(school.gradeEntries) ? school.gradeEntries : [],
+        reportCards: Array.isArray(school.reportCards) ? school.reportCards : [],
+        academicRecords,
+      };
+
+      summary = {
+        ...summary,
+        name: school.name || summary.name || schoolName,
+        schoolStatus: school.status || school.schoolStatus || summary.schoolStatus || 'active',
+        studentCount: students.length || summary.studentCount || 0,
+        teacherCount: teachers.length || summary.teacherCount || 0,
+        classCount: classes.length || summary.classCount || 0,
+      };
+    }
+  }
+
+  currentSchoolStudents = sectionData.students || [];
+  currentSchoolTeachers = sectionData.teachers || [];
+
+  const dashboardContent = SchoolDashboardPage(summary, normalizedSection, sectionData);
+  renderAuthenticatedAppShell(normalizedSection, role, dashboardContent);
+
+  const appRoot = root.querySelector('main');
+  if (appRoot) {
+    attachSchoolHandlers();
+  }
+}
+
+// Theme toggle handler (architecture). Toggles between 'light' and 'midnight' themes and persists setting.
+document.addEventListener('globyedu-toggle-theme', () => {
+  try {
+    const settings = getWorkspaceSettings();
+    const nextTheme = settings.theme === 'light' ? 'midnight' : 'light';
+    writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.settings, { ...settings, theme: nextTheme });
+    applyWorkspaceTheme();
+  } catch (e) {
+    // Fail silently — this is a non-critical UI enhancement.
+    console.warn('Theme toggle failed', e);
+  }
+});
+
+async function loadSchoolSummary() {
+  const schoolId = localStorage.getItem('globyedu_schoolId');
+  const token = getAccessToken();
+  if (!schoolId || !token) {
+    alert('Login required to load school summary.');
+    return;
+  }
+
+  const summaryResult = await fetchSchoolSummary(token, schoolId);
+  if (summaryResult.ok && summaryResult.data?.status === 'ok') {
+    const summary = summaryResult.data.summary || {};
+    renderAuthenticatedAppShell('overview', getUserRole() || 'school_authority', `${SchoolDashboardPage(summary)}`);
+    attachSchoolHandlers();
+    const dashboardId = document.getElementById('school-dashboard-id');
+    if (dashboardId) {
+      dashboardId.textContent = schoolId;
+    }
+    document.getElementById('school-entity-refresh')?.click();
+    return;
+  }
+
+  alert(summaryResult.data?.message || 'Unable to load school summary. Please try again.');
+}
+
+async function readFileAsDataUrl(file) {
+  if (!file) return '';
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please choose an image file.');
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    throw new Error('Image files must be smaller than 2MB.');
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read image file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderImagePreview(previewElement, src, fallbackText) {
+  if (!previewElement) return;
+  if (src) {
+    previewElement.innerHTML = `<img src="${escapeHtml(src)}" alt="Preview" class="h-24 w-full rounded-2xl border border-slate-200 object-cover" />`;
+    return;
+  }
+  previewElement.innerHTML = `<div class="flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">${escapeHtml(fallbackText)}</div>`;
+}
+
+const MAX_SCHOOL_IMAGE_BYTES = 2 * 1024 * 1024;
+
+function validateSchoolImage(file) {
+  if (!file) return 'Please select an image.';
+  if (!file.type.startsWith('image/')) return 'Only image files are allowed.';
+  if (file.size > MAX_SCHOOL_IMAGE_BYTES) return 'Images must be 2 MB or smaller.';
+  return '';
+}
+
+async function handleImageUpload(fileInput, hiddenInput, previewElement, fallbackText) {
+  if (!fileInput || !hiddenInput || !previewElement) return;
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  const validationError = validateSchoolImage(file);
+  if (validationError) {
+    alert(validationError);
+    fileInput.value = '';
+    return;
+  }
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    hiddenInput.value = dataUrl;
+    renderImagePreview(previewElement, dataUrl, fallbackText);
+  } catch (error) {
+    alert(error.message || 'Unable to read selected image.');
+  }
+}
+
+async function appendSchoolCollectionData(token, schoolId, collectionName, item, title, detail) {
+  const currentResponse = await fetchSchoolDetails(token, schoolId);
+  const school = currentResponse.ok && currentResponse.data?.status === 'ok' ? currentResponse.data.school || {} : {};
+  const currentItems = Array.isArray(school[collectionName]) ? school[collectionName] : [];
+  const nextItems = [...currentItems, { ...item, createdAt: new Date().toISOString() }];
+  const activityTitle = title || 'School record updated';
+  const activityDetail = detail || `${collectionName.replace(/-/g, ' ')} updated from the dashboard.`;
+  const currentActivities = Array.isArray(school.recentActivities) ? school.recentActivities : [];
+  const result = await updateSchoolDetails(token, schoolId, {
+    [collectionName]: nextItems,
+    recentActivities: [{ title: activityTitle, detail: activityDetail }, ...currentActivities].slice(0, 6),
+  });
+  return result;
+}
+
+async function handleQuickAction(action) {
+  const schoolId = localStorage.getItem('globyedu_schoolId');
+  const token = getAccessToken();
+  if (!schoolId || !token) return;
+
+  if (action === 'add-student') {
+    const schoolDetailsResult = await fetchSchoolDetails(token, schoolId);
+    const classOptions = Array.isArray(schoolDetailsResult?.data?.school?.classes)
+      ? schoolDetailsResult.data.school.classes
+        .filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived')
+        .map((entry) => ({ label: entry.name || entry.classId || 'Class', value: entry.classId || entry.id || entry.name || '' }))
+        .filter((entry) => entry.value)
+      : [];
+
+    const formData = await showAdminForm('Register student', [
+      { name: 'fullName', label: 'Student full name', placeholder: 'Student name', required: true },
+      { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*', capture: 'environment' },
+      { name: 'className', label: 'Class', type: 'select', options: classOptions, required: true },
+    ]);
+    if (!formData) return;
+    const result = await createSchoolEntity(token, schoolId, 'students', buildSchoolEntityPayload('students', {
+      fullName: formData.fullName || '',
+      classId: formData.classId || null,
+      className: classOptions.find((option) => option.value === formData.classId)?.label || null,
+      profilePhoto: formData.profilePhoto || null,
+      status: 'active',
+    }));
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to create student record.');
+      return;
+    }
+    alert('Student record created successfully.');
+    document.getElementById('school-entity-refresh')?.click();
+    return;
+  }
+
+  if (action === 'add-teacher') {
+    const formData = await showAdminForm('Register teacher', [
+      { name: 'fullName', label: 'Full name', placeholder: 'Teacher name', required: true },
+      { name: 'email', label: 'Email', placeholder: 'teacher@example.com', type: 'email', required: true },
+      { name: 'phone', label: 'Phone', placeholder: '+233000000000' },
+      { name: 'gender', label: 'Gender', type: 'select', options: [
+        { label: 'Male', value: 'male' },
+        { label: 'Female', value: 'female' },
+        { label: 'Other', value: 'other' },
+      ] },
+      { name: 'dateOfBirth', label: 'Date of birth (optional)', type: 'date' },
+      { name: 'department', label: 'Department', placeholder: 'e.g. Sciences' },
+      { name: 'position', label: 'Position', type: 'select', options: [
+        { label: 'Teacher', value: 'Teacher' },
+        { label: 'Senior Teacher', value: 'Senior Teacher' },
+        { label: 'Head of Department', value: 'Head of Department' },
+        { label: 'Assistant Headteacher', value: 'Assistant Headteacher' },
+        { label: 'Headteacher', value: 'Headteacher' },
+        { label: 'Principal', value: 'Principal' },
+        { label: 'Vice Principal', value: 'Vice Principal' },
+        { label: 'Class Teacher', value: 'Class Teacher' },
+        { label: 'Subject Teacher', value: 'Subject Teacher' },
+        { label: 'School Administrator', value: 'School Administrator' },
+      ] },
+      { name: 'qualification', label: 'Qualification', placeholder: 'e.g. B.Ed, MPhil' },
+      { name: 'yearsOfExperience', label: 'Experience (years)', placeholder: 'e.g. 8' },
+      { name: 'assignedClasses', label: 'Assigned class', type: 'select', options: TEACHER_ASSIGNABLE_CLASS_OPTIONS, required: true },
+      { name: 'assignedSubjects', label: 'Assigned subjects', placeholder: 'Comma-separated values' },
+      { name: 'employeeNumber', label: 'Employee number', placeholder: 'e.g. EMP-5482' },
+      { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+    ]);
+    if (!formData) return;
+    const result = await createSchoolEntity(token, schoolId, 'teachers', buildSchoolEntityPayload('teachers', {
+      fullName: formData.fullName || '',
+      email: formData.email || '',
+      phone: formData.phone || null,
+      gender: formData.gender || null,
+      dateOfBirth: formData.dateOfBirth || null,
+      department: formData.department || null,
+      position: formData.position || null,
+      qualification: formData.qualification || null,
+      yearsOfExperience: formData.yearsOfExperience || null,
+      assignedClasses: formData.assignedClasses ? [formData.assignedClasses] : [],
+      assignedSubjects: formData.assignedSubjects || null,
+      teacherId: formData.teacherId || null,
+      employeeNumber: formData.employeeNumber || null,
+      profilePhoto: formData.profilePhoto || null,
+      status: 'active',
+    }));
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to create teacher record.');
+      return;
+    }
+    alert('Teacher record created successfully.');
+    document.getElementById('school-entity-refresh')?.click();
+    return;
+  }
+
+  if (action === 'take-attendance') {
+    const formData = await showAdminForm('Take attendance', [
+      { name: 'date', label: 'Date', type: 'date', required: true },
+      { name: 'status', label: 'Status', placeholder: 'Present/Absent', required: true },
+      { name: 'note', label: 'Note', placeholder: 'Optional class note' },
+    ]);
+    if (!formData) return;
+    const result = await appendSchoolCollectionData(token, schoolId, 'attendanceRecords', {
+      date: formData.date || '',
+      status: formData.status || '',
+      note: formData.note || '',
+    }, 'Attendance captured', 'Attendance was recorded from the dashboard.');
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to save attendance entry.');
+      return;
+    }
+    alert('Attendance entry saved.');
+    renderSchoolDashboardPage('overview');
+    return;
+  }
+
+  if (action === 'record-payment') {
+    const formData = await showAdminForm('Record payment', [
+      { name: 'amount', label: 'Amount', placeholder: '250.00', required: true },
+      { name: 'student', label: 'Student', placeholder: 'Student name' },
+      { name: 'method', label: 'Payment method', placeholder: 'Cash / Mobile / Bank' },
+      { name: 'note', label: 'Note', placeholder: 'Optional note' },
+    ]);
+    if (!formData) return;
+    const result = await appendSchoolCollectionData(token, schoolId, 'payments', {
+      amount: formData.amount || '',
+      student: formData.student || '',
+      method: formData.method || '',
+      note: formData.note || '',
+    }, 'Payment recorded', 'A payment entry was added to the school records.');
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to record payment.');
+      return;
+    }
+    alert('Payment recorded successfully.');
+    renderSchoolDashboardPage('overview');
+    return;
+  }
+
+  if (action === 'create-announcement') {
+    const formData = await showAdminForm('Create announcement', [
+      { name: 'title', label: 'Title', placeholder: 'Parent meeting', required: true },
+      { name: 'detail', label: 'Message', placeholder: 'Share important school news', type: 'textarea', required: true },
+      { name: 'audience', label: 'Audience', type: 'select', options: [{ value: 'students', label: 'Students' }, { value: 'teachers', label: 'Teachers' }, { value: 'parents', label: 'Parents' }, { value: 'all', label: 'Everyone' }] },
+      { name: 'channel', label: 'Channel', placeholder: 'Email / SMS / WhatsApp / All' },
+      { name: 'priority', label: 'Priority', placeholder: 'Normal / High / Urgent' },
+      { name: 'attachments', label: 'Attachments', placeholder: 'Comma-separated URLs' },
+    ]);
+    if (!formData) return;
+    const result = await appendSchoolCollectionData(token, schoolId, 'announcements', buildSchoolCollectionPayload('announcements', {
+      title: formData.title || '',
+      detail: formData.detail || '',
+      audience: formData.audience || '',
+      channel: formData.channel || 'all',
+      priority: formData.priority || 'normal',
+      attachments: formData.attachments || null,
+    }), 'Announcement created', 'A new school announcement was posted.');
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to create announcement.');
+      return;
+    }
+    alert('Announcement created successfully.');
+    renderSchoolDashboardPage('overview');
+    return;
+  }
+
+  if (action === 'send-message') {
+    const formData = await showAdminForm('Send message', [
+      { name: 'recipient', label: 'Recipient', placeholder: 'Parents / Staff / Students', required: true },
+      { name: 'subject', label: 'Subject', placeholder: 'Reminder', required: true },
+      { name: 'body', label: 'Message', placeholder: 'Write the message here', type: 'textarea', required: true },
+      { name: 'sendVia', label: 'Send via', placeholder: 'Email / SMS / WhatsApp / Workspace' },
+      { name: 'priority', label: 'Priority', placeholder: 'Normal / High / Urgent' },
+      { name: 'attachments', label: 'Attachments', placeholder: 'Comma-separated URLs' },
+    ]);
+    if (!formData) return;
+    const result = await appendSchoolCollectionData(token, schoolId, 'messages', buildSchoolCollectionPayload('messages', {
+      recipient: formData.recipient || '',
+      subject: formData.subject || '',
+      body: formData.body || '',
+      sendVia: formData.sendVia || 'workspace',
+      priority: formData.priority || 'normal',
+      attachments: formData.attachments || null,
+    }), 'Message queued', 'A school communication was queued from the dashboard.');
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to send message.');
+      return;
+    }
+    alert('Message queued successfully.');
+    renderSchoolDashboardPage('overview');
+    return;
+  }
+
+  if (action === 'create-class') {
+    const formData = await showAdminForm('Create class', [
+      { name: 'name', label: 'Class name', placeholder: 'Grade 10A', required: true },
+      { name: 'grade', label: 'Grade', placeholder: '10' },
+      { name: 'section', label: 'Section', placeholder: 'A' },
+    ]);
+    if (!formData) return;
+    const result = await createSchoolEntity(token, schoolId, 'classes', {
+      name: formData.name || '',
+      grade: formData.grade || null,
+      section: formData.section || null,
+      status: 'active',
+    });
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to create class.');
+      return;
+    }
+    alert('Class created successfully.');
+    renderSchoolDashboardPage('classes', ++routeGeneration);
+    return;
+  }
+
+  if (action === 'generate-report') {
+    const formData = await showAdminForm('Generate report', [
+      { name: 'title', label: 'Report title', placeholder: 'Weekly performance report', required: true },
+      { name: 'summary', label: 'Summary', placeholder: 'Key highlights', type: 'textarea', required: true },
+    ]);
+    if (!formData) return;
+    const result = await appendSchoolCollectionData(token, schoolId, 'reports', {
+      title: formData.title || '',
+      summary: formData.summary || '',
+    }, 'Report generated', 'A school report was generated from the dashboard.');
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || 'Unable to generate report.');
+      return;
+    }
+    alert('Report generated successfully.');
+    renderSchoolDashboardPage('overview');
+    return;
+  }
+
+  alert(`${action.replace(/-/g, ' ')} is now available in the dashboard workflow.`);
+}
+
+function attachWorkspaceModuleHandlers() {
+  const notificationList = document.getElementById('workspace-notifications-list');
+  const messageList = document.getElementById('workspace-messages-list');
+  const supportList = document.getElementById('workspace-support-list');
+  let activeMessageFolder = 'inbox';
+
+  function refreshNotifications(filter = 'all') {
+    if (!notificationList) return;
+    const notifications = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, []);
+    const filtered = notifications.filter((item) => {
+      if (filter === 'unread') return !item.read;
+      if (filter === 'announcements') return item.type === 'announcement' || item.type === 'school';
+      if (filter === 'alerts') return item.type === 'system' || item.type === 'payment' || item.type === 'subscription';
+      return true;
+    });
+
+    notificationList.innerHTML = filtered.length
+      ? filtered.map((item) => `
+          <div class="rounded-2xl border border-slate-200 bg-white p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="font-semibold text-slate-900">${escapeHtml(item.title)}</p>
+                <p class="mt-1 text-sm text-slate-600">${escapeHtml(item.message)}</p>
+              </div>
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700">${escapeHtml(item.type || 'notice')}</span>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button type="button" data-notification-action="read" data-notification-id="${item.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Mark read</button>
+              <button type="button" data-notification-action="delete" data-notification-id="${item.id}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">Delete</button>
+            </div>
+          </div>
+        `).join('')
+      : '<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">No notifications match this filter.</div>';
+  }
+
+  async function refreshMessages(folder = 'inbox', query = '') {
+    if (!messageList) return;
+    activeMessageFolder = folder;
+    const schoolId = localStorage.getItem('globyedu_schoolId');
+    const token = getAccessToken();
+    let messages = [];
+
+    if (schoolId && token) {
+      const result = await fetchWorkspaceMessages(token, schoolId, { folder });
+      if (result.ok && Array.isArray(result.data?.messages)) {
+        messages = result.data.messages;
+      } else {
+        messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, []);
+      }
+    } else {
+      messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, []);
+    }
+
+    const filtered = messages.filter((entry) => (!query || `${entry.subject || ''} ${entry.body || ''} ${entry.from || ''}`.toLowerCase().includes(query.toLowerCase())));
+    messageList.innerHTML = filtered.length
+      ? filtered.map((entry) => `
+          <div class="rounded-2xl border border-slate-200 bg-white p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="font-semibold text-slate-900">${escapeHtml(entry.subject)}</p>
+                <p class="mt-1 text-sm text-slate-600">${escapeHtml(entry.body)}</p>
+              </div>
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700">${escapeHtml(entry.from)}</span>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button type="button" data-message-action="reply" data-message-id="${entry.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Reply</button>
+              <button type="button" data-message-action="forward" data-message-id="${entry.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Forward</button>
+              <button type="button" data-message-action="delete" data-message-id="${entry.id}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">Delete</button>
+            </div>
+          </div>
+        `).join('')
+      : '<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">No messages in this folder.</div>';
+  }
+
+  async function refreshSupport(filter = 'all') {
+    if (!supportList) return;
+    const schoolId = localStorage.getItem('globyedu_schoolId');
+    const token = getAccessToken();
+    let tickets = [];
+
+    if (schoolId && token) {
+      const result = await fetchSupportTickets(token, schoolId, filter === 'all' ? {} : { status: filter });
+      if (result.ok && Array.isArray(result.data?.tickets)) {
+        tickets = result.data.tickets;
+      } else {
+        tickets = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, []);
+      }
+    } else {
+      tickets = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, []);
+    }
+
+    supportList.innerHTML = tickets.length
+      ? tickets.map((item) => `
+          <div class="rounded-2xl border border-slate-200 bg-white p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="font-semibold text-slate-900">${escapeHtml(item.title)}</p>
+                <p class="mt-1 text-sm text-slate-600">${escapeHtml(item.message)}</p>
+              </div>
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700">${escapeHtml(item.status || 'open')}</span>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button type="button" data-support-action="reply" data-ticket-id="${item.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Reply</button>
+              <button type="button" data-support-action="close" data-ticket-id="${item.id}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">Close</button>
+            </div>
+          </div>
+        `).join('')
+      : '<div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">No support tickets yet.</div>';
+  }
+
+  document.querySelectorAll('[data-workspace-notification-filter]').forEach((button) => {
+    button.addEventListener('click', () => refreshNotifications(button.getAttribute('data-workspace-notification-filter') || 'all'));
+  });
+
+  document.querySelectorAll('[data-workspace-message-folder]').forEach((button) => {
+    button.addEventListener('click', () => refreshMessages(button.getAttribute('data-workspace-message-folder') || 'inbox'));
+  });
+
+  document.querySelectorAll('[data-workspace-message-compose]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const isTeacher = getUserRole() === 'teacher';
+      const audienceOptions = isTeacher
+        ? [{ value: 'teachers', label: 'Teachers' }, { value: 'all', label: 'Everyone' }]
+        : [{ value: 'students', label: 'Students' }, { value: 'teachers', label: 'Teachers' }, { value: 'parents', label: 'Parents' }, { value: 'all', label: 'Everyone' }];
+      const formData = await showAdminForm('Compose message', [
+        { name: 'recipient', label: 'Audience', type: 'select', options: audienceOptions, required: true },
+        { name: 'subject', label: 'Subject', required: true },
+        { name: 'body', label: 'Message', type: 'textarea', required: true },
+      ]);
+      if (!formData) return;
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const result = await createWorkspaceMessage(token, schoolId, {
+        folder: 'sent',
+        from: isTeacher ? (localStorage.getItem('globyedu_userFullName') || 'Teacher') : 'School Authority',
+        to: formData.recipient,
+        recipientType: formData.recipient,
+        subject: formData.subject,
+        body: formData.body,
+        unread: false,
+        attachments: [],
+      });
+      if (!result.ok || result.data?.status !== 'ok') {
+        alert(result.data?.message || 'Unable to send message.');
+        return;
+      }
+      alert('Message sent successfully.');
+      refreshMessages('sent');
+    });
+  });
+
+  const messageSearchInput = document.getElementById('workspace-message-search');
+  if (messageSearchInput) {
+    messageSearchInput.addEventListener('input', (event) => {
+      refreshMessages(activeMessageFolder, event.target.value);
+    });
+  }
+
+  document.querySelectorAll('[data-workspace-support-filter]').forEach((button) => {
+    button.addEventListener('click', () => refreshSupport(button.getAttribute('data-workspace-support-filter') || 'all'));
+  });
+
+  document.addEventListener('click', async (event) => {
+    const notificationButton = event.target.closest('[data-notification-action]');
+    if (notificationButton) {
+      const id = notificationButton.getAttribute('data-notification-id');
+      const notifications = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, []);
+      const next = notifications.filter((item) => item.id !== id);
+      if (notificationButton.getAttribute('data-notification-action') === 'read') {
+        const target = notifications.find((item) => item.id === id);
+        if (target) {
+          target.read = true;
+          target.status = 'read';
+          writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, notifications);
+          recordWorkspaceActivity('Notification updated', target.title, 'notification');
+        }
+      } else {
+        writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, next);
+        recordWorkspaceActivity('Notification deleted', 'A workspace notification was removed.', 'notification');
+      }
+      refreshNotifications();
+    }
+
+    const messageButton = event.target.closest('[data-message-action]');
+    if (messageButton) {
+      const id = messageButton.getAttribute('data-message-id');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (messageButton.getAttribute('data-message-action') === 'delete') {
+        if (schoolId && token) {
+          await deleteWorkspaceMessage(token, schoolId, id);
+        } else {
+          const messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, []);
+          writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, messages.filter((item) => item.id !== id));
+        }
+        recordWorkspaceActivity('Message deleted', 'A workspace message was removed.', 'message');
+      } else {
+        if (schoolId && token) {
+          const target = await fetchWorkspaceMessages(token, schoolId, { folder: 'inbox' }).then((result) => (result.ok && Array.isArray(result.data?.messages) ? result.data.messages.find((entry) => entry.id === id) : null));
+          const reply = prompt(`Reply to ${target?.subject || 'message'}`, `Re: ${target?.subject || ''}`);
+          if (reply) {
+            await createWorkspaceMessage(token, schoolId, { folder: 'sent', from: 'School Head', to: target?.from || 'Recipient', subject: `Re: ${target?.subject || ''}`, body: reply, unread: false, attachments: [] });
+            recordWorkspaceActivity('Message sent', 'A message was sent from the workspace.', 'message');
+          }
+        } else {
+          const messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, []);
+          const target = messages.find((item) => item.id === id);
+          const reply = prompt(`Reply to ${target?.subject || 'message'}`, `Re: ${target?.subject || ''}`);
+          if (reply) {
+            const draft = { id: `m-${Date.now()}`, folder: 'sent', from: 'You', to: target?.from || 'Recipient', subject: `Re: ${target?.subject || ''}`, body: reply, unread: false, createdAt: new Date().toISOString(), attachments: [] };
+            writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, [draft, ...messages]);
+            recordWorkspaceActivity('Message sent', 'A message was sent from the workspace.', 'message');
+          }
+        }
+      }
+      refreshMessages();
+    }
+
+    const supportButton = event.target.closest('[data-support-action]');
+    if (supportButton) {
+      const id = supportButton.getAttribute('data-ticket-id');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (supportButton.getAttribute('data-support-action') === 'close') {
+        if (schoolId && token) {
+          await updateSupportTicket(token, schoolId, id, { status: 'resolved' });
+        } else {
+          const tickets = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, []);
+          const target = tickets.find((item) => item.id === id);
+          if (target) {
+            target.status = 'resolved';
+            writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, tickets);
+          }
+        }
+      } else {
+        if (schoolId && token) {
+          const target = await fetchSupportTickets(token, schoolId).then((result) => (result.ok && Array.isArray(result.data?.tickets) ? result.data.tickets.find((item) => item.id === id) : null));
+          const reply = prompt(`Reply to ${target?.title || 'ticket'}`, 'Thank you. We are reviewing your request.');
+          if (reply) {
+            const nextReplies = [...(target?.replies || []), { body: reply, createdAt: new Date().toISOString() }];
+            await updateSupportTicket(token, schoolId, id, { replies: nextReplies });
+          }
+        } else {
+          const tickets = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, []);
+          const target = tickets.find((item) => item.id === id);
+          const reply = prompt(`Reply to ${target?.title || 'ticket'}`, 'Thank you. We are reviewing your request.');
+          if (reply) {
+            target.replies = [...(target.replies || []), { body: reply, createdAt: new Date().toISOString() }];
+            writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, tickets);
+          }
+        }
+      }
+      refreshSupport();
+    }
+  });
+
+  const profileSaveButton = document.querySelector('[data-workspace-profile-save]');
+  if (profileSaveButton) {
+    profileSaveButton.addEventListener('click', () => {
+      const profile = getWorkspaceProfile();
+      profile.fullName = document.getElementById('workspace-profile-fullname')?.value || profile.fullName;
+      profile.email = document.getElementById('workspace-profile-email')?.value || profile.email;
+      profile.phone = document.getElementById('workspace-profile-phone')?.value || profile.phone;
+      profile.password = document.getElementById('workspace-profile-password')?.value || profile.password;
+      writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
+      localStorage.setItem('globyedu_userFullName', profile.fullName);
+      localStorage.setItem('globyedu_userEmail', profile.email);
+      recordWorkspaceActivity('Profile updated', profile.fullName, 'profile');
+      alert('Profile updated successfully.');
+    });
+  }
+
+  const profileUploadButton = document.querySelector('[data-workspace-profile-upload]');
+  if (profileUploadButton) {
+    profileUploadButton.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const profile = getWorkspaceProfile();
+          profile.avatar = String(reader.result || '');
+          writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
+          recordWorkspaceActivity('Profile photo updated', 'A profile photo was uploaded.', 'profile');
+          alert('Profile photo updated.');
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    });
+  }
+
+  const studentProfileUploadButton = document.querySelector('[data-student-profile-photo-upload]');
+  const studentProfilePhotoInput = document.querySelector('[data-student-profile-photo-input]');
+  if (studentProfileUploadButton && studentProfilePhotoInput) {
+    studentProfileUploadButton.addEventListener('click', () => studentProfilePhotoInput.click());
+    studentProfilePhotoInput.addEventListener('change', () => {
+      const file = studentProfilePhotoInput.files?.[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || '');
+        if (!dataUrl) return;
+        localStorage.setItem('globyedu_profilePhoto', dataUrl);
+        recordWorkspaceActivity('Profile photo updated', 'A student profile photo was uploaded.', 'profile');
+        location.reload();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const profileTwoFactorButton = document.querySelector('[data-workspace-profile-2fa]');
+  if (profileTwoFactorButton) {
+    profileTwoFactorButton.addEventListener('click', () => {
+      const profile = getWorkspaceProfile();
+      profile.twoFactorEnabled = !profile.twoFactorEnabled;
+      writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
+      recordWorkspaceActivity('2FA toggled', profile.twoFactorEnabled ? 'Two-factor authentication was enabled.' : 'Two-factor authentication was disabled.', 'security');
+      alert(profile.twoFactorEnabled ? 'Two-factor authentication enabled.' : 'Two-factor authentication disabled.');
+    });
+  }
+
+  const settingsSaveButton = document.querySelector('[data-workspace-settings-save]');
+  if (settingsSaveButton) {
+    settingsSaveButton.addEventListener('click', () => {
+      const settings = getWorkspaceSettings();
+      settings.theme = document.getElementById('workspace-settings-theme')?.value || settings.theme;
+      settings.language = document.getElementById('workspace-settings-language')?.value || settings.language;
+      settings.timezone = document.getElementById('workspace-settings-timezone')?.value || settings.timezone;
+      settings.securityMode = document.getElementById('workspace-settings-security')?.value || settings.securityMode;
+      writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.settings, settings);
+      applyWorkspaceTheme();
+      recordWorkspaceActivity('Settings updated', 'Workspace settings were saved.', 'settings');
+      alert('Settings saved.');
+    });
+  }
+
+  const settingsResetButton = document.querySelector('[data-workspace-settings-reset]');
+  if (settingsResetButton) {
+    settingsResetButton.addEventListener('click', () => {
+      writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.settings, {
+        theme: 'midnight',
+        notificationsEnabled: true,
+        emailAlerts: true,
+        smsAlerts: false,
+        language: 'English',
+        timezone: 'UTC',
+        securityMode: 'standard',
+      });
+      applyWorkspaceTheme();
+      recordWorkspaceActivity('Settings reset', 'Workspace settings were reset to defaults.', 'settings');
+      alert('Settings reset.');
+      location.reload();
+    });
+  }
+
+  const supportCreateButton = document.querySelector('[data-workspace-support-create]');
+  if (supportCreateButton) {
+    supportCreateButton.addEventListener('click', async () => {
+      const title = prompt('Support ticket title', 'Access request');
+      const message = prompt('Describe the issue', 'I need help with the workspace.');
+      if (!title || !message) return;
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (schoolId && token) {
+        const result = await createSupportTicket(token, schoolId, { title, message, status: 'open', replies: [], priority: 'normal', category: 'workspace' });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create support ticket.');
+          return;
+        }
+      } else {
+        const tickets = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, []);
+        tickets.unshift({ id: `ticket-${Date.now()}`, title, message, status: 'open', replies: [], createdAt: new Date().toISOString() });
+        writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.supportTickets, tickets);
+      }
+      recordWorkspaceActivity('Support ticket created', title, 'support');
+      refreshSupport();
+      alert('Support ticket created successfully.');
+    });
+  }
+
+  refreshNotifications();
+  refreshMessages('inbox');
+  refreshSupport('open');
+}
+
+function attachSchoolHandlers() {
+  attachWorkspaceModuleHandlers();
+
+  // Attach sidebar navigation handlers
+  attachSidebarHandlers(
+    (section) => renderSchoolDashboardPage(section), // onNavigate
+    () => {
+      // onLogout
+      clearAuthenticationState();
+      location.hash = '#/login';
+    },
+    () => {
+      // onHelp
+      alert('For help, please contact the GlobyEdu support team at hello@globyedu.com or visit help.globyedu.com');
+    }
+  );
+
+  const logoutButton = document.getElementById('school-dashboard-logout');
+  if (logoutButton) {
+    logoutButton.addEventListener('click', () => {
+      clearAuthenticationState();
+      location.hash = '#/login';
+    });
+  }
+
+  const searchInput = document.getElementById('school-head-search');
+  if (searchInput) {
+    let debounceTimer;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        const term = searchInput.value.trim();
+        if (!term) {
+          document.getElementById('school-head-search-results').innerHTML = '';
+          return;
+        }
+        const schoolId = localStorage.getItem('globyedu_schoolId');
+        const token = getAccessToken();
+        if (!schoolId || !token) return;
+        const results = await searchSchoolData(token, schoolId, term);
+        const slot = document.getElementById('school-head-search-results');
+        if (!slot) return;
+        if (!results.ok || results.data?.status !== 'ok') {
+          slot.innerHTML = `<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Unable to search school data.</div>`;
+          return;
+        }
+        const items = Array.isArray(results.data.results) ? results.data.results : [];
+        if (items.length === 0) {
+          slot.innerHTML = `<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No matching records found.</div>`;
+          return;
+        }
+        slot.innerHTML = items
+          .map((group) => {
+            const groupItems = Array.isArray(group.items) ? group.items.slice(0, 3) : [];
+            return `
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <p class="text-sm font-semibold text-slate-900">${group.scope}</p>
+                <div class="mt-3 space-y-2">
+                  ${groupItems
+                    .map((item) => `<div class="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">${escapeHtml(item.name || item.title || item.fullName || item.email || item.code || item.id || 'Record')}</div>`)
+                    .join('')}
+                </div>
+              </div>
+            `;
+          })
+          .join('');
+      }, 300);
+    });
+  }
+
+  const examSearchInput = document.getElementById('school-exam-search');
+  if (examSearchInput) {
+    let debounceTimer;
+    examSearchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const term = examSearchInput.value.trim().toLowerCase();
+        const slot = document.getElementById('school-exam-search-results');
+        if (!slot) return;
+        if (!term) {
+          slot.innerHTML = '';
+          return;
+        }
+        const examEntries = JSON.parse(localStorage.getItem('globyedu_workspace_exams') || '[]');
+        const filtered = (Array.isArray(examEntries) ? examEntries : []).filter((entry) => {
+          const text = [entry.title, entry.examType, entry.subject, entry.className, entry.section, entry.teacher, entry.academicYear, entry.term, entry.date, entry.status]
+            .filter(Boolean).join(' ').toLowerCase();
+          return text.includes(term);
+        });
+
+        slot.innerHTML = filtered.length
+          ? filtered.map((entry) => `
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="font-semibold text-slate-900">${escapeHtml(entry.title || 'Assessment')}</p>
+                    <p class="mt-1 text-sm text-slate-600">${escapeHtml(entry.subject || 'Subject')} • ${escapeHtml(entry.className || 'Class')} • ${escapeHtml(entry.teacher || 'Teacher')}</p>
+                  </div>
+                  <span class="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">${escapeHtml(entry.status || 'Scheduled')}</span>
+                </div>
+              </div>
+            `).join('')
+          : '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No exam matches found.</div>';
+      }, 200);
+    });
+  }
+
+  const financeSearchInput = document.getElementById('school-finance-search');
+  if (financeSearchInput) {
+    let debounceTimer;
+    financeSearchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const term = financeSearchInput.value.trim().toLowerCase();
+        const slot = document.getElementById('school-finance-search-results');
+        if (!slot) return;
+        if (!term) {
+          slot.innerHTML = '';
+          return;
+        }
+        const financeItems = [
+          { title: 'Ada Boateng', detail: 'Invoice INV-001 • School Fees • Paid' },
+          { title: 'INV-001', detail: 'Invoice reference for Ada Boateng' },
+          { title: 'RCPT-1001', detail: 'Receipt for recent payment' },
+          { title: 'PMT-001', detail: 'Bank payment reference' },
+        ].filter((item) => item.title.toLowerCase().includes(term) || item.detail.toLowerCase().includes(term));
+
+        slot.innerHTML = financeItems.length
+          ? financeItems.map((item) => `
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <p class="font-semibold text-slate-900">${escapeHtml(item.title)}</p>
+                <p class="mt-1 text-sm text-slate-600">${escapeHtml(item.detail)}</p>
+              </div>
+            `).join('')
+          : '<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No finance matches found.</div>';
+      }, 200);
+    });
+  }
+
+  document.querySelectorAll('[data-quick-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.getAttribute('data-quick-action');
+      if (!action) return;
+      handleQuickAction(action);
+    });
+  });
+
+  const loadSummaryButton = document.getElementById('school-dashboard-load-summary');
+  if (loadSummaryButton) {
+    loadSummaryButton.addEventListener('click', loadSchoolSummary);
+  }
+
+  const schoolId = localStorage.getItem('globyedu_schoolId');
+  const token = getAccessToken();
+
+  document.querySelectorAll('[data-school-section-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.getAttribute('data-school-section-action');
+      const entity = button.getAttribute('data-school-section-entity');
+      if (!action) return;
+
+      if (action === 'create-academic-record') {
+        let academicFields = [
+          { name: 'name', label: 'Name', placeholder: 'e.g. Mathematics', required: true },
+          { name: 'code', label: 'Code', placeholder: 'e.g. MATH' },
+          { name: 'description', label: 'Description', placeholder: 'Optional description', type: 'textarea' },
+        ];
+        if (entity === 'classes') {
+          academicFields = [
+            { name: 'name', label: 'Class name', placeholder: 'e.g. JHS 1A', required: true },
+            { name: 'grade', label: 'Grade / level', placeholder: 'Optional, e.g. JHS 1' },
+            { name: 'section', label: 'Section / stream', placeholder: 'Optional, e.g. A' },
+          ];
+        } else if (['academic-years', 'terms', 'semesters'].includes(entity)) {
+          academicFields = [
+            { name: 'label', label: 'Label', placeholder: entity === 'academic-years' ? '2026/2027' : entity === 'terms' ? 'Term 1' : 'Semester 1', required: true },
+            { name: 'startDate', label: 'Start date', type: 'date', required: true },
+            { name: 'endDate', label: 'End date', type: 'date', required: true },
+          ];
+          if (['terms', 'semesters'].includes(entity)) {
+            const yearsResult = await fetchSchoolEntities(token, schoolId, 'academic-years', { pageSize: 100 });
+            const yearOptions = yearsResult.ok && yearsResult.data?.status === 'ok'
+              ? (yearsResult.data.items || []).map((year) => ({ label: year.label, value: year.id }))
+              : [];
+            academicFields.push({ name: 'academicYearId', label: 'Academic year', type: 'select', options: yearOptions, required: true });
+          }
+        }
+        const formData = await showAdminForm(`Create ${entity || 'academic record'}`, academicFields);
+        if (!formData) return;
+        const result = await createSchoolEntity(token, schoolId, entity || 'departments', buildSchoolEntityPayload(entity || 'departments', formData));
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create academic record.');
+          return;
+        }
+        alert('Academic record created successfully.');
+        renderSchoolDashboardPage(entity === 'classes' ? 'classes' : 'academic', ++routeGeneration);
+        return;
+      }
+
+      if (action === 'edit-class' || action === 'assign-class-teacher') {
+        const classId = button.getAttribute('data-class-id');
+        if (!classId) return;
+        const detailsResult = await fetchSchoolDetails(token, schoolId);
+        const school = detailsResult.ok && detailsResult.data?.status === 'ok' ? detailsResult.data.school || {} : {};
+        const classes = Array.isArray(school.classes) ? school.classes : [];
+        const classRecord = classes.find((entry) => String(entry.classId || entry.id) === String(classId));
+        if (!classRecord) {
+          alert('Class not found. Refresh the page and try again.');
+          return;
+        }
+        if (action === 'edit-class') {
+          const formData = await showAdminForm('Edit class', [
+            { name: 'name', label: 'Class name', value: classRecord.name || '', required: true },
+            { name: 'grade', label: 'Grade / level', value: classRecord.grade || '' },
+            { name: 'section', label: 'Section / stream', value: classRecord.section || '' },
+          ]);
+          if (!formData) return;
+          const result = await updateSchoolEntity(token, schoolId, 'classes', classId, { name: formData.name, grade: formData.grade || null, section: formData.section || null });
+          if (!result.ok || result.data?.status !== 'ok') {
+            alert(result.data?.message || 'Unable to update class.');
+            return;
+          }
+          alert('Class updated successfully.');
+          renderSchoolDashboardPage('classes', ++routeGeneration);
+          return;
+        }
+        const teacherOptions = (Array.isArray(school.teachers) ? school.teachers : [])
+          .filter((teacher) => String(teacher.status || 'active').toLowerCase() !== 'archived')
+          .map((teacher) => ({ label: `${teacher.fullName || teacher.name || teacher.email} (${teacher.teacherId || teacher.username || teacher.email})`, value: teacher.teacherId || teacher.username || teacher.email }));
+        const formData = await showAdminForm('Assign class teacher', [
+          { name: 'teacherId', label: 'Teacher', type: 'select', options: [{ label: 'Unassigned', value: '' }, ...teacherOptions], value: classRecord.teacherId || classRecord.teacher || '' },
+        ]);
+        if (!formData) return;
+        const result = await updateSchoolEntity(token, schoolId, 'classes', classId, { teacherId: formData.teacherId || null, teacher: formData.teacherId || null });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to assign class teacher.');
+          return;
+        }
+        alert('Class teacher assignment saved.');
+        renderSchoolDashboardPage('classes', ++routeGeneration);
+        return;
+      }
+
+      if (action === 'create-student') {
+        const schoolDetailsResult = await fetchSchoolDetails(token, schoolId);
+        const classOptions = schoolDetailsResult.ok && schoolDetailsResult.data?.status === 'ok'
+          ? (schoolDetailsResult.data.school?.classes || [])
+            .filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived')
+            .map((entry) => ({ label: entry.name || entry.classId, value: entry.classId || entry.id || entry.name || '' }))
+            .filter((entry) => entry.value)
+          : [];
+        const formData = await showAdminForm('Create student', [
+          { name: 'fullName', label: 'Full name', placeholder: 'First and last name', required: true },
+          { name: 'email', label: 'Email', type: 'email', placeholder: 'student@example.com', required: true },
+          { name: 'profilePhoto', label: 'Profile photo or camera capture', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'gender', label: 'Gender', type: 'select', options: [
+            { label: 'Male', value: 'male' },
+            { label: 'Female', value: 'female' },
+            { label: 'Other', value: 'other' },
+          ] },
+          { name: 'dateOfBirth', label: 'Date of birth', type: 'date' },
+          { name: 'phone', label: 'Phone number' },
+          { name: 'nationalId', label: 'National ID' },
+          { name: 'classId', label: 'Class / Section', type: 'select', options: classOptions, required: true },
+          { name: 'gradeLevel', label: 'Grade / Year', placeholder: 'e.g. 1, 2, 3' },
+          { name: 'house', label: 'House / Boarding' },
+          { name: 'guardian', label: 'Guardian name' },
+          { name: 'parentPhone', label: 'Guardian phone' },
+          { name: 'parentEmail', label: 'Guardian email', type: 'email' },
+          { name: 'medical', label: 'Medical notes', type: 'textarea', placeholder: 'e.g. Allergies, conditions, etc.' },
+          { name: 'documents', label: 'Documents', placeholder: 'Comma-separated URLs or file names' },
+        ]);
+        if (!formData) return;
+        
+        const studentData = {
+          ...formData,
+          className: classOptions.find((option) => option.value === formData.classId)?.label || null,
+          status: 'active',
+        };
+        const result = await createSchoolEntity(token, schoolId, 'students', buildSchoolEntityPayload('students', studentData));
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create student.');
+          return;
+        }
+        const createdStudent = result.data?.entity || {};
+        alert(`Student created successfully.\nAdmission Number: ${createdStudent.admissionNumber || 'Generated by the school data layer'}\nTemporary password: ${createdStudent.temporaryPassword || 'Use the password reset flow to set credentials.'}`);
+        renderSchoolDashboardPage('students', ++routeGeneration);
+        return;
+      }
+
+      if (action === 'create-teacher') {
+        const schoolDetailsResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolDetailsResult.ok && schoolDetailsResult.data?.status === 'ok' ? schoolDetailsResult.data.school : {};
+        const teacherClassOptions = Array.isArray(school.classes)
+          ? school.classes
+            .filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived')
+            .map((entry) => ({ label: entry.name || entry.classId || 'Class', value: entry.classId || entry.id || entry.name || '' }))
+            .filter((entry) => entry.value)
+          : [];
+        const teacherSubjectOptions = [
+          { label: 'RME', value: 'RME' },
+          { label: 'Mathematics', value: 'Mathematics' },
+          { label: 'Science', value: 'Science' },
+          { label: 'English Language', value: 'English Language' },
+          { label: 'English', value: 'English' },
+          { label: 'Creative Arts', value: 'Creative Arts' },
+          { label: 'Computing / ICT', value: 'Computing / ICT' },
+          { label: 'Social Studies', value: 'Social Studies' },
+          { label: 'Career Technology', value: 'Career Technology' },
+          { label: 'Religious and Moral Education', value: 'Religious and Moral Education' },
+          { label: 'French', value: 'French' },
+          { label: 'History', value: 'History' },
+          { label: 'Geography', value: 'Geography' },
+          { label: 'Agriculture', value: 'Agriculture' },
+          { label: 'Physical Education', value: 'Physical Education' },
+          { label: 'Music', value: 'Music' },
+          { label: 'Basic Design and Technology', value: 'Basic Design and Technology' },
+          { label: 'Home Economics', value: 'Home Economics' },
+          { label: 'Art', value: 'Art' },
+          { label: 'Biology', value: 'Biology' },
+          { label: 'Chemistry', value: 'Chemistry' },
+          { label: 'Physics', value: 'Physics' },
+          { label: 'Economics', value: 'Economics' },
+          { label: 'Government', value: 'Government' },
+          { label: 'Business Management', value: 'Business Management' },
+          { label: 'Literature in English', value: 'Literature in English' },
+          { label: 'Civic Education', value: 'Civic Education' },
+          { label: 'Information Communication Technology', value: 'Information Communication Technology' },
+        ];
+        const teacherPositionOptions = [
+          { label: 'Teacher', value: 'Teacher' },
+          { label: 'Senior Teacher', value: 'Senior Teacher' },
+          { label: 'Head of Department', value: 'Head of Department' },
+          { label: 'Assistant Headteacher', value: 'Assistant Headteacher' },
+          { label: 'Headteacher', value: 'Headteacher' },
+          { label: 'Principal', value: 'Principal' },
+          { label: 'Vice Principal', value: 'Vice Principal' },
+          { label: 'Class Teacher', value: 'Class Teacher' },
+          { label: 'Subject Teacher', value: 'Subject Teacher' },
+          { label: 'School Administrator', value: 'School Administrator' },
+        ];
+
+        const formData = await showAdminForm('Create teacher', [
+          { name: 'fullName', label: 'Full name', placeholder: 'First and last name', required: true },
+          { name: 'email', label: 'Email', type: 'email', placeholder: 'teacher@example.com', required: true },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'gender', label: 'Gender', type: 'select', options: [
+            { label: 'Male', value: 'male' },
+            { label: 'Female', value: 'female' },
+            { label: 'Other', value: 'other' },
+          ] },
+          { name: 'dateOfBirth', label: 'Date of birth (optional)', type: 'date' },
+          { name: 'phone', label: 'Phone number', placeholder: '+1234567890' },
+          { name: 'department', label: 'Department', placeholder: 'e.g. Sciences, Languages' },
+          { name: 'position', label: 'Position', type: 'select', options: teacherPositionOptions, required: true },
+          { name: 'qualification', label: 'Qualification', placeholder: 'e.g. B.Ed, M.Ed, Diploma' },
+          { name: 'yearsOfExperience', label: 'Years of experience', placeholder: 'e.g. 5' },
+          { name: 'assignedClasses', label: 'Assigned class', type: 'select', options: teacherClassOptions, required: true },
+          { name: 'assignedSubjects', label: 'Assigned subjects', type: 'select', multiple: true, options: teacherSubjectOptions, placeholder: 'Select subjects' },
+          { name: 'classTeacher', label: 'Is class teacher?', type: 'select', options: [
+            { label: 'No', value: 'false' },
+            { label: 'Yes', value: 'true' },
+          ] },
+          { name: 'employmentType', label: 'Employment type', type: 'select', options: [
+            { label: 'Permanent', value: 'permanent' },
+            { label: 'Contract', value: 'contract' },
+            { label: 'Part-time', value: 'part-time' },
+          ] },
+        ]);
+        if (!formData) return;
+
+        const normalizedAssignedClasses = formData.assignedClasses ? [formData.assignedClasses] : [];
+        const normalizedAssignedSubjects = Array.isArray(formData.assignedSubjects) ? formData.assignedSubjects : formData.assignedSubjects ? [formData.assignedSubjects] : [];
+
+        const teacherData = {
+          ...formData,
+          assignedClasses: normalizedAssignedClasses,
+          assignedSubjects: normalizedAssignedSubjects,
+          classTeacher: formData.classTeacher === 'true',
+          status: 'active',
+        };
+        delete teacherData.houseMaster;
+        delete teacherData.nationalId;
+        const result = await createSchoolEntity(token, schoolId, 'teachers', buildSchoolEntityPayload('teachers', teacherData));
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create teacher.');
+          return;
+        }
+        const createdTeacher = result.data?.entity || {};
+        alert(`Teacher created successfully.\nTemporary password: ${createdTeacher.temporaryPassword || 'Use the password reset flow to set credentials.'}`);
+        renderSchoolDashboardPage('teachers');
+        return;
+      }
+
+      if (action === 'record-attendance') {
+        const formData = await showAdminForm('Record attendance', [
+          { name: 'date', label: 'Date', type: 'date', required: true },
+          { name: 'studentName', label: 'Student / staff name', required: true },
+          { name: 'studentId', label: 'Student or staff reference (optional)' },
+          { name: 'className', label: 'Class / stream' },
+          { name: 'teacher', label: 'Teacher / recorder' },
+          { name: 'subject', label: 'Subject / activity' },
+          { name: 'status', label: 'Status', placeholder: 'Present / Absent / Late / Excused', required: true },
+          { name: 'note', label: 'Note', type: 'textarea' },
+        ]);
+        if (!formData) return;
+        const result = await appendSchoolCollectionData(token, schoolId, 'attendanceRecords', buildSchoolCollectionPayload('attendanceRecords', formData), 'Attendance captured', 'Attendance was recorded from the school dashboard.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to record attendance.');
+          return;
+        }
+        alert('Attendance recorded successfully.');
+        renderSchoolDashboardPage('attendance');
+        return;
+      }
+
+      if (action === 'record-payment') {
+        const formData = await showAdminForm('Record payment', [
+          { name: 'amount', label: 'Amount', required: true },
+          { name: 'student', label: 'Student' },
+          { name: 'method', label: 'Method' },
+          { name: 'note', label: 'Note', type: 'textarea' },
+        ]);
+        if (!formData) return;
+        const result = await appendSchoolCollectionData(token, schoolId, 'payments', buildSchoolCollectionPayload('payments', formData), 'Payment recorded', 'A payment entry was added to the school records.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to record payment.');
+          return;
+        }
+        alert('Payment recorded successfully.');
+        renderSchoolDashboardPage('finance');
+        return;
+      }
+
+      if (action === 'create-exam') {
+        const formData = await showAdminForm('Create exam', [
+          { name: 'title', label: 'Exam title', required: true },
+          { name: 'examType', label: 'Exam type', placeholder: 'Class Test / Quiz / Mid-Term / Mock / Custom' },
+          { name: 'subject', label: 'Subject' },
+          { name: 'className', label: 'Class / stream' },
+          { name: 'section', label: 'Section' },
+          { name: 'teacher', label: 'Teacher' },
+          { name: 'academicYear', label: 'Academic year' },
+          { name: 'term', label: 'Term' },
+          { name: 'date', label: 'Date', type: 'date' },
+          { name: 'maxMarks', label: 'Maximum marks' },
+          { name: 'passingMarks', label: 'Passing marks' },
+          { name: 'remarks', label: 'Remarks' },
+          { name: 'status', label: 'Status', placeholder: 'Scheduled / Draft / Published' },
+        ]);
+        if (!formData) return;
+        const maxMarks = Number(formData.maxMarks || 100);
+        const passingMarks = Number(formData.passingMarks || 40);
+        if (!Number.isFinite(maxMarks) || maxMarks <= 0 || !Number.isFinite(passingMarks) || passingMarks < 0 || passingMarks > maxMarks) {
+          alert('Maximum marks must be positive and passing marks must be between zero and the maximum.');
+          return;
+        }
+        const examEntry = createExamRecord(formData);
+        const result = await appendSchoolCollectionData(token, schoolId, 'examRecords', examEntry, 'Exam created', 'An examination entry was added to the school workspace.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create exam.');
+          return;
+        }
+        const activityDetail = `${examEntry.title || 'Exam'} has been scheduled for ${examEntry.date || 'the upcoming term'}.`;
+        const existingActivities = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.activities, []);
+        writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.activities, [{ title: 'Exam scheduled', detail: activityDetail, createdAt: new Date().toISOString() }, ...existingActivities].slice(0, 12));
+        alert('Exam created successfully.');
+        renderSchoolDashboardPage('exams');
+        return;
+      }
+
+      if (action === 'enter-grades') {
+        const formData = await showAdminForm('Enter marks', [
+          { name: 'student', label: 'Student', required: true },
+          { name: 'subject', label: 'Subject', required: true },
+          { name: 'exam', label: 'Exam / assessment', required: true },
+          { name: 'mark', label: 'Mark', required: true },
+          { name: 'maxMarks', label: 'Maximum marks' },
+          { name: 'passingMarks', label: 'Passing marks' },
+          { name: 'term', label: 'Term' },
+          { name: 'academicYear', label: 'Academic year' },
+          { name: 'remark', label: 'Remark' },
+        ]);
+        if (!formData) return;
+        const numericMark = Number(formData.mark || 0);
+        const numericMax = Number(formData.maxMarks || 100);
+        const numericPass = Number(formData.passingMarks || 40);
+        if (!Number.isFinite(numericMark) || !Number.isFinite(numericMax) || numericMax <= 0 || numericMark < 0 || numericMark > numericMax || !Number.isFinite(numericPass) || numericPass < 0 || numericPass > numericMax) {
+          alert('Enter a mark between zero and the maximum, with a valid passing mark.');
+          return;
+        }
+        const average = numericMax ? Math.round((numericMark / numericMax) * 100) : 0;
+        const passed = numericMark >= numericPass;
+        const grade = average >= 80 ? 'A' : average >= 70 ? 'B' : average >= 60 ? 'C' : average >= 50 ? 'D' : average >= 40 ? 'E' : 'F';
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const existingResults = Array.isArray(school.examResults) ? school.examResults : [];
+        const resultEntry = {
+          student: formData.student || '',
+          subject: formData.subject || '',
+          exam: formData.exam || '',
+          mark: numericMark,
+          maxMarks: numericMax,
+          passingMarks: numericPass,
+          average,
+          grade,
+          passed,
+          remark: formData.remark || (passed ? 'Competent performance' : 'Needs support'),
+          term: formData.term || 'Term 1',
+          academicYear: formData.academicYear || '2025/2026',
+          updatedAt: new Date().toISOString(),
+        };
+        const resultKey = (entry) => `${String(entry.student).trim().toLowerCase()}|${String(entry.subject).trim().toLowerCase()}|${String(entry.exam).trim().toLowerCase()}|${String(entry.term || '').trim().toLowerCase()}|${String(entry.academicYear || '').trim().toLowerCase()}`;
+        const existingIndex = existingResults.findIndex((entry) => resultKey(entry) === resultKey(resultEntry));
+        const nextResults = [...existingResults];
+        if (existingIndex >= 0) nextResults[existingIndex] = { ...nextResults[existingIndex], ...resultEntry };
+        else nextResults.push({ ...resultEntry, id: `result-${Date.now()}`, createdAt: new Date().toISOString() });
+        const result = await updateSchoolDetails(token, schoolId, { examResults: nextResults });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to save marks.');
+          return;
+        }
+        alert(`Marks saved for ${formData.student || 'the selected student'}.`);
+        renderSchoolDashboardPage('exams');
+        return;
+      }
+
+      if (action === 'generate-report-card') {
+        const formData = await showAdminForm('Generate report card', [
+          { name: 'student', label: 'Student', required: true },
+          { name: 'term', label: 'Term' },
+          { name: 'academicYear', label: 'Academic year' },
+          { name: 'grade', label: 'Grade' },
+          { name: 'remarks', label: 'Remarks' },
+        ]);
+        if (!formData) return;
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const matchingResults = (Array.isArray(school.examResults) ? school.examResults : []).filter((entry) => String(entry.student || '').toLowerCase() === String(formData.student || '').toLowerCase());
+        const average = matchingResults.length ? Math.round(matchingResults.reduce((sum, entry) => sum + Number(entry.average || 0), 0) / matchingResults.length) : 0;
+        const reportCard = generateReportCard({ ...formData, grade: average >= 80 ? 'A' : average >= 70 ? 'B' : average >= 60 ? 'C' : average >= 50 ? 'D' : average >= 40 ? 'E' : 'F', results: matchingResults, average });
+        const result = await appendSchoolCollectionData(token, schoolId, 'reportCards', reportCard, 'Report card generated', 'A report card was generated from the examination workspace.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to generate report card.');
+          return;
+        }
+        alert(`Report card generated for ${formData.student || 'the selected student'}.`);
+        renderSchoolDashboardPage('exams');
+        return;
+      }
+
+      if (action === 'generate-transcript') {
+        const formData = await showAdminForm('Generate transcript', [
+          { name: 'student', label: 'Student', required: true },
+          { name: 'academicYear', label: 'Academic year' },
+          { name: 'term', label: 'Term' },
+        ]);
+        if (!formData) return;
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const transcriptResults = (Array.isArray(school.examResults) ? school.examResults : []).filter((entry) => {
+          const matchesStudent = String(entry.student || '').trim().toLowerCase() === String(formData.student || '').trim().toLowerCase();
+          const matchesYear = !formData.academicYear || String(entry.academicYear || '') === String(formData.academicYear);
+          const matchesTerm = !formData.term || String(entry.term || '') === String(formData.term);
+          return matchesStudent && matchesYear && matchesTerm;
+        });
+        if (!transcriptResults.length) {
+          alert('No saved academic results were found for this student and period.');
+          return;
+        }
+        const average = Math.round(transcriptResults.reduce((sum, entry) => sum + Number(entry.average || 0), 0) / transcriptResults.length);
+        const transcript = generateReportCard({ ...formData, status: 'Transcript ready', results: transcriptResults, average, grade: average >= 80 ? 'A' : average >= 70 ? 'B' : average >= 60 ? 'C' : average >= 50 ? 'D' : average >= 40 ? 'E' : 'F' });
+        const result = await appendSchoolCollectionData(token, schoolId, 'reportCards', transcript, 'Transcript generated', 'A transcript was generated from the examination workspace.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to generate transcript.');
+          return;
+        }
+        alert(`Transcript prepared for ${formData.student || 'the selected student'}.`);
+        renderSchoolDashboardPage('exams');
+        return;
+      }
+
+      if (action === 'export-results') {
+        window.print();
+        return;
+      }
+
+      if (action === 'post-announcement') {
+        const formData = await showAdminForm('Create announcement', [
+          { name: 'title', label: 'Title', required: true },
+          { name: 'detail', label: 'Message', type: 'textarea', required: true },
+          { name: 'audience', label: 'Audience', type: 'select', options: [{ value: 'students', label: 'Students' }, { value: 'teachers', label: 'Teachers' }, { value: 'parents', label: 'Parents' }, { value: 'all', label: 'Everyone' }] },
+        ]);
+        if (!formData) return;
+        const result = await appendSchoolCollectionData(token, schoolId, 'announcements', buildSchoolCollectionPayload('announcements', formData), 'Announcement created', 'A new school announcement was posted.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create announcement.');
+          return;
+        }
+        alert('Announcement created successfully.');
+        renderSchoolDashboardPage('communications');
+        return;
+      }
+
+      if (action === 'send-message') {
+        const formData = await showAdminForm('Send message', [
+          { name: 'recipient', label: 'Audience', type: 'select', options: [{ value: 'students', label: 'Students' }, { value: 'teachers', label: 'Teachers' }, { value: 'parents', label: 'Parents' }, { value: 'all', label: 'Everyone' }], required: true },
+          { name: 'subject', label: 'Subject', required: true },
+          { name: 'body', label: 'Message', type: 'textarea', required: true },
+        ]);
+        if (!formData) return;
+        const result = await appendSchoolCollectionData(token, schoolId, 'messages', buildSchoolCollectionPayload('messages', formData), 'Message drafted', 'A school communication was queued from the dashboard.');
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to send message.');
+          return;
+        }
+        alert('Message queued successfully.');
+        renderSchoolDashboardPage('communications');
+        return;
+      }
+
+      if (action === 'create-report') {
+        const formData = await showAdminForm('Create report', [
+          { name: 'title', label: 'Report title', placeholder: 'e.g. Monthly Attendance Analysis', required: true },
+          { name: 'type', label: 'Report type', type: 'select', options: [
+            { label: 'Academic', value: 'academic' },
+            { label: 'Finance', value: 'finance' },
+            { label: 'Attendance', value: 'attendance' },
+            { label: 'Discipline', value: 'discipline' },
+            { label: 'Infrastructure', value: 'infrastructure' },
+            { label: 'General', value: 'general' },
+          ], required: true },
+          { name: 'summary', label: 'Summary', type: 'textarea', placeholder: 'Brief overview of the report content', required: true },
+        ]);
+        if (!formData) return;
+        const reportData = buildSchoolCollectionPayload('reports', { ...formData, status: 'draft', submittedAt: null });
+        const result = await appendSchoolCollectionData(token, schoolId, 'reports', reportData, 'Report created', `A ${formData.type} report titled "${formData.title}" was created.`);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create report.');
+          return;
+        }
+        alert('Report created successfully. You can submit it to the Super Admin when ready.');
+        renderSchoolDashboardPage('reports');
+        return;
+      }
+
+      if (action === 'generate-ai-summary') {
+        const summaryText = `Attendance coverage is healthy. ${Math.max(0, 80 + Math.round(Math.random() * 10))}% of learners were present today. Outstanding balances remain under review.`;
+        const activityDetail = summaryText;
+        const result = await appendSchoolCollectionData(token, schoolId, 'reports', { title: 'AI summary', summary: summaryText }, 'AI summary generated', activityDetail);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to generate AI summary.');
+          return;
+        }
+        alert('AI summary generated successfully.');
+        renderSchoolDashboardPage('ai');
+        return;
+      }
+
+      alert(`${action.replace(/-/g, ' ')} is now available in the dashboard workflow.`);
+    });
+  });
+
+  document.querySelectorAll('[data-school-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.getAttribute('data-school-action');
+      if (action === 'delete-logo') {
+        const schoolId = localStorage.getItem('globyedu_schoolId');
+        const token = getAccessToken();
+        if (!schoolId || !token) return;
+        const result = await updateSchoolDetails(token, schoolId, { logo: null });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to remove logo.');
+          return;
+        }
+        alert('Logo removed successfully.');
+        renderSchoolDashboardPage('profile');
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-school-report-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.getAttribute('data-school-report-action');
+      const reportId = button.getAttribute('data-report-id');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+
+      if (action === 'submit-report') {
+        if (!confirm('Submit this report to the Super Admin? The report will be marked as "submitted" and cannot be edited until reviewed.')) return;
+        const schoolDetailsResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolDetailsResult.ok && schoolDetailsResult.data?.status === 'ok' ? schoolDetailsResult.data.school : {};
+        const reports = Array.isArray(school.reports) ? school.reports : [];
+        const reportIndex = reports.findIndex((r) => r.title === reportId);
+        if (reportIndex === -1) {
+          alert('Report not found.');
+          return;
+        }
+        reports[reportIndex] = { ...reports[reportIndex], status: 'submitted', submittedAt: new Date().toISOString() };
+        const result = await updateSchoolDetails(token, schoolId, { reports });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to submit report.');
+          return;
+        }
+        alert('Report submitted successfully to the Super Admin for review.');
+        renderSchoolDashboardPage('reports');
+        return;
+      }
+
+      alert(`${action.replace(/-/g, ' ')} is now available in the report workflow.`);
+    });
+  });
+
+  function initializeStudentSearch() {
+    const studentSearchInput = document.getElementById('school-student-search');
+    if (!studentSearchInput) return;
+
+    let debounceTimer;
+    studentSearchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const term = studentSearchInput.value.trim().toLowerCase();
+        document.querySelectorAll('[data-school-student-row]').forEach((row) => {
+          const searchText = row.getAttribute('data-search-text') || '';
+          row.classList.toggle('hidden', term ? !searchText.includes(term) : false);
+        });
+      }, 150);
+    });
+  }
+
+  function initializeAttendanceRoster() {
+    const loadButton = document.querySelector('[data-school-attendance-load]');
+    const roster = document.getElementById('school-attendance-roster');
+    const feedback = document.getElementById('school-attendance-feedback');
+    const dateInput = document.getElementById('school-attendance-date');
+    const classInput = document.getElementById('school-attendance-class');
+    if (!loadButton || !roster || !feedback || !dateInput || !classInput) return;
+
+    loadButton.addEventListener('click', async () => {
+      const date = dateInput.value;
+      const className = classInput.value;
+      if (!date || !className) {
+        feedback.textContent = 'Select a date and class before loading the roster.';
+        return;
+      }
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const result = await fetchSchoolDetails(token, schoolId);
+      const school = result.ok && result.data?.status === 'ok' ? result.data.school || {} : {};
+      const students = Array.isArray(school.students) ? school.students : [];
+      const records = Array.isArray(school.attendanceRecords) ? school.attendanceRecords : [];
+      const rosterEntries = buildAttendanceRoster(students, records, date, className);
+      const statusOptions = ['present', 'absent', 'late', 'excused'];
+      feedback.textContent = rosterEntries.length ? `${rosterEntries.length} student${rosterEntries.length === 1 ? '' : 's'} loaded for ${className} on ${date}.` : 'No active students belong to this class.';
+      roster.innerHTML = rosterEntries.length ? `
+        <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+          <table class="min-w-full text-sm text-slate-700">
+            <thead class="bg-slate-100"><tr><th class="px-4 py-3 text-left">Student</th><th class="px-4 py-3 text-left">Student ID</th><th class="px-4 py-3 text-left">Attendance</th></tr></thead>
+            <tbody class="divide-y divide-slate-200">${rosterEntries.map(({ student, studentId, status }) => {
+              return `<tr><td class="px-4 py-3 font-semibold text-slate-900">${escapeHtml(student.fullName || student.name || 'Student')}</td><td class="px-4 py-3">${escapeHtml(studentId || '—')}</td><td class="px-4 py-3"><select data-attendance-status data-student-id="${escapeHtml(studentId)}" class="rounded-xl border border-slate-200 bg-white px-3 py-2">${statusOptions.map((option) => `<option value="${option}" ${status === option ? 'selected' : ''}>${option.charAt(0).toUpperCase() + option.slice(1)}</option>`).join('')}</select></td></tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+        <button type="button" data-school-attendance-save class="mt-4 rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white">Save attendance</button>
+      ` : '';
+
+      roster.querySelector('[data-school-attendance-save]')?.addEventListener('click', async () => {
+        const selected = [...roster.querySelectorAll('[data-attendance-status]')];
+        const selectedRoster = selected.map((control) => {
+          const student = students.find((entry) => String(entry.studentId || entry.id || entry.email || '') === control.dataset.studentId) || {};
+          return { student, studentId: control.dataset.studentId, status: control.value };
+        });
+        const nextRecords = replaceAttendanceSession(records, selectedRoster, date, className, schoolId);
+        const saveResult = await updateSchoolDetails(token, schoolId, { attendanceRecords: nextRecords });
+        if (!saveResult.ok || saveResult.data?.status !== 'ok') {
+          feedback.textContent = saveResult.data?.message || 'Unable to save attendance.';
+          return;
+        }
+        feedback.textContent = `Attendance saved for ${selected.length} student${selected.length === 1 ? '' : 's'}.`;
+      });
+    });
+  }
+
+  function initializeStudentActions() {
+    document.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-school-student-action]');
+      if (!button) return;
+      const action = button.getAttribute('data-school-student-action');
+      const studentId = button.getAttribute('data-school-student-id');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!action || !studentId || !schoolId || !token) return;
+
+      const studentRecord = currentSchoolStudents.find((student) => student.id === studentId || student.email === studentId || student.studentId === studentId || student.admissionNumber === studentId);
+      if (!studentRecord) {
+        alert('Unable to find the selected student record. Refresh the page and try again.');
+        return;
+      }
+
+      if (action === 'edit') {
+        const formData = await showAdminForm('Edit student', [
+          { name: 'fullName', label: 'Full name', value: studentRecord.fullName || studentRecord.name || '', required: true },
+          { name: 'email', label: 'Email', value: studentRecord.email || '', type: 'email', required: true },
+          { name: 'studentIdDisplay', label: 'Student ID (auto-generated)', value: studentRecord.studentId || studentRecord.admissionNumber || '', type: 'text', disabled: true, placeholder: 'Auto-generated - cannot be changed' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'gender', label: 'Gender', value: studentRecord.gender || '', type: 'select', options: [
+            { label: 'Male', value: 'male' },
+            { label: 'Female', value: 'female' },
+            { label: 'Other', value: 'other' },
+          ] },
+          { name: 'dateOfBirth', label: 'Date of birth', type: 'date', value: studentRecord.dateOfBirth || '' },
+          { name: 'phone', label: 'Phone number', value: studentRecord.phone || '', placeholder: '+1234567890' },
+          { name: 'nationalId', label: 'National ID', value: studentRecord.nationalId || '' },
+          { name: 'className', label: 'Class / Section', value: studentRecord.className || '', placeholder: 'e.g. JHS 1A', required: true },
+          { name: 'gradeLevel', label: 'Grade / Year', value: studentRecord.gradeLevel || studentRecord.grade || '', placeholder: 'e.g. 1' },
+          { name: 'house', label: 'House / Boarding', value: studentRecord.house || '' },
+          { name: 'guardian', label: 'Guardian name', value: studentRecord.guardian || '' },
+          { name: 'parentPhone', label: 'Guardian phone', value: studentRecord.parentPhone || '', placeholder: '+233000000000' },
+          { name: 'parentEmail', label: 'Guardian email', value: studentRecord.parentEmail || '', type: 'email' },
+          { name: 'medical', label: 'Medical notes', type: 'textarea', value: studentRecord.medical || '', placeholder: 'Allergies, conditions, special care' },
+        ]);
+        if (!formData) return;
+        const payload = buildSchoolEntityPayload('students', {
+          fullName: formData.fullName || '',
+          email: formData.email || '',
+          phone: formData.phone || null,
+          gender: formData.gender || null,
+          dateOfBirth: formData.dateOfBirth || null,
+          nationalId: formData.nationalId || null,
+          gradeLevel: formData.gradeLevel || null,
+          className: formData.className || null,
+          section: formData.className || null,
+          house: formData.house || null,
+          studentId: studentRecord.studentId || null,
+          admissionNumber: studentRecord.admissionNumber || null,
+          guardian: formData.guardian || null,
+          parentPhone: formData.parentPhone || null,
+          parentEmail: formData.parentEmail || null,
+          medical: formData.medical || null,
+          status: studentRecord.status || 'active',
+        });
+        const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
+        const result = await updateSchoolEntity(token, schoolId, 'students', studentIdentifier, payload);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to update student record.');
+          return;
+        }
+        alert('Student record updated successfully.');
+        renderSchoolDashboardPage('students');
+        return;
+      }
+
+      if (action === 'archive') {
+        if (!confirm(`Archive student record for ${studentRecord.fullName || studentRecord.studentId || studentRecord.email || 'selected student'}? The record will be hidden but can be restored later.`)) return;
+        const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
+        const result = await updateSchoolEntity(token, schoolId, 'students', studentIdentifier, { status: 'archived' });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to archive student record.');
+          return;
+        }
+        alert('Student record archived successfully.');
+        renderSchoolDashboardPage('students');
+        return;
+      }
+
+      if (action === 'restore') {
+        if (!confirm(`Restore student record for ${studentRecord.fullName || studentRecord.studentId || studentRecord.email || 'selected student'}?`)) return;
+        const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
+        const result = await updateSchoolEntity(token, schoolId, 'students', studentIdentifier, { status: 'active' });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to restore student record.');
+          return;
+        }
+        alert('Student record restored successfully.');
+        renderSchoolDashboardPage('students');
+        return;
+      }
+
+      if (action === 'delete') {
+        if (!confirm(`PERMANENTLY delete student record for ${studentRecord.fullName || studentRecord.studentId || studentRecord.email || 'selected student'}? This action cannot be undone.`)) return;
+        const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
+        const result = await deleteSchoolEntity(token, schoolId, 'students', studentIdentifier);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to delete student record.');
+          return;
+        }
+        alert('Student record permanently deleted.');
+        renderSchoolDashboardPage('students');
+        return;
+      }
+    });
+  }
+
+  function initializeTeacherActions() {
+    document.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-school-teacher-action]');
+      if (!button) return;
+      const action = button.getAttribute('data-school-teacher-action');
+      const teacherId = button.getAttribute('data-school-teacher-id');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!action || !teacherId || !schoolId || !token) return;
+
+      const teacherRecord = currentSchoolTeachers.find((teacher) => teacher.id === teacherId || teacher.email === teacherId || teacher.teacherId === teacherId || teacher.employeeNumber === teacherId);
+      if (!teacherRecord) {
+        alert('Unable to find the selected teacher record. Refresh the page and try again.');
+        return;
+      }
+
+      if (action === 'edit') {
+        const schoolDetailsResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolDetailsResult.ok && schoolDetailsResult.data?.status === 'ok' ? schoolDetailsResult.data.school : {};
+        const classOptions = TEACHER_ASSIGNABLE_CLASS_OPTIONS;
+        const subjectOptions = [
+          { label: 'RME', value: 'RME' },
+          { label: 'Mathematics', value: 'Mathematics' },
+          { label: 'Science', value: 'Science' },
+          { label: 'English Language', value: 'English Language' },
+          { label: 'English', value: 'English' },
+          { label: 'Creative Arts', value: 'Creative Arts' },
+          { label: 'Computing / ICT', value: 'Computing / ICT' },
+          { label: 'Social Studies', value: 'Social Studies' },
+          { label: 'Career Technology', value: 'Career Technology' },
+          { label: 'Religious and Moral Education', value: 'Religious and Moral Education' },
+          { label: 'French', value: 'French' },
+          { label: 'History', value: 'History' },
+          { label: 'Geography', value: 'Geography' },
+          { label: 'Agriculture', value: 'Agriculture' },
+          { label: 'Physical Education', value: 'Physical Education' },
+          { label: 'Music', value: 'Music' },
+          { label: 'Basic Design and Technology', value: 'Basic Design and Technology' },
+          { label: 'Home Economics', value: 'Home Economics' },
+          { label: 'Art', value: 'Art' },
+          { label: 'Biology', value: 'Biology' },
+          { label: 'Chemistry', value: 'Chemistry' },
+          { label: 'Physics', value: 'Physics' },
+          { label: 'Economics', value: 'Economics' },
+          { label: 'Government', value: 'Government' },
+          { label: 'Business Management', value: 'Business Management' },
+          { label: 'Literature in English', value: 'Literature in English' },
+          { label: 'Civic Education', value: 'Civic Education' },
+          { label: 'Information Communication Technology', value: 'Information Communication Technology' },
+        ];
+        const positionOptions = [
+          { label: 'Teacher', value: 'Teacher' },
+          { label: 'Senior Teacher', value: 'Senior Teacher' },
+          { label: 'Head of Department', value: 'Head of Department' },
+          { label: 'Assistant Headteacher', value: 'Assistant Headteacher' },
+          { label: 'Headteacher', value: 'Headteacher' },
+          { label: 'Principal', value: 'Principal' },
+          { label: 'Vice Principal', value: 'Vice Principal' },
+          { label: 'Class Teacher', value: 'Class Teacher' },
+          { label: 'Subject Teacher', value: 'Subject Teacher' },
+          { label: 'School Administrator', value: 'School Administrator' },
+        ];
+
+        const formData = await showAdminForm('Edit teacher', [
+          { name: 'fullName', label: 'Full name', value: teacherRecord.fullName || teacherRecord.name || '', required: true },
+          { name: 'email', label: 'Email', value: teacherRecord.email || '', type: 'email', required: true },
+          { name: 'teacherIdDisplay', label: 'Teacher ID (auto-generated)', value: teacherRecord.teacherId || '', type: 'text', disabled: true },
+          { name: 'gender', label: 'Gender', value: teacherRecord.gender || '', type: 'select', options: [
+            { label: 'Male', value: 'male' },
+            { label: 'Female', value: 'female' },
+            { label: 'Other', value: 'other' },
+          ] },
+          { name: 'dateOfBirth', label: 'Date of birth (optional)', type: 'date', value: teacherRecord.dateOfBirth || '' },
+          { name: 'phone', label: 'Phone number', value: teacherRecord.phone || '' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'department', label: 'Department', value: teacherRecord.department || '' },
+          { name: 'position', label: 'Position', type: 'select', value: teacherRecord.position || '', options: positionOptions, required: true },
+          { name: 'qualification', label: 'Qualification', value: teacherRecord.qualification || '' },
+          { name: 'yearsOfExperience', label: 'Years of experience', value: teacherRecord.yearsOfExperience || '' },
+          { name: 'assignedClasses', label: 'Assigned class', type: 'select', options: classOptions, value: Array.isArray(teacherRecord.assignedClasses) ? teacherRecord.assignedClasses[0] || '' : teacherRecord.assignedClasses || '', required: true },
+          { name: 'assignedSubjects', label: 'Assigned subjects', type: 'select', multiple: true, options: subjectOptions, value: Array.isArray(teacherRecord.assignedSubjects) ? teacherRecord.assignedSubjects : [] },
+          { name: 'classTeacher', label: 'Is class teacher?', type: 'select', value: teacherRecord.classTeacher ? 'true' : 'false', options: [
+            { label: 'No', value: 'false' },
+            { label: 'Yes', value: 'true' },
+          ] },
+        ]);
+        if (!formData) return;
+        const normalizedAssignedClasses = formData.assignedClasses ? [formData.assignedClasses] : [];
+        const normalizedAssignedSubjects = Array.isArray(formData.assignedSubjects) ? formData.assignedSubjects : formData.assignedSubjects ? [formData.assignedSubjects] : [];
+        const payload = buildSchoolEntityPayload('teachers', {
+          fullName: formData.fullName || '',
+          email: formData.email || '',
+          phone: formData.phone || null,
+          gender: formData.gender || null,
+          dateOfBirth: formData.dateOfBirth || null,
+          department: formData.department || null,
+          position: formData.position || null,
+          qualification: formData.qualification || null,
+          yearsOfExperience: formData.yearsOfExperience || null,
+          assignedClasses: normalizedAssignedClasses,
+          assignedSubjects: normalizedAssignedSubjects,
+          classTeacher: formData.classTeacher === 'true',
+          profilePhoto: formData.profilePhoto || teacherRecord.profilePhoto || null,
+          teacherId: teacherRecord.teacherId || null,
+          employeeNumber: teacherRecord.employeeNumber || null,
+          status: teacherRecord.status || 'active',
+        });
+        delete payload.nationalId;
+        const teacherIdentifier = teacherRecord.id || teacherRecord.username || teacherRecord.teacherId || teacherRecord.email;
+        const result = await updateSchoolEntity(token, schoolId, 'teachers', teacherIdentifier, payload);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to update teacher record.');
+          return;
+        }
+        alert('Teacher record updated successfully.');
+        renderSchoolDashboardPage('teachers');
+        return;
+      }
+
+      if (action === 'archive') {
+        if (!confirm(`Archive teacher record for ${teacherRecord.fullName || teacherRecord.teacherId || teacherRecord.email || 'selected teacher'}? The record will be hidden but can be restored later.`)) return;
+        const teacherIdentifier = teacherRecord.id || teacherRecord.username || teacherRecord.teacherId || teacherRecord.email;
+        const result = await updateSchoolEntity(token, schoolId, 'teachers', teacherIdentifier, { status: 'archived' });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to archive teacher record.');
+          return;
+        }
+        alert('Teacher record archived successfully.');
+        renderSchoolDashboardPage('teachers');
+        return;
+      }
+
+      if (action === 'restore') {
+        if (!confirm(`Restore teacher record for ${teacherRecord.fullName || teacherRecord.teacherId || teacherRecord.email || 'selected teacher'}?`)) return;
+        const teacherIdentifier = teacherRecord.id || teacherRecord.username || teacherRecord.teacherId || teacherRecord.email;
+        const result = await updateSchoolEntity(token, schoolId, 'teachers', teacherIdentifier, { status: 'active' });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to restore teacher record.');
+          return;
+        }
+        alert('Teacher record restored successfully.');
+        renderSchoolDashboardPage('teachers');
+        return;
+      }
+
+      if (action === 'delete') {
+        if (!confirm(`PERMANENTLY delete teacher record for ${teacherRecord.fullName || teacherRecord.teacherId || teacherRecord.email || 'selected teacher'}? This action cannot be undone.`)) return;
+        const teacherIdentifier = teacherRecord.id || teacherRecord.username || teacherRecord.teacherId || teacherRecord.email;
+        const result = await deleteSchoolEntity(token, schoolId, 'teachers', teacherIdentifier);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to delete teacher record.');
+          return;
+        }
+        alert('Teacher record permanently deleted.');
+        renderSchoolDashboardPage('teachers');
+        return;
+      }
+    });
+  }
+
+  function initializeStudentImportExport() {
+    document.querySelectorAll('[data-school-export]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const exportType = button.getAttribute('data-school-export');
+        if (!exportType) return;
+        const schoolId = localStorage.getItem('globyedu_schoolId');
+        const token = getAccessToken();
+        const school = schoolId && token ? ((await fetchSchoolDetails(token, schoolId).then((result) => result.ok && result.data?.status === 'ok' ? result.data.school : null)) || {}) : {};
+        let rows = [];
+        let headers = [];
+
+        if (exportType === 'attendance') {
+          rows = Array.isArray(school.attendanceRecords) ? school.attendanceRecords : [];
+          headers = ['date', 'studentName', 'studentId', 'className', 'teacher', 'subject', 'status', 'note'];
+        } else if (exportType === 'students') {
+          rows = Array.isArray(school.students) ? school.students : [];
+          headers = ['fullName', 'email', 'studentId', 'admissionNumber', 'className', 'gradeLevel', 'status', 'guardian', 'parentPhone', 'parentEmail'];
+        } else if (exportType === 'academic') {
+          const academicTypes = ['academic-years', 'terms', 'semesters', 'departments', 'streams', 'subjects', 'classes'];
+          const academicResults = await Promise.all(academicTypes.map((entityType) => fetchSchoolEntities(token, schoolId, entityType, { pageSize: 200 })));
+          rows = academicResults.flatMap((result, index) => {
+            if (!result.ok || result.data?.status !== 'ok') return [];
+            return (Array.isArray(result.data.items) ? result.data.items : []).map((item) => ({
+              ...item,
+              recordType: academicTypes[index],
+            }));
+          });
+          headers = ['recordType', 'name', 'label', 'code', 'status', 'startDate', 'endDate', 'description'];
+        } else {
+          alert('Export format not supported.');
+          return;
+        }
+
+        if (!rows.length) {
+          alert('No records available to export yet.');
+          return;
+        }
+
+        const csv = [headers.join(','), ...rows.map((row) => headers.map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${exportType}-export.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        alert(`Exported ${rows.length} ${exportType} records.`);
+      });
+    });
+
+    document.querySelectorAll('[data-school-import]').forEach((input) => {
+      input.addEventListener('change', async () => {
+        const importType = input.getAttribute('data-school-import');
+        if (!importType) return;
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const schoolId = localStorage.getItem('globyedu_schoolId');
+        const token = getAccessToken();
+        if (!schoolId || !token) return;
+        const text = await file.text();
+        let records = [];
+
+        if (file.type.includes('json') || file.name.endsWith('.json')) {
+          try {
+            records = JSON.parse(text);
+            if (importType === 'academic') {
+              const academicRecords = Array.isArray(records) ? records : Array.isArray(records.items) ? records.items : [];
+              const summary = { created: 0, failed: 0, errors: [] };
+              for (const [index, record] of academicRecords.entries()) {
+                const recordType = String(record.recordType || record.type || 'academic-years').trim();
+                const payload = buildSchoolEntityPayload(recordType, {
+                  label: record.label || record.name || '',
+                  name: record.name || record.label || '',
+                  code: record.code || '',
+                  description: record.description || '',
+                  status: record.status || 'active',
+                  startDate: record.startDate || null,
+                  endDate: record.endDate || null,
+                });
+                try {
+                  const result = await createSchoolEntity(token, schoolId, recordType, payload);
+                  if (result.ok && result.data?.status === 'ok') {
+                    summary.created += 1;
+                  } else {
+                    summary.failed += 1;
+                    summary.errors.push(`Row ${index + 2}: ${result.data?.message || 'invalid academic record'}`);
+                  }
+                } catch (error) {
+                  summary.failed += 1;
+                  summary.errors.push(`Row ${index + 2}: ${error.message || 'invalid academic record'}`);
+                }
+              }
+
+              const errorDetail = summary.errors.length ? `\n${summary.errors.slice(0, 5).join('\n')}` : '';
+              alert(`Imported ${summary.created} academic records. ${summary.failed} failed.${errorDetail}`);
+              renderSchoolDashboardPage('academic');
+              input.value = '';
+              return;
+            }
+          } catch (error) {
+            alert('Unable to parse JSON import file.');
+            return;
+          }
+        } else {
+          const lines = text.split(/\r?\n/).filter((line) => line.trim());
+          if (lines.length < 2) {
+            alert('CSV file must contain a header row and at least one data row.');
+            return;
+          }
+          const parseCsvLine = (line) => {
+            const values = [];
+            let value = '';
+            let quoted = false;
+            for (let index = 0; index < line.length; index += 1) {
+              const character = line[index];
+              if (character === '"' && line[index + 1] === '"' && quoted) {
+                value += '"';
+                index += 1;
+              } else if (character === '"') {
+                quoted = !quoted;
+              } else if (character === ',' && !quoted) {
+                values.push(value.trim());
+                value = '';
+              } else {
+                value += character;
+              }
+            }
+            values.push(value.trim());
+            return values;
+          };
+          const headers = parseCsvLine(lines[0]).map((header) => header.trim());
+          const normalizedHeaders = headers.map((header) => header.toLowerCase().replace(/[^a-z0-9]/g, ''));
+          const hasNameColumn = normalizedHeaders.some((header) => ['fullname', 'name', 'studentname'].includes(header));
+          if (!hasNameColumn) {
+            alert('CSV is missing a required student name column. Use fullName, name, or studentName.');
+            input.value = '';
+            return;
+          }
+          records = lines.slice(1).map((line) => {
+            const values = parseCsvLine(line);
+            return headers.reduce((acc, header, index) => {
+              acc[header] = values[index] || '';
+              return acc;
+            }, {});
+          });
+        }
+
+        if (!Array.isArray(records) || records.length === 0) {
+          alert('Import file did not contain any valid records.');
+          return;
+        }
+
+        const summary = { created: 0, failed: 0, errors: [] };
+        for (const [index, record] of records.entries()) {
+          const recordName = record.fullName || record.name || record.studentName || record['Full Name'] || record['name'] || '';
+          if (!String(recordName).trim()) {
+            summary.failed += 1;
+            summary.errors.push(`Row ${index + 2}: student name is required`);
+            continue;
+          }
+          try {
+            const payload = buildSchoolEntityPayload('students', {
+              fullName: recordName,
+              email: record.email || record.Email || '',
+              phone: record.phone || record.Phone || null,
+              gender: record.gender || record.Gender || null,
+              dateOfBirth: record.dateOfBirth || record.DateOfBirth || null,
+              nationalId: record.nationalId || record.NationalID || null,
+              gradeLevel: record.gradeLevel || record.Grade || record['Grade Level'] || null,
+              className: record.className || record.Class || record['Class Name'] || null,
+              section: record.section || record.Section || null,
+              house: record.house || record.House || null,
+              studentId: record.studentId || record.StudentID || record['Student ID'] || null,
+              admissionNumber: record.admissionNumber || record.AdmissionNumber || record['Admission Number'] || null,
+              guardian: record.guardian || record.Guardian || null,
+              parentPhone: record.parentPhone || record['Parent Phone'] || null,
+              parentEmail: record.parentEmail || record['Parent Email'] || null,
+              medical: record.medical || record.Medical || null,
+              documents: record.documents || record.Documents || null,
+              status: record.status || record.Status || 'active',
+            });
+            const result = await createSchoolEntity(token, schoolId, 'students', payload);
+            if (result.ok && result.data?.status === 'ok') {
+              summary.created += 1;
+            } else {
+              summary.failed += 1;
+            }
+          } catch (error) {
+            summary.failed += 1;
+            summary.errors.push(`Row ${index + 2}: ${error.message || 'invalid record'}`);
+          }
+        }
+
+        const errorDetail = summary.errors.length ? `\n${summary.errors.slice(0, 5).join('\n')}` : '';
+        alert(`Imported ${summary.created} students. ${summary.failed} failed.${errorDetail}`);
+        renderSchoolDashboardPage('students');
+      });
+    });
+  }
+
+  document.querySelectorAll('[data-school-finance-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.getAttribute('data-school-finance-action');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+
+      if (action === 'create-fee-category') {
+        const formData = await showAdminForm('Create fee category', [
+          { name: 'name', label: 'Fee category name', required: true },
+          { name: 'description', label: 'Description', type: 'textarea' },
+          { name: 'amount', label: 'Default amount' },
+        ]);
+        if (!formData) return;
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const categories = Array.isArray(school.financeCategories) ? school.financeCategories : [];
+        categories.push({ id: `fee-${Date.now()}`, name: formData.name, description: formData.description || '', amount: Number(formData.amount || 0), status: 'active', createdAt: new Date().toISOString() });
+        const saveResult = await updateSchoolDetails(token, schoolId, { financeCategories: categories });
+        if (!saveResult.ok || saveResult.data?.status !== 'ok') {
+          alert(saveResult.data?.message || 'Unable to create fee category.');
+          return;
+        }
+        alert('Fee category created successfully.');
+        renderSchoolDashboardPage('finance');
+        return;
+      }
+
+      if (action === 'edit-fee-category' || action === 'archive-fee-category') {
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const categories = Array.isArray(school.financeCategories) ? school.financeCategories : [];
+        const categoryName = button.getAttribute('data-finance-category') || '';
+        const index = categories.findIndex((category) => category.name === categoryName);
+        if (index === -1) {
+          alert('Fee category is not available in the current finance workflow.');
+          return;
+        }
+        if (action === 'archive-fee-category') {
+          categories[index] = { ...categories[index], status: 'archived' };
+        } else {
+          const formData = await showAdminForm('Edit fee category', [
+            { name: 'name', label: 'Fee category name', value: categories[index].name, required: true },
+            { name: 'description', label: 'Description', type: 'textarea', value: categories[index].description || '' },
+            { name: 'amount', label: 'Default amount', value: categories[index].amount || '' },
+          ]);
+          if (!formData) return;
+          categories[index] = { ...categories[index], name: formData.name, description: formData.description || '', amount: formData.amount || '' };
+        }
+        const saveResult = await updateSchoolDetails(token, schoolId, { financeCategories: categories });
+        if (!saveResult.ok || saveResult.data?.status !== 'ok') {
+          alert(saveResult.data?.message || 'Unable to update fee category.');
+          return;
+        }
+        alert(action === 'archive-fee-category' ? 'Fee category archived.' : 'Fee category updated.');
+        renderSchoolDashboardPage('finance');
+        return;
+      }
+
+      if (action === 'generate-invoice') {
+        const formData = await showAdminForm('Generate invoice', [
+          { name: 'invoiceNumber', label: 'Invoice number', required: true },
+          { name: 'student', label: 'Student', required: true },
+          { name: 'className', label: 'Class' },
+          { name: 'amount', label: 'Amount', required: true },
+          { name: 'status', label: 'Status', placeholder: 'Pending / Paid / Overdue' },
+          { name: 'dueDate', label: 'Due date', type: 'date' },
+        ]);
+        if (!formData) return;
+        const school = (await fetchSchoolDetails(token, schoolId).then((result) => (result.ok && result.data?.status === 'ok' ? result.data.school : null))) || {};
+        const invoices = Array.isArray(school.invoices) ? school.invoices : [];
+        invoices.push({ invoiceNumber: formData.invoiceNumber, student: formData.student, className: formData.className || '', amount: formData.amount || '', status: formData.status || 'Pending', dueDate: formData.dueDate || '' });
+        await updateSchoolDetails(token, schoolId, { invoices });
+        alert('Invoice generated successfully.');
+        renderSchoolDashboardPage('finance');
+        return;
+      }
+
+      if (action === 'record-payment') {
+        const formData = await showAdminForm('Record payment', [
+          { name: 'amount', label: 'Amount', required: true },
+          { name: 'student', label: 'Student', required: true },
+          { name: 'method', label: 'Payment method', placeholder: 'Cash / Bank / Paystack / MTN MoMo' },
+          { name: 'reference', label: 'Reference number' },
+          { name: 'status', label: 'Status', placeholder: 'received' },
+          { name: 'note', label: 'Note', type: 'textarea' },
+        ]);
+        if (!formData) return;
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const payment = { ...buildSchoolCollectionPayload('payments', formData), id: `payment-${Date.now()}`, createdAt: new Date().toISOString() };
+        const receipts = Array.isArray(school.receipts) ? school.receipts : [];
+        const receipt = { receiptNumber: `RCPT-${Date.now()}`, student: payment.student, amount: Number(payment.amount || 0), currency: school.currency || school.branding?.currency || school.settings?.currency || 'USD', paymentMethod: payment.method, reference: payment.reference, paidAt: payment.createdAt, status: payment.status };
+        const result = await updateSchoolDetails(token, schoolId, { payments: [...(Array.isArray(school.payments) ? school.payments : []), payment], receipts: [...receipts, receipt] });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to record payment and receipt.');
+          return;
+        }
+        alert('Payment recorded successfully.');
+        renderSchoolDashboardPage('finance');
+        return;
+      }
+
+      if (action === 'create-refund') {
+        const formData = await showAdminForm('Create refund', [
+          { name: 'student', label: 'Student', required: true },
+          { name: 'amount', label: 'Amount', required: true },
+          { name: 'type', label: 'Type', placeholder: 'Partial / Full / Scholarship / Waiver' },
+          { name: 'status', label: 'Status', placeholder: 'Pending' },
+        ]);
+        if (!formData) return;
+        const school = (await fetchSchoolDetails(token, schoolId).then((result) => (result.ok && result.data?.status === 'ok' ? result.data.school : null))) || {};
+        const refunds = Array.isArray(school.refunds) ? school.refunds : [];
+        refunds.push({ student: formData.student, amount: formData.amount || '', type: formData.type || 'Partial', status: formData.status || 'Pending' });
+        await updateSchoolDetails(token, schoolId, { refunds });
+        alert('Refund created successfully.');
+        renderSchoolDashboardPage('finance');
+        return;
+      }
+
+      if (action === 'export-report') {
+        const reportType = prompt('Report type', 'Monthly Revenue');
+        if (!reportType) return;
+        const csv = ['reportType', 'generatedAt', 'summary'].join(',') + '\n' + `${reportType},${new Date().toISOString()},Generated from the finance workspace`; 
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${reportType.toLowerCase().replace(/\s+/g, '-')}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        alert('Finance report exported.');
+        return;
+      }
+
+      if (action === 'print-receipt') {
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const receiptId = button.getAttribute('data-receipt-id') || '';
+        const receipt = (Array.isArray(school.receipts) ? school.receipts : []).find((entry) => entry.receiptNumber === receiptId);
+        if (!receipt) {
+          alert('Receipt is no longer available. Refresh the finance page and try again.');
+          return;
+        }
+        const printWindow = window.open('', '_blank', 'width=800,height=900');
+        if (!printWindow) {
+          alert('The receipt print window was blocked. Allow pop-ups and try again.');
+          return;
+        }
+        const currency = receipt.currency || school.currency || school.branding?.currency || school.settings?.currency || 'USD';
+        printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(receipt.receiptNumber || 'Receipt')}</title><style>body{font-family:Arial,sans-serif;max-width:720px;margin:40px auto;padding:24px;color:#172033}h1{margin-bottom:4px}dl{display:grid;grid-template-columns:180px 1fr;gap:12px;border-top:1px solid #ddd;padding-top:20px}dt{font-weight:bold}dd{margin:0}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(school.name || 'School receipt')}</h1><p>Official payment receipt</p><dl><dt>Receipt number</dt><dd>${escapeHtml(receipt.receiptNumber || '')}</dd><dt>Student/customer</dt><dd>${escapeHtml(receipt.student || '')}</dd><dt>Amount</dt><dd>${escapeHtml(`${currency} ${Number(receipt.amount || 0).toFixed(2)}`)}</dd><dt>Payment method</dt><dd>${escapeHtml(receipt.paymentMethod || '')}</dd><dt>Reference</dt><dd>${escapeHtml(receipt.reference || '')}</dd><dt>Paid at</dt><dd>${escapeHtml(receipt.paidAt || '')}</dd><dt>Status</dt><dd>${escapeHtml(receipt.status || '')}</dd></dl><button onclick="window.print()">Print</button></body></html>`);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        return;
+      }
+
+      alert(`${action.replace(/-/g, ' ')} is now available in the finance workflow.`);
+    });
+  });
+
+  document.querySelectorAll('[data-school-settings-save]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const current = (await fetchSchoolDetails(token, schoolId).then((result) => (result.ok && result.data?.status === 'ok' ? result.data.school : null))) || {};
+      const payload = {
+        branding: {
+          ...(current.branding || {}),
+          colours: document.getElementById('school-settings-colours')?.value || '',
+        },
+        settings: {
+          ...(current.settings || {}),
+          theme: document.getElementById('school-settings-theme')?.value || 'default',
+          notifications: {
+            ...(current.settings?.notifications || {}),
+            emailEnabled: document.getElementById('school-settings-email')?.value?.toLowerCase() === 'enabled',
+            smsEnabled: document.getElementById('school-settings-sms')?.value?.toLowerCase() === 'enabled',
+          },
+          featureFlags: {
+            ...(current.settings?.featureFlags || {}),
+            messaging: document.getElementById('school-settings-messaging')?.value?.toLowerCase() === 'enabled',
+            analytics: document.getElementById('school-settings-analytics')?.value?.toLowerCase() === 'enabled',
+          },
+        },
+      };
+      const result = await updateSchoolDetails(token, schoolId, payload);
+      if (!result.ok || result.data?.status !== 'ok') {
+        alert(result.data?.message || 'Unable to save school settings.');
+        return;
+      }
+      alert('School settings saved.');
+      renderSchoolDashboardPage('settings');
+    });
+  });
+
+  document.querySelectorAll('[data-school-profile-save]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const current = (await fetchSchoolDetails(token, schoolId).then((result) => (result.ok && result.data?.status === 'ok' ? result.data.school : null))) || {};
+      const payload = buildChangedFieldsPayload(
+        {
+          name: current.name || '',
+          motto: current.motto || current.branding?.motto || '',
+          email: current.email || '',
+          phone: current.phone || '',
+          website: current.website || '',
+          country: current.country || '',
+          region: current.region || '',
+          city: current.city || current.branding?.city || '',
+          schoolType: current.schoolType || current.branding?.schoolType || '',
+          schoolLevel: current.schoolLevel || current.branding?.schoolLevel || '',
+          description: current.description || '',
+          branding: current.branding || {},
+        },
+        {
+          name: document.getElementById('school-profile-name')?.value || '',
+          motto: document.getElementById('school-profile-motto')?.value || '',
+          email: document.getElementById('school-profile-email')?.value || '',
+          phone: document.getElementById('school-profile-phone')?.value || '',
+          website: document.getElementById('school-profile-website')?.value || '',
+          country: document.getElementById('school-profile-country')?.value || '',
+          region: document.getElementById('school-profile-region')?.value || '',
+          city: document.getElementById('school-profile-city')?.value || '',
+          schoolType: document.getElementById('school-profile-type')?.value || '',
+          schoolLevel: document.getElementById('school-profile-level')?.value || '',
+          description: document.getElementById('school-profile-description')?.value || '',
+          branding: {
+            ...(current.branding || {}),
+            colours: document.getElementById('school-profile-colours')?.value || '',
+            motto: document.getElementById('school-profile-motto')?.value || '',
+            city: document.getElementById('school-profile-city')?.value || '',
+            schoolType: document.getElementById('school-profile-type')?.value || '',
+            schoolLevel: document.getElementById('school-profile-level')?.value || '',
+          },
+        },
+      );
+      const result = await updateSchoolDetails(token, schoolId, payload);
+      if (!result.ok || result.data?.status !== 'ok') {
+        alert(result.data?.message || 'Unable to save school profile.');
+        return;
+      }
+      alert('School profile saved.');
+      renderSchoolDashboardPage('profile');
+    });
+  });
+
+  const profileEditButton = document.getElementById('school-profile-edit');
+  const uploadLogoButton = document.getElementById('school-profile-upload-logo');
+  const uploadCoverButton = document.getElementById('school-profile-upload-cover');
+  const entityRefreshButton = document.getElementById('school-entity-refresh');
+  const entityCreateButton = document.getElementById('school-entity-create');
+  const entityTypeSelect = document.getElementById('school-entity-type');
+  const entitySearchInput = document.getElementById('school-entity-search');
+  const entityList = document.getElementById('school-entity-list');
+  const entityStatus = document.getElementById('school-entity-status');
+  const entityCache = new Map();
+  if (profileEditButton) {
+    profileEditButton.addEventListener('click', async () => {
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const response = await fetchSchoolDetails(token, schoolId);
+      if (!response.ok || response.data?.status !== 'ok') {
+        alert('Unable to load school profile for editing.');
+        return;
+      }
+      const school = response.data.school;
+      const formHtml = `
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div class="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-4xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-2xl font-semibold text-slate-900">Edit School Profile</h2>
+                <p class="mt-1 text-sm text-slate-600">Update tenant details and branding for your school.</p>
+              </div>
+              <button id="school-profile-close" class="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Close</button>
+            </div>
+            <form id="school-profile-form" class="mt-6 space-y-4">
+              <div class="grid gap-4 lg:grid-cols-2">
+                <label class="block text-sm text-slate-700">School Name<input id="profile-name" value="${escapeHtml(school.name || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" required></label>
+                <label class="block text-sm text-slate-700">Website<input id="profile-website" value="${escapeHtml(school.website || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Phone<input id="profile-phone" value="${escapeHtml(school.phone || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Email<input id="profile-email" value="${escapeHtml(school.email || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" type="email"></label>
+                <label class="block text-sm text-slate-700">Address<input id="profile-address" value="${escapeHtml(school.address || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Region<input id="profile-region" value="${escapeHtml(school.region || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Country<input id="profile-country" list="profile-country-options" value="${escapeHtml(school.country || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><datalist id="profile-country-options">${[
+                  'Ghana', 'Nigeria', 'Kenya', 'South Africa', 'United States', 'United Kingdom', 'Canada', 'India', 'Egypt', 'Tanzania', 'Uganda', 'Cameroon', 'Botswana', 'Senegal', 'Ethiopia', 'France', 'Germany', 'Australia', 'Brazil', 'Japan', 'Gabon', 'Ivory Coast'
+                ].map((country) => `<option value="${escapeHtml(country)}"></option>`).join('')}</datalist></label>
+                <label class="block text-sm text-slate-700">Time zone<input id="profile-timezone" value="${escapeHtml(school.timezone || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">School logo<input id="profile-logo-file" type="file" accept="image/*" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Cover image<input id="profile-cover-file" type="file" accept="image/*" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">School stamp<input id="profile-stamp-file" type="file" accept="image/*" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Principal signature<input id="profile-principal-signature-file" type="file" accept="image/*" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <input id="profile-logo" type="hidden" value="${escapeHtml(school.logo || '')}" />
+                <input id="profile-cover" type="hidden" value="${escapeHtml(school.coverImage || '')}" />
+                <input id="profile-stamp" type="hidden" value="${escapeHtml(school.stamp || '')}" />
+                <input id="profile-principal-signature" type="hidden" value="${escapeHtml(school.principalSignature || '')}" />
+                <label class="block text-sm text-slate-700">Language<input id="profile-language" value="${escapeHtml((school.branding && school.branding.language) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Currency<input id="profile-currency" value="${escapeHtml((school.branding && school.branding.currency) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">Motto<input id="profile-motto" value="${escapeHtml((school.branding && school.branding.motto) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">GPS Address<input id="profile-gps" value="${escapeHtml((school.branding && school.branding.gpsAddress) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"></label>
+                <label class="block text-sm text-slate-700">School Description<textarea id="profile-description" rows="4" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">${escapeHtml(school.description || '')}</textarea></label>
+              </div>
+              <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p class="text-sm font-semibold text-slate-900">Logo preview</p>
+                  <div id="profile-logo-preview" class="mt-3"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p class="text-sm font-semibold text-slate-900">Cover preview</p>
+                  <div id="profile-cover-preview" class="mt-3"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p class="text-sm font-semibold text-slate-900">Stamp preview</p>
+                  <div id="profile-stamp-preview" class="mt-3"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p class="text-sm font-semibold text-slate-900">Signature preview</p>
+                  <div id="profile-principal-signature-preview" class="mt-3"></div>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-3 pt-4">
+                <button type="submit" class="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save changes</button>
+                <button id="school-profile-cancel" type="button" class="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Cancel</button>
+                <div id="school-profile-feedback" class="text-sm text-slate-600"></div>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+      const container = document.createElement('div');
+      container.innerHTML = formHtml;
+      document.body.appendChild(container);
+
+      const closeButton = document.getElementById('school-profile-close');
+      const cancelButton = document.getElementById('school-profile-cancel');
+      const profileForm = document.getElementById('school-profile-form');
+      const feedbackElement = document.getElementById('school-profile-feedback');
+      const logoFileInput = document.getElementById('profile-logo-file');
+      const coverFileInput = document.getElementById('profile-cover-file');
+      const stampFileInput = document.getElementById('profile-stamp-file');
+      const principalSignatureFileInput = document.getElementById('profile-principal-signature-file');
+      const logoHiddenInput = document.getElementById('profile-logo');
+      const coverHiddenInput = document.getElementById('profile-cover');
+      const stampHiddenInput = document.getElementById('profile-stamp');
+      const principalSignatureHiddenInput = document.getElementById('profile-principal-signature');
+      const logoPreview = document.getElementById('profile-logo-preview');
+      const coverPreview = document.getElementById('profile-cover-preview');
+      const stampPreview = document.getElementById('profile-stamp-preview');
+      const principalSignaturePreview = document.getElementById('profile-principal-signature-preview');
+
+      function closeProfileEditor() {
+        container.remove();
+      }
+
+      if (closeButton) {
+        closeButton.addEventListener('click', closeProfileEditor);
+      }
+      if (cancelButton) {
+        cancelButton.addEventListener('click', closeProfileEditor);
+      }
+
+      renderImagePreview(logoPreview, logoHiddenInput?.value || '', 'No logo selected');
+      renderImagePreview(coverPreview, coverHiddenInput?.value || '', 'No cover selected');
+      renderImagePreview(stampPreview, stampHiddenInput?.value || '', 'No stamp selected');
+      renderImagePreview(principalSignaturePreview, principalSignatureHiddenInput?.value || '', 'No signature selected');
+
+      logoFileInput?.addEventListener('change', async () => {
+        await handleImageUpload(logoFileInput, logoHiddenInput, logoPreview, 'No logo selected');
+      });
+      coverFileInput?.addEventListener('change', async () => {
+        await handleImageUpload(coverFileInput, coverHiddenInput, coverPreview, 'No cover selected');
+      });
+      stampFileInput?.addEventListener('change', async () => {
+        await handleImageUpload(stampFileInput, stampHiddenInput, stampPreview, 'No stamp selected');
+      });
+      principalSignatureFileInput?.addEventListener('change', async () => {
+        await handleImageUpload(principalSignatureFileInput, principalSignatureHiddenInput, principalSignaturePreview, 'No signature selected');
+      });
+
+      if (profileForm) {
+        profileForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          if (!schoolId || !token) return;
+          const schoolName = document.getElementById('profile-name').value.trim();
+          if (!schoolName) {
+            if (feedbackElement) {
+              feedbackElement.textContent = 'Please enter a school name.';
+              feedbackElement.className = 'text-sm text-rose-700';
+            }
+            return;
+          }
+          const payload = buildChangedFieldsPayload(
+            {
+              name: school.name || '',
+              website: school.website || null,
+              phone: school.phone || null,
+              email: school.email || null,
+              address: school.address || null,
+              region: school.region || null,
+              country: school.country || null,
+              timezone: school.timezone || null,
+              description: school.description || null,
+              logo: school.logo || null,
+              coverImage: school.coverImage || null,
+              stamp: school.stamp || null,
+              principalSignature: school.principalSignature || null,
+              branding: school.branding || {},
+            },
+            {
+              name: schoolName,
+              website: document.getElementById('profile-website').value.trim() || null,
+              phone: document.getElementById('profile-phone').value.trim() || null,
+              email: document.getElementById('profile-email').value.trim() || null,
+              address: document.getElementById('profile-address').value.trim() || null,
+              region: document.getElementById('profile-region').value.trim() || null,
+              country: document.getElementById('profile-country').value.trim() || null,
+              timezone: document.getElementById('profile-timezone').value.trim() || null,
+              description: document.getElementById('profile-description').value.trim() || null,
+              logo: document.getElementById('profile-logo').value.trim() || null,
+              coverImage: document.getElementById('profile-cover').value.trim() || null,
+              stamp: document.getElementById('profile-stamp').value.trim() || null,
+              principalSignature: document.getElementById('profile-principal-signature').value.trim() || null,
+              branding: {
+                ...((school.branding && typeof school.branding === 'object') ? school.branding : {}),
+                language: document.getElementById('profile-language').value.trim() || null,
+                currency: document.getElementById('profile-currency').value.trim() || null,
+                motto: document.getElementById('profile-motto').value.trim() || null,
+                gpsAddress: document.getElementById('profile-gps').value.trim() || null,
+              },
+            },
+          );
+          const result = await updateSchoolDetails(token, schoolId, payload);
+          if (!result.ok || result.data?.status !== 'ok') {
+            if (feedbackElement) {
+              feedbackElement.textContent = result.data?.message || 'Unable to save school profile.';
+              feedbackElement.className = 'text-sm text-rose-700';
+            }
+            return;
+          }
+          if (feedbackElement) {
+            feedbackElement.textContent = 'School profile updated successfully.';
+            feedbackElement.className = 'text-sm text-emerald-700';
+          }
+          setTimeout(() => {
+            closeProfileEditor();
+            renderSchoolDashboardPage('overview');
+          }, 800);
+        });
+      }
+    });
+  }
+
+  if (uploadLogoButton) {
+    uploadLogoButton.addEventListener('click', async () => {
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          const result = await updateSchoolDetails(token, schoolId, { logo: dataUrl });
+          if (!result.ok || result.data?.status !== 'ok') {
+            alert(result.data?.message || 'Unable to update logo.');
+            return;
+          }
+          alert('School logo updated successfully.');
+          renderSchoolDashboardPage('overview');
+        } catch (error) {
+          alert(error.message || 'Unable to update logo.');
+        }
+      };
+      input.click();
+    });
+  }
+
+  if (uploadCoverButton) {
+    uploadCoverButton.addEventListener('click', async () => {
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          const result = await updateSchoolDetails(token, schoolId, { coverImage: dataUrl });
+          if (!result.ok || result.data?.status !== 'ok') {
+            alert(result.data?.message || 'Unable to update cover image.');
+            return;
+          }
+          alert('Cover image updated successfully.');
+          renderSchoolDashboardPage('overview');
+        } catch (error) {
+          alert(error.message || 'Unable to update cover image.');
+        }
+      };
+      input.click();
+    });
+  }
+
+  if (entityRefreshButton) {
+    entityRefreshButton.addEventListener('click', async () => {
+      await loadSchoolEntities(entityTypeSelect?.value || 'departments');
+    });
+  }
+
+  if (entityTypeSelect) {
+    entityTypeSelect.addEventListener('change', async () => {
+      await loadSchoolEntities(entityTypeSelect.value);
+    });
+  }
+
+  if (entitySearchInput) {
+    let debounceTimer;
+    entitySearchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        await loadSchoolEntities(entityTypeSelect?.value || 'departments', entitySearchInput.value.trim());
+      }, 300);
+    });
+  }
+
+  if (entityCreateButton) {
+    entityCreateButton.addEventListener('click', async () => {
+      const entityType = entityTypeSelect?.value || 'departments';
+      await handleSchoolEntityUpsert(entityType);
+    });
+  }
+
+  function slugify(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  async function handleSchoolEntityUpsert(entityType, existing = null) {
+    const schoolId = localStorage.getItem('globyedu_schoolId');
+    const token = getAccessToken();
+    if (!schoolId || !token) return;
+
+    const title = `${existing ? 'Edit' : 'Create'} ${entityType.replace(/-/g, ' ')}`;
+    const fields = getEntityFormFields(entityType, existing || {});
+    const formData = await showAdminForm(title, fields);
+    if (!formData) return;
+
+    const payload = buildEntityPayload(entityType, formData, existing || {});
+    const result = existing
+      ? await updateSchoolEntity(token, schoolId, entityType, existing.id, payload)
+      : await createSchoolEntity(token, schoolId, entityType, payload);
+
+    if (!result.ok || result.data?.status !== 'ok') {
+      alert(result.data?.message || `Unable to ${existing ? 'update' : 'create'} ${entityType.replace(/-/g, ' ')}.`);
+      return;
+    }
+
+    alert(`${entityType.replace(/-/g, ' ')} ${existing ? 'updated' : 'created'} successfully.`);
+    await loadSchoolEntities(entityType, entitySearchInput?.value.trim() || '');
+  }
+
+  function getEntityFormFields(entityType, entity = {}) {
+    const baseFields = [
+      { name: 'status', label: 'Status', value: entity.status || 'active', placeholder: 'active' },
+    ];
+
+    switch (entityType) {
+      case 'departments':
+      case 'streams':
+      case 'subjects':
+        return [
+          { name: 'name', label: 'Name', value: entity.name || entity.label || '', placeholder: 'e.g. Mathematics', required: true },
+          { name: 'code', label: 'Code', value: entity.code || '', placeholder: 'e.g. MATH', required: true },
+          { name: 'description', label: 'Description', value: entity.description || '', placeholder: 'Optional description', type: 'textarea' },
+          ...baseFields,
+        ];
+      case 'classes':
+        return [
+          { name: 'name', label: 'Class name', value: entity.name || '', placeholder: 'e.g. Grade 9A', required: true },
+          { name: 'grade', label: 'Grade', value: entity.grade || '', placeholder: 'e.g. 9', required: true },
+          { name: 'section', label: 'Section', value: entity.section || '', placeholder: 'e.g. A' },
+          { name: 'description', label: 'Description', value: entity.description || '', placeholder: 'Optional description', type: 'textarea' },
+          ...baseFields,
+        ];
+      case 'academic-years':
+      case 'terms':
+      case 'semesters':
+        return [
+          { name: 'label', label: 'Label', value: entity.label || '', placeholder: entityType === 'academic-years' ? '2025/2026' : 'Term 1', required: true },
+          { name: 'startDate', label: 'Start date', value: entity.startDate || '', placeholder: 'YYYY-MM-DD', type: 'date' },
+          { name: 'endDate', label: 'End date', value: entity.endDate || '', placeholder: 'YYYY-MM-DD', type: 'date' },
+          { name: 'description', label: 'Description', value: entity.description || '', placeholder: 'Optional description', type: 'textarea' },
+          ...baseFields,
+        ];
+      case 'teachers':
+        return [
+          { name: 'fullName', label: 'Full name', value: entity.fullName || entity.name || '', placeholder: 'e.g. Jane Doe', required: true },
+          { name: 'email', label: 'Email', value: entity.email || '', placeholder: 'teacher@example.com', type: 'email', required: true },
+          { name: 'phone', label: 'Phone', value: entity.phone || '', placeholder: '+1234567890' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          ...baseFields,
+        ];
+      case 'students':
+        return [
+          { name: 'fullName', label: 'Full name', value: entity.fullName || entity.name || '', placeholder: 'e.g. John Smith', required: true },
+          { name: 'email', label: 'Email', value: entity.email || '', placeholder: 'student@example.com', type: 'email', required: true },
+          { name: 'phone', label: 'Phone', value: entity.phone || '', placeholder: '+1234567890' },
+          { name: 'grade', label: 'Grade', value: entity.grade || '', placeholder: 'e.g. 9' },
+          { name: 'profilePhoto', label: 'Profile photo URL', value: entity.profilePhoto || '', placeholder: 'https://...' },
+          ...baseFields,
+        ];
+      default:
+        return [
+          { name: 'name', label: 'Name', value: entity.name || entity.label || '', placeholder: 'Name', required: true },
+          { name: 'description', label: 'Description', value: entity.description || '', placeholder: 'Optional description', type: 'textarea' },
+          ...baseFields,
+        ];
+    }
+  }
+
+  function buildEntityPayload(entityType, data, existing = {}) {
+    const payload = { ...data };
+
+    if (entityType === 'departments' || entityType === 'streams' || entityType === 'subjects') {
+      payload.code = data.code || slugify(data.name || data.label || '');
+      payload.name = data.name || data.label;
+    }
+
+    if (entityType === 'classes') {
+      payload.name = data.name;
+      payload.grade = data.grade || data.name;
+      payload.section = data.section || null;
+    }
+
+    if (entityType === 'teachers' || entityType === 'students') {
+      payload.fullName = data.fullName;
+      payload.email = data.email;
+      payload.phone = data.phone || null;
+      payload.profilePhoto = data.profilePhoto || existing.profilePhoto || null;
+      if (entityType === 'students') {
+        payload.grade = data.grade || null;
+      }
+    }
+
+    if (entityType === 'academic-years' || entityType === 'terms' || entityType === 'semesters') {
+      payload.label = data.label;
+      payload.startDate = data.startDate || null;
+      payload.endDate = data.endDate || null;
+    }
+
+    if (!payload.status) payload.status = 'active';
+    return payload;
+  }
+
+  async function loadSchoolEntities(entityType, search = '') {
+    if (!entityList || !entityStatus) return;
+    const schoolId = localStorage.getItem('globyedu_schoolId');
+    const token = getAccessToken();
+    if (!schoolId || !token) {
+      entityStatus.textContent = 'Login required to load entity records.';
+      return;
+    }
+    entityStatus.textContent = `Loading ${entityType.replace(/-/g, ' ')}...`;
+    entityList.innerHTML = '';
+    entityCache.clear();
+    const response = await fetchSchoolEntities(token, schoolId, entityType, { search, pageSize: 12 });
+    if (!response.ok || response.data?.status !== 'ok') {
+      entityStatus.textContent = response.data?.message || `Unable to load ${entityType.replace(/-/g, ' ')}.`;
+      return;
+    }
+    const items = Array.isArray(response.data.items) ? response.data.items : [];
+    if (items.length === 0) {
+      entityStatus.textContent = `No ${entityType.replace(/-/g, ' ')} records found.`;
+      return;
+    }
+    entityStatus.textContent = `${items.length} ${entityType.replace(/-/g, ' ')} loaded.`;
+    entityList.innerHTML = items
+      .map((item) => {
+        const label = item.name || item.label || item.fullName || item.email || item.code || item.id || 'Record';
+        const identifier = item.id || item.code || item.email || item.studentId || item.classId || '';
+        entityCache.set(identifier, item);
+        return `
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 flex items-start justify-between gap-4">
+            <div>
+              <p class="font-semibold text-slate-900">${escapeHtml(label)}</p>
+              <p class="mt-1 text-sm text-slate-500">ID: ${escapeHtml(identifier)}</p>
+            </div>
+            <div class="flex gap-2">
+              <button data-entity-action="edit" data-entity-type="${entityType}" data-entity-id="${escapeHtml(identifier)}" class="rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100">Edit</button>
+              <button data-entity-action="delete" data-entity-type="${entityType}" data-entity-id="${escapeHtml(identifier)}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Archive</button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+    attachEntityListActions();
+  }
+
+  function attachEntityListActions() {
+    document.querySelectorAll('[data-entity-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const action = btn.getAttribute('data-entity-action');
+        const entityType = btn.getAttribute('data-entity-type');
+        const entityId = btn.getAttribute('data-entity-id');
+        if (!action || !entityType || !entityId) return;
+
+        if (action === 'edit') {
+          const record = entityCache.get(entityId);
+          if (!record) {
+            alert('Unable to load record for editing. Refresh the list and try again.');
+            return;
+          }
+          await handleSchoolEntityUpsert(entityType, record);
+          return;
+        }
+
+        if (action === 'delete') {
+          if (!confirm(`Archive ${entityType.replace(/-/g, ' ')} record ${entityId}?`)) return;
+          const schoolId = localStorage.getItem('globyedu_schoolId');
+          const token = getAccessToken();
+          if (!schoolId || !token) return;
+          const result = await deleteSchoolEntity(token, schoolId, entityType, entityId);
+          if (!result.ok || result.data?.status !== 'ok') {
+            alert(result.data?.message || 'Unable to archive record.');
+            return;
+          }
+          alert('Record archived successfully.');
+          await loadSchoolEntities(entityType, entitySearchInput?.value.trim() || '');
+        }
+      });
+    });
+  }
+
+  // Initialize action handlers
+  initializeStudentSearch();
+  initializeAttendanceRoster();
+  initializeStudentActions();
+  initializeTeacherActions();
+  initializeStudentImportExport();
+}
+
+function initializeTeacherWorkspaceHandlers() {
+  document.querySelectorAll('[data-teacher-workspace-action]').forEach((button) => {
+    if (button.dataset.teacherWorkspaceBound === 'true') return;
+    button.dataset.teacherWorkspaceBound = 'true';
+    button.addEventListener('click', async () => {
+      const action = button.getAttribute('data-teacher-workspace-action');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      if (!schoolId || !token) return;
+
+      if (action === 'enter-marks') {
+        const formData = await showAdminForm('Enter marks', [
+          { name: 'studentId', label: 'Student reference (optional)' },
+          { name: 'student', label: 'Student name', required: true },
+          { name: 'className', label: 'Class', required: true },
+          { name: 'subject', label: 'Subject', required: true },
+          { name: 'exam', label: 'Exam / assessment', required: true },
+          { name: 'mark', label: 'Mark', required: true, type: 'number' },
+          { name: 'maxMarks', label: 'Maximum marks', type: 'number' },
+          { name: 'passingMarks', label: 'Passing marks', type: 'number' },
+          { name: 'term', label: 'Term' },
+          { name: 'academicYear', label: 'Academic year' },
+          { name: 'remark', label: 'Remark' },
+        ]);
+        if (!formData) return;
+        const mark = Number(formData.mark || 0);
+        const maxMarks = Number(formData.maxMarks || 100);
+        const passingMarks = Number(formData.passingMarks || 40);
+        if (!Number.isFinite(mark) || !Number.isFinite(maxMarks) || mark < 0 || mark > maxMarks || passingMarks < 0 || passingMarks > maxMarks) {
+          alert('Enter a valid mark between zero and the maximum.');
+          return;
+        }
+        const result = await fetchSchoolDetails(token, schoolId);
+        const school = result.ok && result.data?.status === 'ok' ? result.data.school || {} : {};
+        const existingResults = Array.isArray(school.examResults) ? school.examResults : [];
+        const average = Math.round((mark / maxMarks) * 100);
+        const resultEntry = {
+          studentId: formData.studentId,
+          student: formData.student,
+          className: formData.className,
+          subject: formData.subject,
+          exam: formData.exam,
+          mark,
+          maxMarks,
+          passingMarks,
+          average,
+          grade: average >= 80 ? 'A' : average >= 70 ? 'B' : average >= 60 ? 'C' : average >= 50 ? 'D' : average >= 40 ? 'E' : 'F',
+          passed: mark >= passingMarks,
+          term: formData.term || 'Term 1',
+          academicYear: formData.academicYear || '2025/2026',
+          remark: formData.remark || '',
+          updatedAt: new Date().toISOString(),
+        };
+        const resultKey = (entry) => `${String(entry.studentId || entry.student || '').trim().toLowerCase()}|${String(entry.subject || '').trim().toLowerCase()}|${String(entry.exam || '').trim().toLowerCase()}|${String(entry.term || '').trim().toLowerCase()}|${String(entry.academicYear || '').trim().toLowerCase()}`;
+        const index = existingResults.findIndex((entry) => resultKey(entry) === resultKey(resultEntry));
+        const nextResults = [...existingResults];
+        if (index >= 0) nextResults[index] = { ...nextResults[index], ...resultEntry };
+        else nextResults.push({ ...resultEntry, id: `result-${Date.now()}`, createdAt: new Date().toISOString() });
+        const saveResult = await updateSchoolDetails(token, schoolId, { examResults: nextResults });
+        if (!saveResult.ok || saveResult.data?.status !== 'ok') {
+          alert(saveResult.data?.message || 'Unable to save marks.');
+          return;
+        }
+        alert('Marks saved successfully.');
+        renderRolePage('teacher', 'exams');
+        return;
+      }
+
+      if (action === 'save-profile') {
+        const profilePhoto = button.dataset.profilePhoto || '';
+        const profileResult = await updateSchoolDetails(token, schoolId, {
+          teacherProfile: {
+            fullName: document.getElementById('teacher-profile-name')?.value.trim(),
+            email: document.getElementById('teacher-profile-email')?.value.trim(),
+            phone: document.getElementById('teacher-profile-phone')?.value.trim(),
+            department: document.getElementById('teacher-profile-department')?.value.trim(),
+            position: document.getElementById('teacher-profile-position')?.value.trim(),
+            qualification: document.getElementById('teacher-profile-qualification')?.value.trim(),
+            profilePhoto: profilePhoto || undefined,
+          },
+        });
+        if (!profileResult.ok || profileResult.data?.status !== 'ok') {
+          alert(profileResult.data?.message || 'Unable to save profile.');
+          return;
+        }
+        const savedName = profileResult.data.school?.teacherProfile?.fullName || document.getElementById('teacher-profile-name')?.value.trim();
+        if (savedName) localStorage.setItem('globyedu_userFullName', savedName);
+        alert('Profile saved successfully.');
+        renderRolePage('teacher', 'profile');
+      }
+    });
+  });
+
+  const profilePhotoInput = document.getElementById('teacher-profile-photo');
+  const profilePhotoPreview = document.getElementById('teacher-profile-photo-preview');
+  const profileSaveButton = document.querySelector('[data-teacher-workspace-action="save-profile"]');
+  if (profilePhotoInput && profilePhotoInput.dataset.teacherPhotoBound === 'true') return;
+  if (profilePhotoInput) profilePhotoInput.dataset.teacherPhotoBound = 'true';
+  profilePhotoInput?.addEventListener('change', async () => {
+    const file = profilePhotoInput.files?.[0];
+    const validationError = validateSchoolImage(file);
+    if (validationError) {
+      profilePhotoInput.value = '';
+      alert(validationError);
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    if (profileSaveButton) profileSaveButton.dataset.profilePhoto = dataUrl;
+    if (profilePhotoPreview) profilePhotoPreview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Profile preview" class="h-20 w-20 rounded-full object-cover" />`;
+  });
+}
+
+function parseHash() {
+  const rawHash = location.hash.replace('#', '');
+  const [path, queryString] = rawHash.split('?');
+  return {
+    path: path.startsWith('/') ? path.slice(1) : path,
+    params: new URLSearchParams(queryString || ''),
+  };
+}
+
+function getUserRole() {
+  return localStorage.getItem('globyedu_userRole');
+}
+
+function getPlatformAdminFlag() {
+  return localStorage.getItem('globyedu_platformAdmin') === 'true';
+}
+
+function getAccessToken() {
+  return localStorage.getItem('globyedu_accessToken');
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+
+  try {
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    console.info('GlobyEdu OS service worker registered at', registration.scope);
+    monitorServiceWorkerRegistration(registration);
+  } catch (error) {
+    console.warn('GlobyEdu OS service worker registration failed:', error);
+  }
+}
+
+let deferredInstallPrompt = null;
+
+function setupPwaInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    console.info('PWA install prompt captured. Call promptPwaInstall() to show it.');
+    showInstallPromptNotice();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    displayPwaNotice({
+      title: 'Installed',
+      message: 'GlobyEdu OS is installed and ready to use offline.',
+      type: 'success',
+      duration: 5000,
+    });
+    localStorage.removeItem('globyedu_installPromptSnoozedUntil');
+    deferredInstallPrompt = null;
+  });
+}
+
+function promptPwaInstall() {
+  if (!deferredInstallPrompt) return;
+
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then((choiceResult) => {
+    console.info('PWA install choice:', choiceResult.outcome);
+    if (choiceResult.outcome === 'dismissed') {
+      localStorage.setItem('globyedu_installPromptSnoozedUntil', String(Date.now() + 12 * 60 * 60 * 1000));
+    }
+    deferredInstallPrompt = null;
+  });
+}
+
+function isAuthenticated() {
+  const accessToken = getAccessToken();
+  const role = getUserRole();
+  const sessionActive = localStorage.getItem('globyedu_sessionActive') === 'true' || sessionStorage.getItem('globyedu_sessionActive') === 'true';
+  const expiresAt = Number(localStorage.getItem('globyedu_sessionExpiresAt') || 0);
+  if (expiresAt && Date.now() > expiresAt) {
+    clearAuthenticationState();
+    return false;
+  }
+  return Boolean(accessToken || role || sessionActive);
+}
+
+function redirectAuthenticatedUser() {
+  if (!isAuthenticated()) return false;
+  if (getPlatformAdminFlag()) {
+    location.hash = '#/admin/overview';
+    return true;
+  }
+  location.hash = '#/school/overview';
+  return true;
+}
+
+function requireAuth() {
+  if (!isAuthenticated()) {
+    location.hash = '#/login';
+    return false;
+  }
+  return true;
+}
+
+// Clear persisted authentication state when the user signs out.
+function clearAuthenticationState() {
+  localStorage.removeItem('globyedu_accessToken');
+  localStorage.removeItem('globyedu_userRole');
+  localStorage.removeItem('globyedu_platformAdmin');
+  localStorage.removeItem('globyedu_userEmail');
+  localStorage.removeItem('globyedu_userFullName');
+  localStorage.removeItem('globyedu_schoolId');
+  localStorage.removeItem('globyedu_schoolName');
+  localStorage.removeItem('globyedu_trialEnds');
+  localStorage.removeItem('globyedu_sessionHistory');
+  localStorage.removeItem('globyedu_sessionActive');
+  localStorage.removeItem('globyedu_sessionExpiresAt');
+  localStorage.removeItem('globyedu_sessionRemembered');
+  localStorage.removeItem('globyedu_schoolDirectory');
+  sessionStorage.removeItem('globyedu_sessionActive');
+}
+
+// Attach handlers for the dedicated platform admin login page.
+function attachPlatformAdminHandlers() {
+  const form = document.getElementById('platform-admin-form');
+  const messageSlot = document.getElementById('platform-admin-message');
+  const googleButton = document.getElementById('google-signin');
+
+  if (!form) return;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    messageSlot.innerHTML = '';
+
+    const email = document.getElementById('platform-admin-email').value.trim();
+    const password = document.getElementById('platform-admin-password').value;
+    const remember = document.getElementById('platform-admin-remember').checked;
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    if (submitButton) submitButton.disabled = true;
+
+    if (!email || !password) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Email and password are required.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    try {
+      const response = await platformAdminLogin(email, password);
+      if (!response.ok || response.data?.status !== 'ok') {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${response.data?.message || 'Unable to sign in. Please check your details.'}</div>`;
+      } else {
+        localStorage.removeItem('globyedu_schoolDirectory');
+        localStorage.setItem('globyedu_accessToken', response.data.accessToken || response.data.token || '');
+        localStorage.setItem('globyedu_userRole', response.data.role || 'super_admin');
+        localStorage.setItem('globyedu_platformAdmin', 'true');
+        localStorage.setItem('globyedu_userEmail', email);
+        localStorage.setItem('globyedu_userFullName', response.data.fullName || 'Benjamin');
+        localStorage.setItem('globyedu_schoolId', response.data.schoolId || 'globy-school');
+        localStorage.setItem('globyedu_schoolName', response.data.schoolName || 'Globy School');
+        if (!remember) {
+          sessionStorage.setItem('globyedu_sessionActive', 'true');
+        }
+        markActiveSession();
+        location.hash = '#/admin/overview';
+      }
+    } catch (error) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Unable to sign in. Try again later.</div>`;
+    }
+
+    if (submitButton) submitButton.disabled = false;
+  });
+
+  if (googleButton) {
+    googleButton.addEventListener('click', () => {
+      messageSlot.innerHTML = '<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-slate-700">Use the email sign-in form below to continue. The secure workspace is ready for your school account.</div>';
+    });
+  }
+}
+
+function attachLoginHandlers() {
+  const form = document.getElementById('login-form');
+  const messageSlot = document.getElementById('login-message');
+  const googleButton = document.getElementById('google-signin');
+  const roleButtons = document.querySelectorAll('[data-login-role]');
+  const selectedRoleTitle = document.getElementById('selected-role-title');
+  const selectedRoleDescription = document.getElementById('selected-role-description');
+  const selectedRoleBadge = document.getElementById('selected-role-badge');
+  const fieldSchoolIdGroup = document.getElementById('field-school-id-group');
+  const fieldSchoolNameGroup = document.getElementById('field-school-name-group');
+  const fieldSchoolIdLabel = document.getElementById('field-school-id-label');
+  const studentDetails = document.getElementById('student-details');
+  const teacherDetails = document.getElementById('teacher-details');
+  const usernameLabel = document.getElementById('field-username-label');
+  const schoolIdInput = document.getElementById('school-id');
+  const schoolNameInput = document.getElementById('school-name');
+  const usernameInput = document.getElementById('student-id') || document.getElementById('login-username');
+  const loginRoleInput = document.getElementById('login-role');
+  const superAdminPortalLink = document.getElementById('super-admin-portal');
+  const storedSchoolId = localStorage.getItem('globyedu_schoolId') || '';
+  const storedSchoolName = localStorage.getItem('globyedu_schoolName') || '';
+
+  function renderLoginError(data, fallbackMessage = 'Unable to sign in. Please check your details.') {
+    if (data?.code === 'ACCOUNT_SUSPENDED') {
+      return `<div class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950" role="alert">
+        <p class="text-base font-semibold">Account Suspended</p>
+        <p class="mt-2">Your school's account has been temporarily suspended. Please contact GlobyEdu support to resolve this and reactivate your account.</p>
+        <p class="mt-3 font-semibold">support@globyedu.com</p>
+      </div>`;
+    }
+    return `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${data?.message || fallbackMessage}</div>`;
+  }
+
+  if (!form) return;
+  if (!messageSlot) return;
+
+  const ROLE_CONFIG = {
+    platform_admin: {
+      title: 'Platform Super Admin',
+      description: 'Sign in with your platform administrator account.',
+      badge: 'Platform admin',
+      usernameLabel: 'Email',
+      usernamePlaceholder: 'you@example.com',
+      showSchoolId: false,
+      showSchoolName: false,
+      showStudentDetails: false,
+      googleEnabled: true,
+    },
+    school_authority: {
+      title: 'School Authority',
+      description: 'Use your school email and tenant ID to access administrative tools.',
+      badge: 'School authority',
+      usernameLabel: 'School Email',
+      usernamePlaceholder: 'head@school.edu',
+      showSchoolId: true,
+      showSchoolName: true,
+      showStudentDetails: false,
+      googleEnabled: true,
+    },
+    teacher: {
+      title: 'Teacher',
+      description: 'Enter your school name, email, and password to manage classes and learners.',
+      badge: 'Teacher',
+      usernameLabel: 'Email',
+      usernamePlaceholder: 'teacher@school.edu',
+      showSchoolId: false,
+      showSchoolName: true,
+      showStudentDetails: false,
+      googleEnabled: false,
+    },
+    student: {
+      title: 'Student',
+      description: 'Use your school name, email, class, and password to open the learner workspace.',
+      badge: 'Student',
+      usernameLabel: 'Email',
+      usernamePlaceholder: 'student@school.edu',
+      showSchoolId: false,
+      showSchoolName: true,
+      showStudentDetails: true,
+      googleEnabled: false,
+    },
+  };
+
+  function updateSelectedRole(role) {
+    const config = ROLE_CONFIG[role];
+    if (!config) return;
+
+    loginRoleInput.value = role;
+    selectedRoleTitle.textContent = config.title;
+    selectedRoleDescription.textContent = config.description;
+    selectedRoleBadge.textContent = config.badge;
+    usernameLabel.textContent = config.usernameLabel;
+    if (usernameInput) {
+      usernameInput.placeholder = config.usernamePlaceholder;
+    }
+    fieldSchoolIdGroup.classList.toggle('hidden', !config.showSchoolId);
+    fieldSchoolNameGroup.classList.toggle('hidden', !config.showSchoolName);
+    studentDetails.classList.toggle('hidden', !config.showStudentDetails);
+    if (teacherDetails) {
+      teacherDetails.classList.toggle('hidden', role !== 'teacher');
+    }
+    roleButtons.forEach((button) => {
+      const isSelected = button.dataset.loginRole === role;
+      button.classList.toggle('border-sky-500', isSelected);
+      button.classList.toggle('bg-white', isSelected);
+      button.classList.toggle('shadow-sm', isSelected);
+      button.classList.toggle('border-slate-200', !isSelected);
+      button.classList.toggle('bg-slate-50', !isSelected);
+      button.classList.toggle('shadow-none', !isSelected);
+    });
+
+    if (googleButton) {
+      googleButton.classList.toggle('opacity-50', !config.googleEnabled);
+      googleButton.disabled = !config.googleEnabled;
+      googleButton.textContent = config.googleEnabled ? 'Google Sign In' : 'Google unavailable';
+    }
+
+  }
+
+  roleButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      updateSelectedRole(button.dataset.loginRole);
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-slate-700">${ROLE_CONFIG[button.dataset.loginRole].description}</div>`;
+    });
+  });
+
+  if (superAdminPortalLink) {
+    superAdminPortalLink.addEventListener('click', () => {
+      messageSlot.innerHTML = '<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-slate-700">Redirecting to the secure Super Admin sign in page.</div>';
+    });
+  }
+
+  if (!storedSchoolId) {
+    messageSlot.innerHTML = `<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-slate-700">Select your role and enter your credentials to sign in.</div>`;
+  } else {
+    messageSlot.innerHTML = `<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-slate-700">School ID auto-filled from your last session. Select the correct role to continue.</div>`;
+  }
+
+  updateSelectedRole(loginRoleInput?.value || 'school_authority');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    messageSlot.innerHTML = '';
+    const role = loginRoleInput.value;
+    const username = usernameInput?.value.trim();
+    const password = document.getElementById('password').value;
+    const remember = document.getElementById('remember-me')?.checked;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const schoolId = schoolIdInput?.value.trim();
+    const schoolName = schoolNameInput?.value.trim();
+    const studentName = document.getElementById('student-name')?.value.trim();
+    const studentClass = document.getElementById('student-class')?.value.trim();
+
+    if (submitButton) submitButton.disabled = true;
+    if (!role) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Please choose a login role before signing in.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    if (role === 'school_authority' && !schoolId) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">School ID is required for this role.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    if (role === 'student') {
+      if (!schoolName || !studentName || !studentClass) {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">School name, student name, and class are required for student sign in.</div>`;
+        if (submitButton) submitButton.disabled = false;
+        return;
+      }
+    }
+
+    if (role === 'teacher') {
+      const teacherName = document.getElementById('teacher-name')?.value.trim();
+      if (!schoolName || !teacherName) {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">School name and teacher name are required for teacher sign in.</div>`;
+        if (submitButton) submitButton.disabled = false;
+        return;
+      }
+    }
+
+    if (!username || !password) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Username and password are required.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    try {
+      let response;
+      if (role === 'platform_admin') {
+        response = await platformAdminLogin(username, password);
+      } else if (role === 'school_authority') {
+        response = await schoolAuthorityLogin(schoolId, username, password);
+      } else if (role === 'teacher') {
+        const teacherName = document.getElementById('teacher-name')?.value.trim();
+        response = await teacherLogin(schoolId, username, password, { schoolName, teacherName });
+      } else {
+        response = await studentLogin(schoolId, username, password, { schoolName, studentName, studentClass });
+      }
+
+      if (!response.ok || response.data?.status !== 'ok') {
+        messageSlot.innerHTML = renderLoginError(response.data);
+      } else {
+        const accessToken = response.data.accessToken || response.data.token || '';
+        localStorage.removeItem('globyedu_schoolDirectory');
+        localStorage.setItem('globyedu_accessToken', accessToken);
+        localStorage.setItem('globyedu_userRole', role);
+        localStorage.setItem('globyedu_platformAdmin', role === 'platform_admin' ? 'true' : 'false');
+        localStorage.setItem('globyedu_userEmail', username);
+        localStorage.setItem('globyedu_userFullName', response.data.fullName || username);
+        if (role === 'student') {
+          if (response.data.studentId || response.data.response?.studentId) {
+            localStorage.setItem('globyedu_studentId', response.data.studentId || response.data.response.studentId);
+          }
+          if (response.data.className || response.data.response?.className) {
+            localStorage.setItem('globyedu_studentClass', response.data.className || response.data.response.className);
+          }
+          if (response.data.profilePhoto || response.data.response?.profilePhoto) {
+            localStorage.setItem('globyedu_profilePhoto', response.data.profilePhoto || response.data.response.profilePhoto);
+          }
+        }
+            const resolvedSchoolId = schoolId || response.data.schoolId || response.data.response?.schoolId || '';
+            if (resolvedSchoolId) {
+              localStorage.setItem('globyedu_schoolId', resolvedSchoolId);
+        }
+            const resolvedSchoolName = schoolName || response.data.schoolName || response.data.response?.schoolName || '';
+            if (resolvedSchoolName) {
+              localStorage.setItem('globyedu_schoolName', resolvedSchoolName);
+        } else {
+          localStorage.setItem('globyedu_schoolName', response.data.schoolName || localStorage.getItem('globyedu_schoolName') || 'Globy School');
+        }
+        if (remember) {
+          localStorage.setItem('globyedu_sessionActive', 'true');
+          localStorage.setItem('globyedu_sessionExpiresAt', String(Date.now() + 1000 * 60 * 60 * 24 * 7));
+          localStorage.setItem('globyedu_sessionRemembered', 'true');
+        } else {
+          sessionStorage.setItem('globyedu_sessionActive', 'true');
+          localStorage.setItem('globyedu_sessionExpiresAt', String(Date.now() + 1000 * 60 * 60));
+          localStorage.removeItem('globyedu_sessionRemembered');
+        }
+
+        markActiveSession();
+
+        if (response.data.passwordNeedsReset === true || response.data.response?.passwordNeedsReset === true) {
+          location.hash = '#/change-password';
+        } else if (role === 'platform_admin') {
+          location.hash = '#/admin/overview';
+        } else if (role === 'school_authority') {
+          location.hash = '#/school/overview';
+        } else if (role === 'teacher') {
+          location.hash = '#/role/teacher';
+        } else if (role === 'student') {
+          location.hash = '#/role/student';
+        } else {
+          location.hash = '#/login';
+        }
+      }
+    } catch (error) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Unable to sign in. Try again later.</div>`;
+    }
+
+    if (submitButton) submitButton.disabled = false;
+  });
+
+  if (googleButton) {
+    googleButton.addEventListener('click', async () => {
+      const role = loginRoleInput.value;
+      if (role !== 'school_authority' && role !== 'platform_admin') {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Google sign-in is available for school authority and platform administration accounts.</div>`;
+        return;
+      }
+      if (!schoolIdInput?.value?.trim() && role !== 'platform_admin') {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Please select a school and role before using Google sign in.</div>`;
+        return;
+      }
+      if (!isFirebaseConfigured()) {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Firebase is not configured. Use email and password sign in.</div>`;
+        return;
+      }
+      messageSlot.innerHTML = '<div class="rounded-3xl border border-sky-200 bg-sky-50 p-4 text-sky-700">Redirecting to Google sign in...</div>';
+
+      try {
+        const credential = await firebaseSignInWithGoogle();
+        if (!credential?.user) {
+          throw new Error('Google sign-in did not return a valid user.');
+        }
+
+        const idToken = await credential.user.getIdToken();
+        const response = await apiFirebaseLogin(idToken, role === 'platform_admin' ? 'globy-school' : schoolIdInput.value.trim(), role === 'platform_admin');
+
+        if (!response.ok || response.data?.status !== 'ok') {
+          messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${response.data?.message || 'Unable to sign in with Google.'}</div>`;
+          return;
+        }
+
+        const roleFromResponse = Array.isArray(response.data.user?.roles) ? response.data.user.roles[0] : 'school_authority';
+        localStorage.setItem('globyedu_accessToken', response.data.accessToken || '');
+        localStorage.setItem('globyedu_userRole', roleFromResponse);
+        localStorage.setItem('globyedu_platformAdmin', role === 'platform_admin' ? 'true' : 'false');
+        localStorage.setItem('globyedu_userEmail', response.data.user?.email || '');
+        localStorage.setItem('globyedu_userFullName', response.data.user?.displayName || response.data.user?.email || '');
+
+        localStorage.setItem('globyedu_schoolId', response.data.schoolId || response.data.tenantId || schoolIdInput.value.trim());
+        if (role !== 'platform_admin') {
+          localStorage.setItem('globyedu_schoolName', response.data.schoolName || localStorage.getItem('globyedu_schoolName') || 'Globy School');
+        }
+
+        markActiveSession();
+        location.hash = roleFromResponse === 'platform_admin' ? '#/admin/overview' : '#/school/overview';
+      } catch (error) {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Unable to sign in with Google. Try again later.</div>`;
+        console.error('Google sign-in failed:', error);
+      }
+    });
+  }
+}
+
+function handleEmailVerification(oobCode) {
+  if (!isFirebaseConfigured()) {
+    return renderVerifyEmailPage('error', 'Firebase is not configured for email verification.');
+  }
+
+  renderVerifyEmailPage('pending', 'Verifying your email. Please wait...');
+  firebaseApplyActionCode(oobCode)
+    .then(() => {
+      renderVerifyEmailPage('success', 'Your email has been verified successfully. You may now sign in.');
+    })
+    .catch((err) => {
+      console.error('Email verification failed:', err);
+      renderVerifyEmailPage('error', 'Unable to verify your email. The link may be invalid or expired.');
+    });
+}
+
+function attachRegisterHandlers() {
+  const form = document.getElementById('register-form');
+  const messageSlot = document.getElementById('register-message');
+  const googleButton = document.getElementById('google-register');
+
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    messageSlot.innerHTML = '';
+
+    const schoolName = document.getElementById('school-name').value.trim();
+    const adminName = document.getElementById('admin-name').value.trim();
+    const email = document.getElementById('school-email').value.trim();
+    const phone = document.getElementById('school-phone').value.trim();
+    const country = document.getElementById('school-country').value.trim();
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    if (submitButton) submitButton.disabled = true;
+    if (!schoolName || !adminName || !email || !phone || !country || !password || !confirmPassword) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Please complete all fields.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+    if (password !== confirmPassword) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Passwords do not match.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    try {
+      const result = await apiRegister(schoolName, adminName, email, phone, country, password);
+      if (!result.ok || result.data?.status !== 'ok') {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${result.data?.message || 'Unable to create school account.'}</div>`;
+      } else {
+        localStorage.setItem('globyedu_schoolId', result.data.schoolId);
+        localStorage.setItem('globyedu_schoolName', schoolName);
+        localStorage.setItem('globyedu_trialEnds', result.data.trialEndsAt || '3 days');
+        try {
+          const loginResult = await apiLogin(email, password, result.data.schoolId);
+          if (loginResult.ok && loginResult.data?.status === 'ok') {
+            localStorage.setItem('globyedu_accessToken', loginResult.data.accessToken || loginResult.data.token || '');
+            localStorage.setItem('globyedu_userRole', loginResult.data.role || 'super_admin');
+            localStorage.setItem('globyedu_platformAdmin', 'false');
+            localStorage.setItem('globyedu_userEmail', email);
+            localStorage.setItem('globyedu_userFullName', loginResult.data.fullName || adminName);
+            sessionStorage.setItem('globyedu_sessionActive', 'true');
+            markActiveSession();
+            location.hash = '#/school/overview';
+            return;
+          }
+        } catch {
+          // Fall back to the onboarding success page if the immediate login fails.
+        }
+        location.hash = '#/registered';
+      }
+    } catch (error) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Submission failed. Please try again.</div>`;
+    }
+    if (submitButton) submitButton.disabled = false;
+  });
+
+  if (googleButton) {
+    googleButton.addEventListener('click', () => {
+      messageSlot.innerHTML = '<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-slate-700">Use the registration form below to create your school account. The workspace will be available immediately after signup.</div>';
+    });
+  }
+}
+
+function attachForgotHandlers(loginType = 'school') {
+  const form = document.getElementById('forgot-form');
+  const messageSlot = document.getElementById('forgot-message');
+  if (!form) return;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    messageSlot.innerHTML = '';
+    const email = document.getElementById('forgot-email').value.trim();
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+
+    if (!email) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Please enter your email.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    try {
+      if (isFirebaseConfigured()) {
+        await firebaseSendPasswordResetEmail(email);
+      } else {
+        const result = await apiForgot(email, loginType);
+        if (!result.ok || result.data?.status !== 'ok') {
+          throw new Error(result.data?.message || 'Unable to submit request.');
+        }
+      }
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800">If that email exists, a password reset link has been sent.</div>`;
+    } catch (error) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Request failed. Please try again.</div>`;
+    }
+
+    if (submitButton) submitButton.disabled = false;
+  });
+}
+
+function attachResetPasswordHandlers(token = '', loginType = 'school') {
+  const form = document.getElementById('reset-password-form');
+  const messageSlot = document.getElementById('reset-password-message');
+  if (!form) return;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    messageSlot.innerHTML = '';
+    const newPassword = document.getElementById('reset-password').value;
+    const confirmPassword = document.getElementById('reset-password-confirm').value;
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+
+    if (!newPassword || !confirmPassword) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Please complete both password fields.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Passwords do not match.</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+
+    try {
+      if (isFirebaseConfigured()) {
+        await firebaseConfirmPasswordResetClient(token, newPassword);
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800">Your password has been updated. You can now sign in.</div>`;
+      } else {
+        const result = await confirmFirebasePasswordReset(token, newPassword);
+        if (!result.ok || result.data?.status !== 'ok') {
+          throw new Error(result.data?.message || 'Unable to reset password.');
+        }
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800">Your password has been updated. You can now sign in.</div>`;
+      }
+    } catch (error) {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Unable to reset password. Please try again.</div>`;
+    }
+
+    if (submitButton) submitButton.disabled = false;
+  });
+}
+
+function attachChangePasswordHandlers() {
+  const form = document.getElementById('change-password-form');
+  const messageSlot = document.getElementById('change-password-message');
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitButton = form.querySelector('button[type="submit"]');
+    const oldPassword = document.getElementById('current-password').value;
+    const newPassword = document.getElementById('new-password').value;
+    const confirmation = document.getElementById('confirm-new-password').value;
+    if (newPassword !== confirmation) {
+      messageSlot.innerHTML = '<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Passwords do not match.</div>';
+      return;
+    }
+    if (submitButton) submitButton.disabled = true;
+    const result = await apiChangePassword(getAccessToken(), oldPassword, newPassword);
+    if (!result.ok || result.data?.status !== 'ok') {
+      messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${result.data?.message || 'Unable to change password.'}</div>`;
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+    messageSlot.innerHTML = '<div class="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800">Password changed successfully. Redirecting...</div>';
+    if (result.data.accessToken) {
+      localStorage.setItem('globyedu_accessToken', result.data.accessToken);
+    }
+    const role = getUserRole();
+    location.hash = role === 'super_admin' || getPlatformAdminFlag() ? '#/admin/overview' : role === 'school_authority' ? '#/school/overview' : `#/role/${role || 'student'}`;
+  });
+}
+
+async function route() {
+  const navigationId = ++routeGeneration;
+  const { path: current, params } = parseHash();
+
+  if (!current || current === 'home' || LANDING_ROUTES.includes(current)) {
+    return renderLanding(current || 'home');
+  }
+  if (current === 'login') {
+    if (redirectAuthenticatedUser()) return;
+    return renderLoginPage();
+  }
+  if (current === 'platform-admin') {
+    if (redirectAuthenticatedUser()) return;
+    return renderPlatformAdminPage();
+  }
+  if (current === 'register') return renderRegisterPage();
+  if (current === 'forgot') return renderForgotPage(params.get('type') || 'school');
+  if (current === 'reset-password') return renderResetPasswordPage(params.get('token') || params.get('oobCode') || '', params.get('type') || 'school');
+  if (current === 'change-password') {
+    if (!requireAuth()) return;
+    root.innerHTML = `${Nav()}${ChangePasswordPage()}${Footer()}`;
+    attachChangePasswordHandlers();
+    return;
+  }
+  if (current === 'verify-email') return handleEmailVerification(params.get('oobCode') || '');
+  if (current === 'registered') return renderRegisterSuccess();
+  if (current === 'admin' || current.startsWith('admin/')) {
+    if (!requireAuth()) return;
+    const authenticatedRole = getUserRole();
+    if (authenticatedRole !== 'super_admin' && !getPlatformAdminFlag()) {
+      const redirectRole = authenticatedRole === 'teacher' ? 'teacher' : authenticatedRole === 'student' ? 'student' : 'school_authority';
+      const redirectPath = redirectRole === 'teacher' ? '#/role/teacher' : redirectRole === 'student' ? '#/role/student' : '#/school/overview';
+      location.hash = redirectPath;
+      return;
+    }
+    const section = current === 'admin' ? 'overview' : current.split('/')[1] || 'overview';
+    return renderAdminPage(section, navigationId);
+  }
+  if (current === 'school' || current.startsWith('school/')) {
+    if (!requireAuth()) return;
+    if (await ensureSchoolAccessIsActive()) return;
+    const authenticatedRole = getUserRole();
+    if (authenticatedRole !== 'school_authority' && authenticatedRole !== 'super_admin' && !getPlatformAdminFlag()) {
+      const redirectRole = authenticatedRole === 'teacher' ? 'teacher' : authenticatedRole === 'student' ? 'student' : 'student';
+      const redirectPath = redirectRole === 'teacher' ? '#/role/teacher' : '#/role/student';
+      location.hash = redirectPath;
+      return;
+    }
+    const section = current === 'school' ? 'overview' : current.split('/')[1] || 'overview';
+    return renderSchoolDashboardPage(section, navigationId);
+  }
+  if (current.startsWith('role/')) {
+    if (!requireAuth()) return;
+    if (await ensureSchoolAccessIsActive()) return;
+    const [, role, section] = current.split('/');
+    const authenticatedRole = getUserRole();
+    const allowedRoleRedirects = {
+      student: '#/role/student',
+      teacher: '#/role/teacher',
+      school_authority: '#/school/overview',
+      super_admin: '#/admin/overview',
+    };
+    if (role && authenticatedRole && authenticatedRole !== role) {
+      const redirectRole = authenticatedRole;
+      const redirectPath = allowedRoleRedirects[redirectRole] || '#/role/student';
+      location.hash = redirectPath;
+      return;
+    }
+    if (role === 'super_admin' || getUserRole() === 'super_admin' || getPlatformAdminFlag()) {
+      return renderAdminPage('overview');
+    }
+    return renderRolePage(role || 'super_admin', section || 'overview', navigationId);
+  }
+
+  renderLanding('home');
+}
+
+function attachAdminHandlers() {
+  const mobileToggle = document.getElementById('admin-mobile-menu-toggle');
+  const mobileMenu = document.getElementById('admin-mobile-menu');
+  const profileButton = document.getElementById('admin-profile-menu');
+  const profileDropdown = document.getElementById('admin-profile-dropdown');
+  const notificationsButton = document.getElementById('admin-notifications-toggle');
+
+  if (mobileToggle && mobileMenu) {
+    mobileToggle.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+  }
+
+  if (profileButton && profileDropdown) {
+    profileButton.addEventListener('click', () => {
+      profileDropdown.classList.toggle('hidden');
+    });
+    document.addEventListener('click', (event) => {
+      if (!profileButton.contains(event.target) && !profileDropdown.contains(event.target)) {
+        profileDropdown.classList.add('hidden');
+      }
+    });
+  }
+
+  const logoutButton = document.getElementById('admin-logout');
+  if (logoutButton) {
+    logoutButton.addEventListener('click', () => {
+      clearAuthenticationState();
+      location.hash = '#/login';
+    });
+  }
+
+  if (notificationsButton) {
+    notificationsButton.addEventListener('click', () => {
+      location.hash = '#/admin/announcements';
+    });
+  }
+
+  // Admin navigation buttons (data-admin-nav)
+  document.querySelectorAll('[data-admin-nav]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const section = btn.getAttribute('data-admin-nav');
+      if (section) {
+        location.hash = `#/admin/${section}`;
+      }
+    });
+  });
+
+  // Admin action buttons (data-admin-action)
+  document.querySelectorAll('[data-admin-action]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const action = btn.getAttribute('data-admin-action');
+      if (action === 'create-school') {
+        location.hash = '#/admin/schools';
+      }
+    });
+  });
+}
+
+function attachAdminPageActions(section, summary, schools) {
+  if (section !== 'schools') return;
+
+  const searchInput = document.getElementById('school-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', debounce(async () => {
+      await refreshAdminSchoolList(searchInput.value.trim());
+    }, 300));
+  }
+
+  const createButton = document.getElementById('create-school-button');
+  if (createButton) {
+    createButton.addEventListener('click', () => handleCreateSchool());
+  }
+
+  document.querySelectorAll('.admin-school-action').forEach((button) => {
+    button.addEventListener('click', (event) => handleSchoolAction(event, schools));
+  });
+}
+
+function debounce(fn, delay = 250) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), delay);
+  };
+}
+
+function showAdminMessage(type, message) {
+  const slot = document.getElementById('admin-school-message');
+  if (!slot) return;
+  slot.className = `rounded-3xl border p-4 text-sm ${
+    type === 'success'
+      ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+      : type === 'error'
+      ? 'border-rose-100 bg-rose-50 text-rose-800'
+      : 'border-slate-200 bg-slate-50 text-slate-700'
+  }`;
+  slot.textContent = message;
+  slot.classList.remove('hidden');
+}
+
+function clearAdminMessage() {
+  const slot = document.getElementById('admin-school-message');
+  if (!slot) return;
+  slot.textContent = '';
+  slot.classList.add('hidden');
+}
+
+function showAdminConfirmation(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4';
+    overlay.innerHTML = `
+      <div class="w-full max-w-md rounded-4xl bg-white p-6 shadow-2xl shadow-slate-900/10">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Confirm action</p>
+        <h2 class="mt-4 text-xl font-semibold text-slate-900">${message}</h2>
+        <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button data-confirm="no" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Cancel</button>
+          <button data-confirm="yes" class="rounded-full bg-rose-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-700">Proceed</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const cleanup = () => {
+      overlay.remove();
+    };
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        cleanup();
+        resolve(false);
+      }
+    });
+
+    overlay.querySelector('[data-confirm="no"]').addEventListener('click', () => {
+      cleanup();
+      resolve(false);
+    });
+    overlay.querySelector('[data-confirm="yes"]').addEventListener('click', () => {
+      cleanup();
+      resolve(true);
+    });
+  });
+}
+
+function showAdminForm(title, fields) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-3 sm:items-center sm:p-6';
+
+    const formFields = fields
+      .map((field) => {
+        if (field.type === 'textarea') {
+          return `
+            <label class="block text-sm text-slate-700">
+              ${field.label}
+              <textarea id="admin-form-${field.name}" rows="${field.rows || 4}" placeholder="${field.placeholder || ''}" class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''}>${field.value || ''}</textarea>
+            </label>
+          `;
+        }
+
+        if (field.type === 'file') {
+          return `
+            <label class="block text-sm text-slate-700">
+              ${field.label}
+              <input id="admin-form-${field.name}" type="file" accept="${field.accept || 'image/*'}" ${field.capture ? `capture="${field.capture}"` : ''} class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} />
+              <span id="admin-form-${field.name}-feedback" class="mt-2 block text-xs text-slate-500">Choose an image up to 2 MB.</span>
+              <span id="admin-form-${field.name}-preview" class="mt-3 block"></span>
+            </label>
+          `;
+        }
+
+        if (field.type === 'select') {
+          const selectedValues = Array.isArray(field.value) ? field.value : [field.value].filter((value) => value !== undefined && value !== null && value !== '');
+          const renderOption = (option) => {
+                const stringValue = String(option.value ?? '');
+                const isSelected = field.multiple
+                  ? selectedValues.some((selected) => String(selected) === stringValue)
+                  : String(option.value ?? '') === String(field.value ?? '');
+                return `<option value="${stringValue}" ${isSelected ? 'selected' : ''}>${option.label ?? option.value ?? 'Option'}</option>`;
+              };
+          const options = Array.isArray(field.options) && field.options.length
+            ? field.options.map((option) => Array.isArray(option.options)
+              ? `<optgroup label="${option.label}">${option.options.map(renderOption).join('')}</optgroup>`
+              : renderOption(option)).join('')
+            : '<option value="">Select an option</option>';
+          return `
+            <label class="block text-sm text-slate-700">
+              ${field.label}
+              <select id="admin-form-${field.name}" class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} ${field.multiple ? 'multiple size="8"' : ''}>
+                ${options}
+              </select>
+            </label>
+          `;
+        }
+
+        return `
+          <label class="block text-sm text-slate-700">
+            ${field.label}
+            <input id="admin-form-${field.name}" type="${field.type || 'text'}" value="${field.value || ''}" placeholder="${field.placeholder || ''}" class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} />
+          </label>
+        `;
+      })
+      .join('');
+
+    overlay.innerHTML = `
+      <div class="my-3 max-h-[calc(100vh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-4xl bg-white p-5 shadow-2xl shadow-slate-900/10 sm:my-0 sm:max-h-[calc(100vh-3rem)] sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">${title}</p>
+          <button type="button" data-modal="close" aria-label="Close form" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-xl leading-none text-slate-600 transition hover:bg-slate-100">&times;</button>
+        </div>
+        <form id="admin-modal-form" class="mt-6 space-y-4">
+          <div class="grid gap-4 sm:grid-cols-2">${formFields}</div>
+          <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button type="button" data-modal="cancel" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Cancel</button>
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Submit</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    fields.filter((field) => field.type === 'file').forEach((field) => {
+      const input = overlay.querySelector(`#admin-form-${field.name}`);
+      const feedback = overlay.querySelector(`#admin-form-${field.name}-feedback`);
+      const preview = overlay.querySelector(`#admin-form-${field.name}-preview`);
+      input?.addEventListener('change', async () => {
+        const file = input.files?.[0];
+        const validationError = validateSchoolImage(file);
+        if (validationError) {
+          input.value = '';
+          if (feedback) feedback.textContent = validationError;
+          if (preview) preview.innerHTML = '';
+          return;
+        }
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          if (feedback) feedback.textContent = 'Image ready to save.';
+          if (preview) preview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Selected image preview" class="h-24 w-24 rounded-2xl border border-slate-200 object-cover" />`;
+        } catch (error) {
+          input.value = '';
+          if (feedback) feedback.textContent = error.message || 'Unable to read image.';
+          if (preview) preview.innerHTML = '';
+        }
+      });
+    });
+
+    let settled = false;
+    const cleanup = () => {
+      document.removeEventListener('keydown', handleKeydown);
+      overlay.remove();
+    };
+
+    const close = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(null);
+    };
+
+    const handleKeydown = (event) => {
+      if (event.key === 'Escape') close();
+    };
+
+    overlay.querySelector('[data-modal="cancel"]').addEventListener('click', close);
+    overlay.querySelector('[data-modal="close"]').addEventListener('click', close);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    document.addEventListener('keydown', handleKeydown);
+
+    const form = overlay.querySelector('#admin-modal-form');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (settled) return;
+      const result = {};
+      for (const field of fields) {
+        const input = overlay.querySelector(`#admin-form-${field.name}`);
+        if (!input) {
+          result[field.name] = '';
+          continue;
+        }
+
+        if (field.type === 'file') {
+          const file = input.files?.[0];
+          if (!file) {
+            result[field.name] = '';
+            continue;
+          }
+
+          const validationError = validateSchoolImage(file);
+          if (validationError) {
+            result[field.name] = '';
+            continue;
+          }
+          result[field.name] = await readFileAsDataUrl(file);
+          continue;
+        }
+
+        if (field.type === 'select' && field.multiple) {
+          result[field.name] = Array.from(input.selectedOptions || []).map((option) => option.value).filter(Boolean);
+          continue;
+        }
+
+        result[field.name] = input.value.trim();
+      }
+      settled = true;
+      cleanup();
+      resolve(result);
+    });
+  });
+}
+
+async function handleCreateSchool() {
+  const token = getAccessToken();
+  clearAdminMessage();
+  if (!token) {
+    showAdminMessage('error', 'Please sign in as a Super Admin to create schools.');
+    return;
+  }
+
+  const formData = await showAdminForm('Create school', [
+    { name: 'name', label: 'School name', placeholder: 'Example International School', required: true },
+    { name: 'description', label: 'Description', placeholder: 'Tenant school description', type: 'text' },
+    { name: 'headEmail', label: 'School Head email', placeholder: 'head@example.com', type: 'email' },
+    { name: 'headFullName', label: 'School Head full name', placeholder: 'Jane Doe', type: 'text' },
+    { name: 'headPassword', label: 'School Head password', placeholder: 'Leave blank to auto-generate', type: 'password' },
+  ]);
+  if (!formData || !formData.name) return;
+
+  const payload = {
+    name: formData.name.trim(),
+    description: formData.description.trim(),
+    headEmail: formData.headEmail.trim() || undefined,
+    headFullName: formData.headFullName.trim() || undefined,
+    headPassword: formData.headPassword || undefined,
+    schoolStatus: 'active',
+    subscriptionStatus: 'trial',
+  };
+
+  const result = await createAdminSchool(token, payload);
+  if (!result.ok || result.data?.status !== 'ok') {
+    showAdminMessage('error', result.data?.message || 'Unable to create school. Check the details and try again.');
+    return;
+  }
+
+  showAdminMessage('success', `School created successfully: ${result.data.school?.name || result.data.school?.schoolId || 'New school'}`);
+  await refreshAdminSchoolList();
+}
+
+async function handleSchoolAction(event, schools) {
+  event.preventDefault();
+  const button = event.currentTarget;
+  const action = button.dataset.action;
+  const schoolId = button.dataset.schoolId;
+  const token = getAccessToken();
+  if (!token) {
+    showAdminMessage('error', 'Please sign in as a Super Admin to perform this action.');
+    return;
+  }
+
+  const school = schools.find((entry) => entry.schoolId === schoolId);
+  const name = school?.name || 'school';
+
+  if (action === 'view') {
+    showAdminMessage(
+      'info',
+      `Name: ${name} | School ID: ${schoolId} | Subscription: ${school?.subscriptionPlan || 'N/A'} | Status: ${school?.subscriptionStatus || school?.schoolStatus || 'Unknown'} | Users: ${school?.userCount || (school?.users && school.users.length) || 0}`
+    );
+    return;
+  }
+
+  if (action === 'edit') {
+    const formData = await showAdminForm('Edit school', [
+      { name: 'name', label: 'School name', placeholder: 'New school name', value: name, required: true },
+    ]);
+    if (!formData || !formData.name || formData.name.trim() === name) return;
+
+    const payload = { name: formData.name.trim() };
+    const result = await updateAdminSchool(token, schoolId, payload);
+    if (!result.ok || result.data?.status !== 'ok') {
+      showAdminMessage('error', result.data?.message || 'Unable to update school.');
+      return;
+    }
+    showAdminMessage('success', 'School updated successfully.');
+    await refreshAdminSchoolList();
+    return;
+  }
+
+  if (action === 'suspend') {
+    const confirmed = await showAdminConfirmation(`Suspend school ${name}? This will mark the school as suspended.`);
+    if (!confirmed) return;
+    const result = await deleteAdminSchool(token, schoolId);
+    if (!result.ok || result.data?.status !== 'ok') {
+      showAdminMessage('error', result.data?.message || 'Unable to suspend school.');
+      return;
+    }
+    showAdminMessage('success', 'School suspended successfully.');
+    await refreshAdminSchoolList();
+    return;
+  }
+
+  if (action === 'activate') {
+    const result = await activateAdminSchool(token, schoolId);
+    if (!result.ok || result.data?.status !== 'ok') {
+      showAdminMessage('error', result.data?.message || 'Unable to activate school.');
+      return;
+    }
+    showAdminMessage('success', 'School activated successfully.');
+    await refreshAdminSchoolList();
+    return;
+  }
+}
+
+async function refreshAdminSchoolList(search = '') {
+  const token = getAccessToken();
+  if (!token) return;
+  const [summaryResult, schoolListResult] = await Promise.all([
+    fetchAdminDashboardSummary(token),
+    fetchAdminSchoolList(token, search),
+  ]);
+
+  const summary = summaryResult.ok && summaryResult.data?.status === 'ok' ? summaryResult.data.summary : {};
+  const schools = schoolListResult.ok && schoolListResult.data?.status === 'ok' ? schoolListResult.data.schools || [] : [];
+
+  root.innerHTML = `${Nav()}${AdminPage('schools', localStorage.getItem('globyedu_userFullName') || 'Benjamin', summary, schools)}${Footer()}`;
+  attachAdminHandlers();
+  attachAdminSectionHandlers('schools');
+}
+
+function attachContactHandlers() {
+  const form = document.getElementById('contact-form');
+  const status = document.getElementById('contact-status');
+  if (!form || !status) return;
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    status.textContent = 'Sending...';
+    setTimeout(() => {
+      status.textContent = 'Thanks! We will follow up within one business day.';
+      form.reset();
+    }, 600);
+  });
+}
+
+function attachNewsletterHandlers() {
+  const form = document.getElementById('newsletter-form');
+  const status = document.getElementById('newsletter-status');
+  if (!form || !status) return;
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const emailInput = document.getElementById('newsletter-email');
+    if (!emailInput || !emailInput.value.trim()) {
+      status.textContent = 'Please enter a valid email address.';
+      return;
+    }
+    status.textContent = 'Subscribed! Check your inbox for updates.';
+    form.reset();
+  });
+}
+
+window.addEventListener('hashchange', route);
+window.addEventListener('DOMContentLoaded', async () => {
+  route();
+  await registerServiceWorker();
+  setupPwaInstallPrompt();
+  setupNetworkStatusWatcher();
+  showPendingUpdateNoticeOnLoad();
+});

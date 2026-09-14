@@ -1,0 +1,8 @@
+# OpenAPI placeholder for GlobyEdu OS
+# Define REST endpoints and data models here during API design phase.
+openapi: 3.0.1
+info:
+  title: GlobyEdu OS API (placeholder)
+  version: 0.0.0
+paths: {}
+components: {}

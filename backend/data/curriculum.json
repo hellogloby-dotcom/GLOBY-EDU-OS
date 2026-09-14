@@ -1,0 +1,60 @@
+{
+  "curriculum": {
+    "KG": [
+      {"subject": "Mathematics", "topic": "Counting and Shapes"},
+      {"subject": "English", "topic": "Alphabet and Phonics"},
+      {"subject": "Environmental Studies", "topic": "My Neighborhood"}
+    ],
+    "Primary1": [
+      {"subject": "Mathematics", "topic": "Numbers to 100"},
+      {"subject": "English", "topic": "Simple Sentences"},
+      {"subject": "Ghanaian Language", "topic": "National Anthem"}
+    ],
+    "Primary2": [
+      {"subject": "Mathematics", "topic": "Addition and Subtraction"},
+      {"subject": "English", "topic": "Reading Comprehension"},
+      {"subject": "Science", "topic": "Plant Life"}
+    ],
+    "Primary3": [
+      {"subject": "Mathematics", "topic": "Multiplication Basics"},
+      {"subject": "English", "topic": "Grammar and Vocabulary"},
+      {"subject": "Social Studies", "topic": "Our Community"}
+    ],
+    "Primary4": [
+      {"subject": "Mathematics", "topic": "Fractions"},
+      {"subject": "English", "topic": "Paragraph Writing"},
+      {"subject": "Science", "topic": "Human Body"}
+    ],
+    "Primary5": [
+      {"subject": "Mathematics", "topic": "Decimals"},
+      {"subject": "English", "topic": "Composition"},
+      {"subject": "Social Studies", "topic": "Local Government"}
+    ],
+    "Primary6": [
+      {"subject": "Mathematics", "topic": "Measurement"},
+      {"subject": "English", "topic": "Essay Writing"},
+      {"subject": "Science", "topic": "Energy"}
+    ],
+    "JHS1": [
+      {"subject": "Mathematics", "topic": "Fractions"},
+      {"subject": "Integrated Science", "topic": "Ecosystems"},
+      {"subject": "English", "topic": "Nouns"},
+      {"subject": "RME", "topic": "Creation"},
+      {"subject": "Social Studies", "topic": "The Environment"}
+    ],
+    "JHS2": [
+      {"subject": "Mathematics", "topic": "Decimals and Percentages"},
+      {"subject": "Integrated Science", "topic": "Matter and Energy"},
+      {"subject": "English", "topic": "Verb Tenses"},
+      {"subject": "RME", "topic": "Faith and Values"},
+      {"subject": "Social Studies", "topic": "Citizenship"}
+    ],
+    "JHS3": [
+      {"subject": "Mathematics", "topic": "Algebra"},
+      {"subject": "Integrated Science", "topic": "Ecosystems and Health"},
+      {"subject": "English", "topic": "Composition and Summary"},
+      {"subject": "RME", "topic": "Character Formation"},
+      {"subject": "Social Studies", "topic": "National Development"}
+    ]
+  }
+}

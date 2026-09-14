@@ -1,0 +1,18 @@
+globyedu-os@0.1.0 C:\Users\ataet\OneDrive\Desktop\GlobyEdu OS
+Γö£ΓöÇΓöÇ concurrently@8.2.2
+Γö£ΓöÇΓöÇ eslint@8.57.1
+Γö£ΓöÇΓöÇ firebase@12.16.0
+Γö£ΓöÇΓö¼ globyedu-backend@0.1.0 -> .\backend
+Γöé Γö£ΓöÇΓöÇ @openrouter/sdk@0.13.21
+Γöé Γö£ΓöÇΓöÇ bcrypt@6.0.0
+Γöé Γö£ΓöÇΓöÇ cors@2.8.6
+Γöé Γö£ΓöÇΓöÇ dotenv@16.6.1
+Γöé Γö£ΓöÇΓöÇ express@4.22.2
+Γöé Γö£ΓöÇΓöÇ UNMET DEPENDENCY firebase-admin@^11.9.0
+Γöé Γö£ΓöÇΓöÇ jsonwebtoken@9.0.3
+Γöé Γö£ΓöÇΓöÇ nodemon@2.0.22
+Γöé ΓööΓöÇΓöÇ uuid@14.0.1
+Γö£ΓöÇΓöÇ jest@29.7.0
+Γö£ΓöÇΓöÇ prettier@2.8.8
+ΓööΓöÇΓöÇ typescript@5.9.3
+

@@ -1,0 +1,56 @@
+# Node
+node_modules/
+dist/
+build/
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+coverage/
+**/.DS_Store
+
+# Secrets (example)
+*.pem
+*.key
+
+# Generated
+uploads/
+storage/
+
+find-password.js
+find-current-password.js
+debug-auth.js
+test-super-admin.js
+check-current-hash.js
+setup-test-passwords.js
+setup-simple-passwords.js
+apply-working-hash.js
+test-pwd.js
+verify-hash.js
+generate-fresh-hashes.js
+generate-test-hashes.js
+generate-hash.js
+test-auth-direct.js
+test-auth-test123.js
+git-status-output.txt
+jest-communication-output.json
+jest-results.json
+jest-role-check.json
+jest-verify-academic.json
+student-jest.json
+refs_check.txt

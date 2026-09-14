@@ -1,0 +1,55 @@
+/* eslint-env jest */
+/* eslint-disable @typescript-eslint/no-require-imports */
+const fs = require('fs');
+const path = require('path');
+
+describe('login experience', () => {
+  it('renders the required student and teacher login fields while preserving the secure-session option', () => {
+    const loginSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'login.js'), 'utf8');
+
+    expect(loginSource).toContain('School Authority');
+    expect(loginSource).toContain('Teacher');
+    expect(loginSource).toContain('Student');
+    expect(loginSource).toContain('id="super-admin-portal"');
+    expect(loginSource).toContain('Student name');
+    expect(loginSource).toContain('Teacher name');
+    expect(loginSource).not.toContain('Student ID');
+    expect(loginSource).not.toContain('Teacher ID');
+    expect(loginSource).toContain('aria-label="School or account email"');
+    expect(loginSource).toContain('School Name');
+    expect(loginSource).toContain('Keep me signed in on this device.');
+    expect(loginSource).toContain('Google Sign In');
+  });
+
+  it('keeps responsive navigation and footer content from forcing tablet overflow', () => {
+    const navbarSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'components', 'navbar.js'), 'utf8');
+    const footerSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'components', 'footer.js'), 'utf8');
+
+    expect(navbarSource).toContain('xl:flex');
+    expect(navbarSource).toContain('xl:hidden');
+    expect(footerSource).toContain('flex flex-wrap gap-x-3 gap-y-2');
+  });
+
+  it('invalidates stale route renders and clears authentication state on logout', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+    const serviceWorkerSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'sw.js'), 'utf8');
+
+    expect(mainSource).toContain('let routeGeneration = 0;');
+    expect(mainSource).toContain('if (navigationId !== routeGeneration) return;');
+    expect(mainSource).toContain("localStorage.removeItem('globyedu_accessToken');");
+    expect(mainSource).toContain("localStorage.removeItem('globyedu_userRole');");
+    expect(mainSource).toContain("profile.email = localStorage.getItem('globyedu_userEmail') || profile.email || '';");
+    expect(serviceWorkerSource).toContain("const CACHE_NAME = 'globyedu-pwa-v6';");
+    expect(serviceWorkerSource).toContain("if (/\\.(?:css|js)$/.test(requestUrl.pathname))");
+  });
+
+  it('blocks protected cross-role and school/admin hash routes when a different authenticated role is active', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+
+    expect(mainSource).toContain("const authenticatedRole = getUserRole();");
+    expect(mainSource).toContain("if (authenticatedRole !== 'school_authority' && authenticatedRole !== 'super_admin' && !getPlatformAdminFlag())");
+    expect(mainSource).toContain("if (role && authenticatedRole && authenticatedRole !== role)");
+    expect(mainSource).toContain("location.hash = redirectPath;");
+    expect(mainSource).toContain("location.hash = '#/role/student';");
+  });
+});

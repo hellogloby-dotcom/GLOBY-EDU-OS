@@ -1,0 +1,108 @@
+// app-shell.js
+// Authenticated application shell used once a user signs in.
+// This keeps the public marketing experience separate from the app workspace.
+
+export function AppShell({
+  role = 'super_admin',
+  title = 'Workspace',
+  subtitle = 'Authenticated experience',
+  navItems = [],
+  activeItem = 'overview',
+  children = '',
+  profileName = 'User',
+  searchPlaceholder = 'Search this workspace',
+}) {
+  const roleLabel =
+    role === 'school_authority'
+      ? 'School Authority'
+      : role === 'teacher'
+      ? 'Teacher'
+      : role === 'student'
+      ? 'Student'
+      : 'Super Admin';
+
+  const navMarkup = navItems
+    .map((item) => {
+      const isActive = item.id === activeItem;
+      return `
+        <a
+          href="${item.path || '#'}"
+          data-app-nav="${item.id}"
+          class="flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition ${
+            isActive
+              ? 'bg-sky-600 text-white shadow-lg shadow-sky-500/10'
+              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+          }"
+        >
+          <span>${item.label}</span>
+          <span class="text-xs opacity-70">${item.icon || '↗'}</span>
+        </a>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
+      <div class="flex min-h-screen flex-col lg:flex-row">
+        <div id="app-sidebar-backdrop" class="fixed inset-0 z-30 hidden bg-slate-950/70 lg:hidden"></div>
+
+        <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-40 flex w-72 -translate-x-full flex-col border-r border-slate-800 bg-[#0B0F19] p-5 text-slate-100 transition-transform duration-200 lg:static lg:w-72 lg:translate-x-0 lg:border-r lg:border-slate-800 lg:p-6 lg:shadow-none">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br from-sky-500 to-emerald-500 text-lg font-bold text-white">
+                G
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-slate-400">GlobyEdu</p>
+                <p class="text-lg font-semibold text-white">${roleLabel}</p>
+              </div>
+            </div>
+            <button type="button" data-app-sidebar-close class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900/70 text-slate-100 lg:hidden">×</button>
+          </div>
+
+          <div class="mt-8 flex-1 space-y-2 overflow-y-auto">${navMarkup}</div>
+
+          <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Platform status</p>
+            <div class="mt-3 flex items-center gap-2 text-sm text-emerald-400">
+              <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+              All systems operational
+            </div>
+          </div>
+        </aside>
+
+        <div class="min-w-0 flex-1">
+          <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-xl">
+            <div class="flex flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
+              <div class="flex items-center gap-3">
+                <button type="button" data-app-sidebar-toggle class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden">☰</button>
+                <div>
+                  <p class="text-xs uppercase tracking-[0.3em] text-slate-500">${title}</p>
+                  <h1 class="text-2xl font-semibold text-slate-900">${subtitle}</h1>
+                </div>
+              </div>
+
+              <div class="min-w-0 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label class="flex min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+                  <span>🔎</span>
+                  <input type="search" placeholder="${searchPlaceholder}" class="w-full min-w-0 bg-transparent outline-none sm:w-44" />
+                </label>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" data-app-action="notifications" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">🔔</button>
+                  <button type="button" data-app-action="messages" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">💬</button>
+                  <button type="button" data-app-action="profile" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">${profileName}</button>
+                  <button type="button" data-app-action="settings" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">⚙️</button>
+                  <button type="button" data-app-action="help" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">❓</button>
+                  <button type="button" data-app-action="logout" class="rounded-full bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">Logout</button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main class="p-4 sm:p-6 lg:p-8">${children}</main>
+        </div>
+      </div>
+    </div>
+  `;
+}

@@ -1,0 +1,7 @@
+packages:
+  - 'backend'
+  - 'frontend'
+
+# Notes:
+# - This file enables pnpm/Yarn workspaces at the repository root.
+# - Use your preferred package manager (pnpm, npm workspaces, yarn) in production.

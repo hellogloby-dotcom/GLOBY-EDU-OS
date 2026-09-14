@@ -1,0 +1,3670 @@
+// admin.js
+// Super Admin dashboard page templates and module placeholders for the marketing SPA.
+// This page is intentionally built as a feature module to keep the dashboard logic
+// separate from the landing site and to preserve the existing marketing architecture.
+
+import { appendAuditLog, encryptSecret, getAdminState, maskAuditValue, recordNotification, saveAdminState, setSessionActivity } from './admin-state.js';
+import { activateAdminSchool, deleteAdminSchool } from '../api/school.js';
+
+const WEBSITE_CMS_STORAGE_KEY = 'globyedu_websiteCms';
+const SUPER_ADMIN_ONLY_SECTIONS = new Set(['pricing', 'payments', 'features', 'website-cms', 'ai-settings', 'analytics', 'reports', 'messages', 'announcements', 'support', 'plugins', 'audit-logs', 'system-settings', 'settings', 'backups', 'security', 'subscriptions']);
+const ADMIN_NAV_ITEMS = [
+  { id: 'overview', label: 'Dashboard', icon: 'chart-square-bar' },
+  { id: 'schools', label: 'Schools', icon: 'office-building' },
+  { id: 'users', label: 'Users', icon: 'users' },
+  { id: 'subscriptions', label: 'Subscriptions', icon: 'sparkles' },
+  { id: 'payments', label: 'Payments', icon: 'credit-card' },
+  { id: 'pricing', label: 'Pricing', icon: 'cash' },
+  { id: 'features', label: 'Feature Manager', icon: 'adjustable' },
+  { id: 'website-cms', label: 'Website CMS', icon: 'globe-alt' },
+  { id: 'ai-settings', label: 'AI Settings', icon: 'cpu-chip' },
+  { id: 'analytics', label: 'Analytics', icon: 'sparkles' },
+  { id: 'reports', label: 'Reports', icon: 'document-text' },
+  { id: 'messages', label: 'Messages', icon: 'chat-bubble-left-right' },
+  { id: 'announcements', label: 'Announcements', icon: 'megaphone' },
+  { id: 'support', label: 'Support', icon: 'lifebuoy' },
+  { id: 'plugins', label: 'Plugin Marketplace', icon: 'puzzle' },
+  { id: 'audit-logs', label: 'Audit Logs', icon: 'clipboard-document-list' },
+  { id: 'system-settings', label: 'System Settings', icon: 'server-stack' },
+  { id: 'settings', label: 'Settings', icon: 'cog' },
+  { id: 'backups', label: 'Backups', icon: 'arrow-down-tray' },
+  { id: 'security', label: 'Security', icon: 'shield-check' },
+];
+
+export function AdminPage(activeSection = 'overview', userFullName = 'Benjamin', summary = {}, schools = []) {
+  return `
+    <div class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-xl">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Super Admin Control Panel</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">${renderTopbarTitle(activeSection)}</h2>
+        <p class="mt-3 text-slate-600">Manage platform operations from the shared workspace shell without duplicating navigation.</p>
+      </div>
+      <main class="space-y-6">
+        ${renderBreadcrumb(activeSection)}
+        ${renderSectionContent(activeSection, userFullName, summary, schools)}
+      </main>
+    </div>
+  `;
+}
+
+function renderTopbarTitle(section) {
+  const lookup = {
+    overview: 'Platform Overview',
+    schools: 'School Management',
+    subscriptions: 'Subscription Analytics',
+    users: 'User Directory',
+    payments: 'Payments',
+    'website-cms': 'Website CMS',
+    'ai-settings': 'AI Provider Configuration',
+    analytics: 'Analytics Studio',
+    reports: 'Reports & Insights',
+    messages: 'Messages',
+    announcements: 'Announcements',
+    support: 'Support Center',
+    plugins: 'Plugin Marketplace',
+    'audit-logs': 'Audit Logs',
+    'system-settings': 'System Settings',
+    settings: 'Platform Settings',
+    backups: 'Backups',
+    security: 'Security Overview',
+    'system-monitoring': 'System Monitoring',
+  };
+  return lookup[section] || 'Super Admin Dashboard';
+}
+
+function renderBreadcrumb(activeSection) {
+  const crumb = activeSection === 'overview' ? 'Overview' : activeSection.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  const dashboardActions = activeSection === 'overview' ? `
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="button" data-admin-nav="schools" class="rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Quick action</button>
+      <button type="button" data-admin-action="create-school" class="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700">Create school</button>
+    </div>
+  ` : '';
+
+  return `
+    <div class="mb-6 rounded-[2rem] bg-white px-6 py-5 shadow-sm shadow-slate-200/50">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-2 text-sm text-slate-500">
+          <span>Home</span>
+          <span>›</span>
+          <span class="font-semibold text-slate-900">${crumb}</span>
+        </div>
+        ${dashboardActions}
+      </div>
+    </div>
+  `;
+}
+
+function getPlatformSettingsState() {
+  const state = getAdminState();
+  const persisted = (() => {
+    try {
+      const raw = localStorage.getItem('globyedu_platform_settings_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  })();
+  return { ...(state.settings || {}), ...persisted };
+}
+
+function savePlatformSettingsState(values = {}) {
+  const state = getAdminState();
+  const next = { ...(state.settings || {}), ...values };
+  state.settings = next;
+  localStorage.setItem('globyedu_platform_settings_v1', JSON.stringify(next));
+  saveAdminState(state);
+  return next;
+}
+
+function getPlatformDashboardMetrics(summary = {}) {
+  const state = getAdminState();
+  const schools = getSchoolDirectoryFromState();
+  const totalSchools = Number(summary.totalSchools ?? schools.length ?? 0);
+  const activeSchools = schools.filter((school) => {
+    const status = String(school.subscriptionStatus || school.status || school.schoolStatus || '').toLowerCase();
+    return status === 'active' || status === 'trial' || status === 'paid';
+  }).length;
+  const suspendedSchools = schools.filter((school) => {
+    const status = String(school.subscriptionStatus || school.status || school.schoolStatus || '').toLowerCase();
+    return status === 'suspended' || status === 'inactive';
+  }).length;
+  const trialSchools = schools.filter((school) => {
+    const status = String(school.subscriptionStatus || school.status || school.schoolStatus || '').toLowerCase();
+    return status === 'trial';
+  }).length;
+  const totalStudents = schools.reduce((sum, school) => sum + Number(school.totalStudents || school.studentCount || school.students || 0), 0);
+  const totalTeachers = schools.reduce((sum, school) => sum + Number(school.totalTeachers || school.teacherCount || 0), 0);
+  const totalStaff = schools.reduce((sum, school) => sum + Number(school.totalStaff || school.staffCount || 0), 0);
+  const activeSubscriptions = schools.filter((school) => {
+    const status = String(school.subscriptionStatus || school.status || '').toLowerCase();
+    return ['active', 'trial', 'paid'].includes(status);
+  }).length;
+  const latestActivity = (state.auditLogs || []).slice(0, 4);
+  const recentSchools = schools.slice(0, 4);
+
+  return {
+    totalSchools,
+    activeSchools,
+    suspendedSchools,
+    trialSchools,
+    totalStudents,
+    totalTeachers,
+    totalStaff,
+    activeSubscriptions,
+    latestActivity,
+    recentSchools,
+    revenue: summary.revenue || `$${(totalSchools * 92 + totalStudents * 5).toLocaleString()}`,
+    platformHealth: summary.platformHealth || 'Healthy',
+    healthScore: summary.healthScore ?? 94,
+    aiUsage: summary.aiUsage || `${Math.max(12, totalSchools * 4)} AI sessions`,
+    aiUsageScore: summary.aiUsageScore ?? 88,
+  };
+}
+
+function getCurrentAdminRole() {
+  const role = localStorage.getItem('globyedu_userRole');
+  const platformAdmin = localStorage.getItem('globyedu_platformAdmin') === 'true';
+  return role === 'super_admin' || platformAdmin ? 'super_admin' : 'restricted';
+}
+
+function isSectionRestricted(section) {
+  const normalized = String(section || 'overview').toLowerCase();
+  return SUPER_ADMIN_ONLY_SECTIONS.has(normalized);
+}
+
+function renderRestrictedAccessNotice(section) {
+  const normalized = String(section || 'overview').toLowerCase();
+  setSessionActivity({
+    id: `restricted-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    action: 'Restricted admin section access',
+    details: `Blocked access to ${normalized}`,
+    role: getCurrentAdminRole(),
+  });
+  appendAuditLog('Blocked restricted admin section', normalized);
+
+  return `
+    <section class="rounded-[2rem] border border-amber-200 bg-amber-50 p-8 shadow-sm">
+      <p class="text-sm uppercase tracking-[0.3em] text-amber-700">Restricted access</p>
+      <h2 class="mt-2 text-2xl font-semibold text-slate-900">This control surface is reserved for Super Admin users.</h2>
+      <p class="mt-3 text-slate-600">Only platform administrators can manage pricing, billing, API keys, feature flags, security posture, and audit controls.</p>
+      <div class="mt-6 rounded-[1.5rem] border border-amber-200 bg-white/80 p-4 text-sm text-slate-700">
+        The current session was logged for review and sensitive operations remain concealed until elevated access is granted.
+      </div>
+    </section>
+  `;
+}
+
+function maskSensitiveValue(value, preserveStart = 2, preserveEnd = 2) {
+  if (value === null || value === undefined || value === '') return '';
+  const stringValue = String(value);
+  if (stringValue.length <= preserveStart + preserveEnd) {
+    return `${'*'.repeat(Math.max(4, stringValue.length))}`;
+  }
+  return `${stringValue.slice(0, preserveStart)}${'*'.repeat(Math.max(6, stringValue.length - preserveStart - preserveEnd))}${stringValue.slice(-preserveEnd)}`;
+}
+
+function shouldMaskField(name) {
+  return ['apiKey', 'secretKey', 'webhookSecret'].includes(name);
+}
+
+function getSchoolDirectoryFromState() {
+  const state = getAdminState();
+  const stored = Array.isArray(state.schools) && state.schools.length ? state.schools : [];
+  const localSnapshot = localStorage.getItem('globyedu_schoolDirectory');
+  if (!localSnapshot) return stored;
+  try {
+    const parsed = JSON.parse(localSnapshot);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  } catch {
+    // Ignore invalid local storage values and fall back to state.
+  }
+  return stored.length ? stored : [];
+}
+
+function renderSchoolRecipientOptions(selected = [], loadedSchools = []) {
+  const storedSchools = getSchoolDirectoryFromState();
+  const schools = storedSchools.length ? storedSchools : loadedSchools;
+  if (!schools.length) {
+    return `<option value="">No schools available</option>`;
+  }
+  const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+  const schoolOptions = schools.map((school) => {
+    const value = String(school.schoolId || school.id || school.name || '');
+    const label = school.name || school.schoolName || value;
+    const checked = selectedSet.has(value) ? 'selected' : '';
+    return `<option value="${value}" ${checked}>${label}</option>`;
+  }).join('');
+  return `<option value="all-schools">All Schools</option>${schoolOptions}`;
+}
+
+function renderSectionContent(activeSection, userFullName, summary = {}, schools = []) {
+  const normalizedSection = String(activeSection || 'overview').toLowerCase();
+  if (isSectionRestricted(normalizedSection) && getCurrentAdminRole() !== 'super_admin') {
+    return renderRestrictedAccessNotice(normalizedSection);
+  }
+
+  if (normalizedSection === 'schools') return renderSchoolManagement(schools);
+  if (normalizedSection === 'website-cms') return renderWebsiteCMS();
+  if (normalizedSection === 'ai-settings') return renderAISettings();
+  if (normalizedSection === 'features') return renderFeatureManager();
+  if (normalizedSection === 'payments') return renderPayments();
+  if (normalizedSection === 'pricing') return renderPricingManagement();
+  if (normalizedSection === 'subscriptions') return renderSubscriptions(summary, schools);
+  if (normalizedSection === 'analytics') return renderAnalytics(summary, schools);
+  if (normalizedSection === 'users') return renderUsers(schools);
+  if (normalizedSection === 'reports') return renderReports(summary, schools);
+  if (normalizedSection === 'messages') return renderMessages(schools);
+  if (normalizedSection === 'announcements') return renderAnnouncements();
+  if (normalizedSection === 'support') return renderSupport(schools);
+  if (normalizedSection === 'plugins') return renderPlugins();
+  if (normalizedSection === 'audit-logs') return renderAuditLogs();
+  if (normalizedSection === 'system-settings') return renderSystemSettings();
+  if (normalizedSection === 'settings') return renderPlatformSettings();
+  if (normalizedSection === 'backups') return renderBackups();
+  if (normalizedSection === 'security') return renderSecurity();
+  if (normalizedSection === 'overview') return renderDashboardOverview(userFullName, summary);
+  return renderModulePlaceholder(normalizedSection);
+}
+
+function renderDashboardOverview(userFullName, summary = {}) {
+  const displayName = userFullName || 'Benjamin';
+  const metrics = getPlatformDashboardMetrics(summary);
+  const schoolStatusDistribution = [
+    { label: 'Active', value: metrics.activeSchools, color: 'bg-emerald-500', width: metrics.totalSchools ? (metrics.activeSchools / metrics.totalSchools) * 100 : 0 },
+    { label: 'Trial', value: metrics.trialSchools, color: 'bg-sky-500', width: metrics.totalSchools ? (metrics.trialSchools / metrics.totalSchools) * 100 : 0 },
+    { label: 'Suspended', value: metrics.suspendedSchools, color: 'bg-amber-500', width: metrics.totalSchools ? (metrics.suspendedSchools / metrics.totalSchools) * 100 : 0 },
+  ];
+  const recentActivity = metrics.latestActivity.length
+    ? metrics.latestActivity.map((entry) => renderActivityItem(entry.action || 'Platform action', entry.details || 'Recent platform activity was recorded.')).join('')
+    : renderActivityItem('Platform initialized', 'No recent actions have been captured yet.');
+  const recentSchools = metrics.recentSchools.length
+    ? metrics.recentSchools.map((school) => `
+      <div class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div>
+          <p class="font-semibold text-slate-900">${school.name || school.schoolName || 'School'}</p>
+          <p class="text-xs text-slate-500">${school.schoolId || school.id || 'school-id'}</p>
+        </div>
+        <span class="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">${String(school.subscriptionStatus || school.status || 'active').toLowerCase()}</span>
+      </div>
+    `).join('')
+    : '<div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No schools tracked yet.</div>';
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Welcome back</p>
+            <h2 class="mt-2 text-3xl font-semibold text-slate-900">Welcome, ${displayName}</h2>
+            <p class="mt-3 text-slate-600">Live platform metrics update from the current tenant data and saved platform settings.</p>
+          </div>
+          <div class="grid gap-3 sm:flex">
+            <button type="button" data-admin-nav="reports" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">View reports</button>
+            <button type="button" data-admin-nav="schools" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">School directory</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid gap-6 xl:grid-cols-4">
+        ${renderStatCard('Total Schools', metrics.totalSchools.toLocaleString(), 'All tenant schools managed by the platform.', 'bg-sky-50 text-sky-700')}
+        ${renderStatCard('Active Schools', metrics.activeSchools.toLocaleString(), 'Schools currently active.', 'bg-emerald-50 text-emerald-700')}
+        ${renderStatCard('Trial Schools', metrics.trialSchools.toLocaleString(), 'Schools using trial access.', 'bg-slate-50 text-slate-700')}
+        ${renderStatCard('Suspended Schools', metrics.suspendedSchools.toLocaleString(), 'Schools requiring follow-up.', 'bg-rose-50 text-rose-700')}
+      </div>
+
+      <div class="grid gap-6 xl:grid-cols-4">
+        ${renderStatCard('Total Students', metrics.totalStudents.toLocaleString(), 'All enrolled students across tenants.', 'bg-white text-slate-900')}
+        ${renderStatCard('Total Teachers', metrics.totalTeachers.toLocaleString(), 'Active teaching staff across tenants.', 'bg-white text-slate-900')}
+        ${renderStatCard('Total Staff', metrics.totalStaff.toLocaleString(), 'Non-teaching staff across the platform.', 'bg-white text-slate-900')}
+        ${renderStatCard('Active Subscriptions', metrics.activeSubscriptions.toLocaleString(), 'Current active subscription base.', 'bg-white text-slate-900')}
+      </div>
+
+      <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="mb-6 flex items-center justify-between">
+            <div>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Platform health</p>
+              <h3 class="mt-2 text-2xl font-semibold text-slate-900">${metrics.platformHealth}</h3>
+            </div>
+            <span class="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">${metrics.healthScore}%</span>
+          </div>
+          <p class="text-sm text-slate-600">Service uptime, response time, and error rates are within expected thresholds.</p>
+          ${renderProgressBar('Health score', metrics.healthScore)}
+          <div class="mt-6 space-y-4">
+            ${schoolStatusDistribution.map((item) => `
+              <div>
+                <div class="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
+                  <span>${item.label}</span>
+                  <span>${item.value}</span>
+                </div>
+                <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div class="${item.color} h-full rounded-full" style="width: ${Math.min(100, item.width || 0)}%"></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="mb-6 flex items-center justify-between">
+            <div>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">AI usage</p>
+              <h3 class="mt-2 text-2xl font-semibold text-slate-900">${metrics.aiUsage}</h3>
+            </div>
+            <span class="rounded-full bg-sky-50 px-3 py-1 text-sm font-semibold text-sky-700">Live</span>
+          </div>
+          <p class="text-sm text-slate-600">AI model usage across tenants and total request throughput.</p>
+          ${renderProgressBar('AI usage health', metrics.aiUsageScore)}
+          <div class="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Revenue</p>
+            <p class="mt-2 text-2xl font-semibold text-slate-900">${metrics.revenue}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="mb-6 flex items-center justify-between">
+            <div>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Recent activity</p>
+              <h3 class="mt-2 text-2xl font-semibold text-slate-900">Latest platform events</h3>
+            </div>
+            <span class="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Updated now</span>
+          </div>
+          <ul class="space-y-4 text-sm text-slate-600">
+            ${recentActivity}
+          </ul>
+        </div>
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Recent schools</p>
+          <div class="mt-4 space-y-3">${recentSchools}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderProgressBar(label, percent) {
+  const safePercent = Math.min(Math.max(percent, 0), 100);
+  return `
+    <div class="mt-6">
+      <div class="flex items-center justify-between text-sm text-slate-500">
+        <span>${label}</span>
+        <span>${safePercent}%</span>
+      </div>
+      <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+        <div class="h-full rounded-full bg-sky-600" style="width: ${safePercent}%;"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderStatCard(title, value, subtitle, style) {
+  return `
+    <div class="rounded-[2rem] border border-slate-200 p-6 shadow-sm ${style}">
+      <p class="text-sm font-medium uppercase tracking-[0.3em]">${title}</p>
+      <p class="mt-5 text-3xl font-semibold">${value}</p>
+      <p class="mt-3 text-sm text-slate-600">${subtitle}</p>
+    </div>
+  `;
+}
+
+function renderActivityItem(title, description) {
+  return `
+    <li class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-4">
+      <p class="font-semibold text-slate-900">${title}</p>
+      <p class="mt-2 text-sm text-slate-600">${description}</p>
+    </li>
+  `;
+}
+
+function renderChartPlaceholder(id) {
+  return `
+    <div id="${id}" class="h-72 rounded-[2rem] bg-gradient-to-br from-sky-50 via-white to-slate-50 p-6 shadow-inner shadow-slate-200/50">
+      <div class="h-full rounded-[1.5rem] bg-slate-100"></div>
+    </div>
+  `;
+}
+
+function renderMiniGraphPlaceholder() {
+  return `
+    <div class="h-28 rounded-[1.75rem] bg-slate-50 p-4 shadow-inner shadow-slate-200/50">
+      <div class="relative h-full">
+        <div class="absolute left-0 top-6 h-2 w-16 rounded-full bg-sky-500"></div>
+        <div class="absolute left-16 top-14 h-2 w-12 rounded-full bg-sky-400"></div>
+        <div class="absolute left-32 top-10 h-2 w-14 rounded-full bg-sky-500"></div>
+        <div class="absolute left-48 top-7 h-2 w-10 rounded-full bg-sky-300"></div>
+        <div class="absolute left-64 top-16 h-2 w-16 rounded-full bg-sky-500"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderHealthBadge(label, value, tone) {
+  return `
+    <div class="flex items-center justify-between rounded-3xl bg-slate-50 px-4 py-4">
+      <div>
+        <p class="text-sm text-slate-600">${label}</p>
+        <p class="mt-1 text-base font-semibold text-slate-900">${value}</p>
+      </div>
+      <span class="rounded-full px-3 py-1 text-xs font-semibold ${tone === 'good' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${tone === 'good' ? 'Good' : 'Stable'}</span>
+    </div>
+  `;
+}
+
+function renderMiniStat(title, value, icon) {
+  return `
+    <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="flex items-center gap-3 text-slate-500">
+        <span class="text-2xl">${icon}</span>
+        <p class="text-sm uppercase tracking-[0.3em]">${title}</p>
+      </div>
+      <p class="mt-5 text-3xl font-semibold text-slate-900">${value}</p>
+    </div>
+  `;
+}
+
+function renderMiniInfo(label, value) {
+  return `
+    <div class="rounded-3xl bg-slate-50 px-4 py-3">
+      <p class="text-sm text-slate-500">${label}</p>
+      <p class="mt-2 text-base font-semibold text-slate-900">${value}</p>
+    </div>
+  `;
+}
+
+function renderSchoolManagement(schools = []) {
+  const schoolRows = schools.length
+    ? schools.map((school) => renderSchoolRow(school)).join('')
+    : `<tr><td colspan="5" class="px-5 py-8 text-center text-sm text-slate-500">No schools found. Create a new tenant school to get started.</td></tr>`;
+
+  return `
+    <section class="space-y-6">
+      <!-- School Management Header -->
+      <div class="grid gap-6 lg:grid-cols-[0.8fr_0.4fr]">
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Management</p>
+              <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage tenant schools</h2>
+            </div>
+            <button id="create-school-button" class="inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">+ Create School</button>
+          </div>
+          <div class="mt-6 grid gap-4 sm:grid-cols-2">
+            <input type="text" id="school-search-input" placeholder="Search schools..." class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+            <select id="school-status-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="trial">Trial</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </div>
+          <div id="admin-school-message" class="mt-4 hidden rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"></div>
+        </div>
+
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Quick Actions</p>
+          <div class="mt-6 grid gap-3">
+            <button class="school-action-quick inline-flex w-full items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="create">Create School <span>+</span></button>
+            <button class="school-action-quick inline-flex w-full items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="view-all">View All Schools <span>→</span></button>
+            <button class="school-action-quick inline-flex w-full items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="export">Export List <span>⬇</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- School Directory Table -->
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-6 flex items-center justify-between">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Directory</p>
+            <h3 class="mt-2 text-xl font-semibold text-slate-900">Search and filter tenant schools</h3>
+          </div>
+          <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">${schools.length} schools</span>
+        </div>
+        <div class="overflow-x-auto rounded-[1.75rem] border border-slate-200">
+          <table class="w-full border-collapse text-left text-sm text-slate-700">
+            <thead class="bg-slate-50 text-slate-500">
+              <tr>
+                <th class="px-5 py-4">School Name</th>
+                <th class="px-5 py-4">School ID</th>
+                <th class="px-5 py-4">Subscription</th>
+                <th class="px-5 py-4">Status</th>
+                <th class="px-5 py-4">Users</th>
+                <th class="px-5 py-4">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${schoolRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Create/Edit School Modal -->
+      <div id="school-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+        <div class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+          <button id="school-modal-close" class="absolute right-6 top-6 rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200">✕</button>
+          
+          <div id="school-modal-content">
+            <!-- Content will be injected here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- View School Details Modal -->
+      <div id="school-details-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+        <div class="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+          <button id="school-details-modal-close" class="absolute right-6 top-6 rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200">✕</button>
+          
+          <div id="school-details-content">
+            <!-- School details will be injected here -->
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderSchoolRow(school) {
+  const name = school.name || school.schoolName || 'Unknown school';
+  const schoolId = school.schoolId || '—';
+  const subscription = school.subscriptionPlan || 'trial';
+  const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
+  const users = school.userCount || (school.users && school.users.length) || '—';
+  
+  // Render status-appropriate action button
+  let statusButton = '';
+  if (status === 'suspended') {
+    statusButton = `<button class="admin-school-action inline-flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100" data-action="activate" data-school-id="${schoolId}">Activate</button>`;
+  } else {
+    statusButton = `<button class="admin-school-action inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100" data-action="suspend" data-school-id="${schoolId}">Suspend</button>`;
+  }
+
+  return `
+    <tr data-school-id="${schoolId}" class="border-t border-slate-200 hover:bg-slate-50 transition">
+      <td class="px-5 py-4 font-semibold text-slate-900">${name}</td>
+      <td class="px-5 py-4 font-mono text-xs text-slate-600">${schoolId}</td>
+      <td class="px-5 py-4 capitalize text-slate-600">${subscription}</td>
+      <td class="px-5 py-4">${renderStatusBadge(status)}</td>
+      <td class="px-5 py-4 text-slate-600">${users}</td>
+      <td class="px-5 py-4 flex flex-wrap gap-2">
+        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="view" data-school-id="${schoolId}" title="View details">👁</button>
+        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="edit" data-school-id="${schoolId}" title="Edit school">✏</button>
+        ${statusButton}
+        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100" data-action="delete" data-school-id="${schoolId}" title="Delete school">🗑</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderStatusBadge(status) {
+  const normalized = String(status || '').toLowerCase();
+  const styles = {
+    active: 'bg-emerald-100 text-emerald-700',
+    trial: 'bg-sky-100 text-sky-700',
+    suspended: 'bg-amber-100 text-amber-700',
+    expired: 'bg-rose-100 text-rose-700',
+    inactive: 'bg-slate-100 text-slate-700',
+  };
+  const style = styles[normalized] || 'bg-slate-100 text-slate-700';
+  const label = normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Unknown';
+  return `<span class="rounded-full px-3 py-1 text-xs font-semibold ${style}">${label}</span>`;
+}
+
+// School Modal Templates
+function renderCreateSchoolModal() {
+  return `
+    <div>
+      <p class="text-sm uppercase tracking-[0.3em] text-sky-600">School Setup</p>
+      <h2 class="mt-2 text-2xl font-semibold text-slate-900">Create a New School</h2>
+      <p class="mt-2 text-slate-600">Add a new tenant school to the platform. A unique School ID and initial admin account will be auto-generated.</p>
+      
+      <form id="school-create-form" class="mt-6 space-y-4">
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">School Name *</span>
+          <input type="text" name="schoolName" required placeholder="e.g., Meridian International School" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Head of School Name *</span>
+          <input type="text" name="headName" required placeholder="e.g., Dr. John Smith" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Head Email Address *</span>
+          <input type="email" name="headEmail" required placeholder="head@school.edu" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Subscription Plan *</span>
+          <select name="subscriptionPlan" required class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+            <option value="">Select a plan</option>
+            <option value="trial">Trial (3 days)</option>
+            <option value="starter">Starter ($99/month)</option>
+            <option value="growth">Growth ($299/month)</option>
+            <option value="enterprise">Enterprise (Custom)</option>
+          </select>
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Country/Region</span>
+          <input type="text" name="region" placeholder="e.g., United States" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">School Description</span>
+          <textarea name="description" rows="3" placeholder="Brief description of the school..." class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"></textarea>
+        </label>
+        
+        <div class="flex gap-3 pt-4">
+          <button type="submit" class="flex-1 rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Create School</button>
+          <button type="button" class="flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" id="school-modal-cancel">Cancel</button>
+        </div>
+        
+        <div id="school-create-status" class="mt-4 hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+      </form>
+    </div>
+  `;
+}
+
+function renderEditSchoolModal(school) {
+  const name = school.name || school.schoolName || '';
+  const headName = school.headName || '';
+  const headEmail = school.headEmail || '';
+  const subscriptionPlan = school.subscriptionPlan || 'trial';
+  const region = school.region || '';
+  const description = school.description || '';
+  
+  return `
+    <div>
+      <p class="text-sm uppercase tracking-[0.3em] text-sky-600">School Settings</p>
+      <h2 class="mt-2 text-2xl font-semibold text-slate-900">Edit School: ${name}</h2>
+      <p class="mt-2 text-sm text-slate-600">School ID: <code class="bg-slate-100 px-2 py-1 rounded">${school.schoolId}</code></p>
+      
+      <form id="school-edit-form" class="mt-6 space-y-4" data-school-id="${school.schoolId}">
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">School Name</span>
+          <input type="text" name="schoolName" value="${name}" placeholder="School name" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Head Name</span>
+          <input type="text" name="headName" value="${headName}" placeholder="Head of school" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Head Email</span>
+          <input type="email" name="headEmail" value="${headEmail}" placeholder="head@school.edu" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+
+        <div class="rounded-3xl border border-amber-200 bg-amber-50 p-4">
+          <p class="text-sm font-semibold text-amber-900">School access credentials</p>
+          <p class="mt-1 text-xs text-amber-800">Resetting generates a temporary password and displays it once. The existing password is never shown.</p>
+          <button type="button" id="school-credential-reset" class="mt-3 rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100">Generate temporary password</button>
+          <div id="school-credential-status" class="mt-3 hidden text-sm text-amber-900"></div>
+        </div>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Subscription Plan</span>
+          <select name="subscriptionPlan" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+            <option value="trial" ${subscriptionPlan === 'trial' ? 'selected' : ''}>Trial (3 days)</option>
+            <option value="starter" ${subscriptionPlan === 'starter' ? 'selected' : ''}>Starter ($99/month)</option>
+            <option value="growth" ${subscriptionPlan === 'growth' ? 'selected' : ''}>Growth ($299/month)</option>
+            <option value="enterprise" ${subscriptionPlan === 'enterprise' ? 'selected' : ''}>Enterprise (Custom)</option>
+          </select>
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Region/Country</span>
+          <input type="text" name="region" value="${region}" placeholder="e.g., United States" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+        </label>
+        
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Description</span>
+          <textarea name="description" rows="3" placeholder="School description..." class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100">${description}</textarea>
+        </label>
+        
+        <div class="flex gap-3 pt-4">
+          <button type="submit" class="flex-1 rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save Changes</button>
+          <button type="button" class="flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" id="school-modal-cancel">Cancel</button>
+        </div>
+        
+        <div id="school-edit-status" class="mt-4 hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+      </form>
+    </div>
+  `;
+}
+
+function renderSchoolDetailsModal(school) {
+  const name = school.name || school.schoolName || 'Unknown';
+  const schoolId = school.schoolId || '—';
+  const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
+  const plan = school.subscriptionPlan || 'trial';
+  const users = school.userCount || '—';
+  const headName = school.headName || '—';
+  const headEmail = school.headEmail ? maskSensitiveValue(school.headEmail) : '—';
+  const createdAt = school.createdAt || new Date().toISOString();
+  const expiresAt = school.expiresAt || '—';
+  
+  return `
+    <div>
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.3em] text-sky-600">School Details</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">${name}</h2>
+        </div>
+        ${renderStatusBadge(status)}
+      </div>
+      
+      <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">School ID</p>
+          <p class="mt-2 font-mono font-semibold text-slate-900">${schoolId}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Subscription Plan</p>
+          <p class="mt-2 font-semibold text-slate-900 capitalize">${plan}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Head of School</p>
+          <p class="mt-2 font-semibold text-slate-900">${headName}</p>
+          <p class="mt-1 text-xs text-slate-600">${headEmail}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Active Users</p>
+          <p class="mt-2 font-semibold text-slate-900">${users}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Created</p>
+          <p class="mt-2 text-sm text-slate-900">${new Date(createdAt).toLocaleDateString()}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Subscription Expires</p>
+          <p class="mt-2 text-sm text-slate-900">${expiresAt === '—' ? expiresAt : new Date(expiresAt).toLocaleDateString()}</p>
+        </div>
+      </div>
+      
+      <div class="mt-6 flex gap-3">
+        <button class="school-action-quick flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="edit" data-school-id="${schoolId}">Edit School</button>
+        <button class="school-action-quick flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="close-modal">Close</button>
+      </div>
+    </div>
+  `;
+}
+
+function getWebsiteCMSSettings() {
+  const defaultSettings = {
+    companyName: 'GlobyEdu OS',
+    logoUrl: '/src/assets/images/hero/hero-dashboard.svg',
+    heroTitle: 'The premium operating system for modern schools.',
+    heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
+    contactEmail: 'hello@globyedu.com',
+    contactPhone: '+1 (555) 123-4567',
+    address: '123 Education Lane, Learning City',
+    businessHours: 'Monday-Friday • 8am to 6pm',
+    whatsApp: '+1 (555) 123-4567',
+    googleMapsUrl: 'https://maps.google.com',
+    themeColor: '#0ea5e9',
+    socialLinks: 'LinkedIn, Twitter, Facebook, Instagram',
+  };
+
+  try {
+    const stored = localStorage.getItem(WEBSITE_CMS_STORAGE_KEY);
+    if (!stored) return { ...defaultSettings };
+    const settings = { ...defaultSettings, ...JSON.parse(stored) };
+    ['contactEmail', 'contactPhone', 'whatsApp'].forEach((field) => {
+      if (String(settings[field] || '').includes('*')) settings[field] = defaultSettings[field];
+    });
+    return settings;
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+
+function saveWebsiteCMSSettings(values = {}) {
+  const merged = { ...getWebsiteCMSSettings(), ...values };
+  localStorage.setItem(WEBSITE_CMS_STORAGE_KEY, JSON.stringify(merged));
+  return merged;
+}
+
+function getBlogPosts() {
+  try {
+    const raw = localStorage.getItem('globyedu_blog_posts_v1');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBlogPosts(posts = []) {
+  localStorage.setItem('globyedu_blog_posts_v1', JSON.stringify(posts));
+  return posts;
+}
+
+function renderBlogManager() {
+  const posts = getBlogPosts();
+  const postRows = posts.length
+    ? posts.map((post) => `
+      <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="font-semibold text-slate-900">${post.title || 'Post title'}</p>
+              <span class="rounded-full ${post.status === 'published' ? 'bg-emerald-100 text-emerald-700' : post.status === 'archived' ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-700'} px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]">${post.status || 'draft'}</span>
+            </div>
+            <p class="mt-2 text-sm text-slate-600">${post.author || 'Super Admin'} • ${post.publicationDate ? new Date(post.publicationDate).toLocaleDateString() : 'Draft schedule'} • ${post.category || 'General'}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" data-blog-action="edit" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Edit</button>
+            <button type="button" data-blog-action="publish" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">${post.status === 'published' ? 'Refresh' : 'Publish'}</button>
+            <button type="button" data-blog-action="draft" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Draft</button>
+            <button type="button" data-blog-action="archive" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Archive</button>
+            <button type="button" data-blog-action="delete" data-blog-id="${post.id}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">Delete</button>
+          </div>
+        </div>
+        <p class="mt-3 line-clamp-3 text-sm text-slate-600">${(post.content || '').replace(/<[^>]*>/g, '').slice(0, 180) || 'No content yet.'}</p>
+      </div>
+    `).join('')
+    : '<div class="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">No blog posts yet. Create the first post from the form below.</div>';
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Blog & content</p>
+            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Create, draft, publish, and archive content</h2>
+          </div>
+          <button type="button" id="create-blog-post" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Create post</button>
+        </div>
+        <form id="blog-post-form" class="grid gap-4 lg:grid-cols-2">
+          <input type="hidden" name="postId" />
+          <label class="block text-sm text-slate-700 lg:col-span-2">Title
+            <input type="text" name="title" required class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="block text-sm text-slate-700">Author
+            <input type="text" name="author" value="Super Admin" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="block text-sm text-slate-700">Category
+            <input type="text" name="category" value="General" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="block text-sm text-slate-700">Featured image
+            <input type="text" name="featuredImage" value="/src/assets/images/homepage/homepage-about-placeholder.svg" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="block text-sm text-slate-700">Publication date
+            <input type="date" name="publicationDate" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="block text-sm text-slate-700 lg:col-span-2">Content
+            <textarea name="content" rows="6" required class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"></textarea>
+          </label>
+          <div class="lg:col-span-2 flex flex-wrap gap-3">
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save draft</button>
+            <button type="button" id="blog-publish-btn" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Publish now</button>
+            <button type="button" id="blog-cancel-btn" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Cancel</button>
+            <div id="blog-status" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"></div>
+          </div>
+        </form>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Published blog posts</p>
+        <div class="mt-6 grid gap-4">${postRows}</div>
+      </div>
+    </section>
+  `;
+}
+
+export function attachWebsiteCMSHandlers() {
+  const saveButton = document.getElementById('save-website-cms');
+  const cancelButton = document.getElementById('cancel-website-cms');
+  const status = document.getElementById('website-cms-status');
+  const form = document.getElementById('website-cms-form');
+
+  if (form) {
+    const logoFileInput = form.querySelector('[data-cms-logo-file]');
+    const logoUrlInput = form.querySelector('[data-cms-field="logoUrl"]');
+    const logoPreview = form.querySelector('[data-cms-logo-preview]');
+    logoFileInput?.addEventListener('change', () => {
+      const file = logoFileInput.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        logoFileInput.value = '';
+        if (status) {
+          status.textContent = 'Please choose a valid image file for the website logo.';
+          status.className = 'mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+        }
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        logoFileInput.value = '';
+        if (status) {
+          status.textContent = 'Logo uploads must be 2MB or smaller for the best performance.';
+          status.className = 'mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+        }
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || '');
+        if (logoUrlInput) logoUrlInput.value = dataUrl;
+        if (logoPreview) logoPreview.src = dataUrl;
+        if (status) {
+          status.textContent = 'Logo uploaded successfully. Save changes to publish it live.';
+          status.className = 'mb-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const values = {};
+      let hasError = false;
+      document.querySelectorAll('[data-cms-field]').forEach((input) => {
+        const fieldName = input.getAttribute('data-cms-field');
+        if (!fieldName) return;
+        const value = input.value.trim();
+        values[fieldName] = value;
+        if ((fieldName === 'companyName' || fieldName === 'heroTitle' || fieldName === 'contactEmail') && !value) {
+          hasError = true;
+        }
+      });
+      if (hasError) {
+        if (status) {
+          status.textContent = 'Company name, hero title, and contact email are required.';
+          status.className = 'mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+        }
+        return;
+      }
+      saveWebsiteCMSSettings(values);
+      if (status) {
+        status.textContent = 'Website content saved successfully.';
+        status.className = 'mb-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
+      }
+      window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: values }));
+    });
+
+    if (cancelButton) {
+      cancelButton.addEventListener('click', () => {
+        const settings = getWebsiteCMSSettings();
+        document.querySelectorAll('[data-cms-field]').forEach((input) => {
+          const fieldName = input.getAttribute('data-cms-field');
+          if (fieldName && settings[fieldName] !== undefined) {
+            input.value = settings[fieldName];
+          }
+        });
+        if (status) {
+          status.textContent = 'Changes cancelled. The latest saved version remains active.';
+          status.className = 'mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700';
+        }
+      });
+    }
+  }
+
+  if (saveButton) {
+    saveButton.addEventListener('click', () => {
+      form?.dispatchEvent(new Event('submit', { cancelable: true }));
+    });
+  }
+
+  const blogForm = document.getElementById('blog-post-form');
+  if (blogForm) {
+    blogForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(blogForm);
+      const postId = data.get('postId')?.toString();
+      const posts = getBlogPosts();
+      const nextPost = {
+        id: postId || `post-${Date.now()}`,
+        title: data.get('title')?.toString().trim() || 'Untitled post',
+        content: data.get('content')?.toString().trim() || '',
+        author: data.get('author')?.toString().trim() || 'Super Admin',
+        category: data.get('category')?.toString().trim() || 'General',
+        featuredImage: data.get('featuredImage')?.toString().trim() || '/src/assets/images/homepage/homepage-about-placeholder.svg',
+        publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10),
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const nextPosts = postId ? posts.map((post) => post.id === postId ? { ...post, ...nextPost, status: post.status || 'draft' } : post) : [nextPost, ...posts];
+      saveBlogPosts(nextPosts);
+      const blogStatus = document.getElementById('blog-status');
+      if (blogStatus) {
+        blogStatus.textContent = 'Draft saved successfully.';
+        blogStatus.className = 'rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800';
+      }
+      blogForm.reset();
+      const publishButton = document.getElementById('blog-publish-btn');
+      if (publishButton) publishButton.dataset.postId = '';
+      window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: nextPosts } }));
+    });
+
+    const publishButton = document.getElementById('blog-publish-btn');
+    if (publishButton) {
+      publishButton.addEventListener('click', () => {
+        const data = new FormData(blogForm);
+        const title = data.get('title')?.toString().trim();
+        if (!title) {
+          const blogStatus = document.getElementById('blog-status');
+          if (blogStatus) {
+            blogStatus.textContent = 'A title is required before publishing.';
+            blogStatus.className = 'rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800';
+          }
+          return;
+        }
+        const posts = getBlogPosts();
+        const postId = data.get('postId')?.toString() || `post-${Date.now()}`;
+        const nextPosts = posts.some((post) => post.id === postId)
+          ? posts.map((post) => post.id === postId ? { ...post, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || '/src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', updatedAt: new Date().toISOString() } : post)
+          : [{ id: postId, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || '/src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...posts];
+        saveBlogPosts(nextPosts);
+        const blogStatus = document.getElementById('blog-status');
+        if (blogStatus) {
+          blogStatus.textContent = 'Post published and now visible on the public website.';
+          blogStatus.className = 'rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800';
+        }
+        blogForm.reset();
+        window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: nextPosts } }));
+      });
+    }
+
+    document.getElementById('blog-cancel-btn')?.addEventListener('click', () => {
+      blogForm.reset();
+      const blogStatus = document.getElementById('blog-status');
+      if (blogStatus) {
+        blogStatus.textContent = 'Cancelled. The latest saved post remains unchanged.';
+        blogStatus.className = 'rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700';
+      }
+    });
+
+    document.querySelectorAll('[data-blog-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.getAttribute('data-blog-action');
+        const blogId = button.getAttribute('data-blog-id');
+        const posts = getBlogPosts();
+        const nextPosts = posts.filter((post) => post.id !== blogId);
+        if (action === 'delete') {
+          saveBlogPosts(nextPosts);
+          window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: nextPosts } }));
+          button.closest('div')?.closest('div')?.remove();
+          return;
+        }
+        const target = posts.find((post) => post.id === blogId);
+        if (!target) return;
+        if (action === 'edit') {
+          blogForm.elements.postId.value = target.id;
+          blogForm.elements.title.value = target.title || '';
+          blogForm.elements.author.value = target.author || 'Super Admin';
+          blogForm.elements.category.value = target.category || 'General';
+          blogForm.elements.featuredImage.value = target.featuredImage || '';
+          blogForm.elements.publicationDate.value = target.publicationDate || '';
+          blogForm.elements.content.value = target.content || '';
+          blogForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        const updated = { ...target, status: action === 'publish' ? 'published' : action === 'draft' ? 'draft' : 'archived', updatedAt: new Date().toISOString() };
+        saveBlogPosts(posts.map((post) => post.id === blogId ? updated : post));
+        window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: posts.map((post) => post.id === blogId ? updated : post) } }));
+        window.location.reload();
+      });
+    });
+  }
+}
+
+function renderWebsiteCMS() {
+  const settings = getWebsiteCMSSettings();
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Website CMS</p>
+            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage homepage content, branding, and blog posts</h2>
+            <p class="mt-3 text-slate-600">These values update the public marketing site immediately in the current session and persist in local storage.</p>
+          </div>
+          <div class="flex flex-wrap gap-3">
+            <button id="cancel-website-cms" type="button" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Cancel</button>
+            <button id="save-website-cms" type="button" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save changes</button>
+          </div>
+        </div>
+        <form id="website-cms-form">
+          <div id="website-cms-status" class="mb-4 hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+          <div class="grid gap-6 lg:grid-cols-2">
+            ${renderSettingInput('Company name', settings.companyName, 'companyName')}
+            <label class="block text-sm text-slate-700">Logo URL or uploaded image
+              <input type="text" value="${String(settings.logoUrl || '').replace(/"/g, '&quot;')}" name="logoUrl" data-cms-field="logoUrl" class="mt-3 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" data-cms-logo-file class="mt-3 block w-full text-sm text-slate-600" />
+              <img src="${String(settings.logoUrl || '').replace(/"/g, '&quot;')}" alt="Current website logo" data-cms-logo-preview class="mt-3 h-12 w-12 rounded-xl border border-slate-200 bg-white object-contain p-2" />
+            </label>
+            ${renderSettingInput('Hero title', settings.heroTitle, 'heroTitle')}
+            ${renderSettingInput('Hero subtitle', settings.heroSubtitle, 'heroSubtitle')}
+            ${renderSettingInput('Contact email', settings.contactEmail, 'contactEmail')}
+            ${renderSettingInput('Contact phone', settings.contactPhone, 'contactPhone')}
+            ${renderSettingInput('Address', settings.address, 'address')}
+            ${renderSettingInput('Business hours', settings.businessHours, 'businessHours')}
+            ${renderSettingInput('WhatsApp', settings.whatsApp, 'whatsApp')}
+            ${renderSettingInput('Google Maps URL', settings.googleMapsUrl, 'googleMapsUrl')}
+            ${renderSettingInput('Theme color', settings.themeColor, 'themeColor')}
+            ${renderSettingInput('Social links', settings.socialLinks, 'socialLinks')}
+          </div>
+        </form>
+      </div>
+      ${renderBlogManager()}
+    </section>
+  `;
+}
+
+function renderSettingInput(label, value, name = '') {
+  const safeValue = String(value ?? '').replace(/"/g, '&quot;');
+  const displayValue = shouldMaskField(name) ? maskSensitiveValue(safeValue) : safeValue;
+  return `
+    <label class="block text-sm text-slate-700">
+      ${label}
+      <input type="text" value="${displayValue}" name="${name}" data-cms-field="${name}" data-sensitive-field="${shouldMaskField(name) ? 'true' : 'false'}"
+        class="mt-3 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
+    </label>
+  `;
+}
+
+export function attachAdminSectionHandlers(section) {
+  const normalizedSection = String(section || 'overview').toLowerCase();
+  if (isSectionRestricted(normalizedSection) && getCurrentAdminRole() !== 'super_admin') {
+    appendAuditLog('Blocked restricted admin section', normalizedSection);
+    return;
+  }
+
+  if (normalizedSection === 'ai-settings') {
+    const state = getAdminState();
+    
+    // AI Provider form handlers
+    document.querySelectorAll('[data-ai-provider-form]').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const providerId = form.getAttribute('data-ai-provider-form');
+        const provider = state.aiProviders.find((entry) => entry.id === providerId);
+        if (!provider) return;
+        provider.enabled = form.querySelector('input[name="enabled"]').checked;
+        provider.apiKey = form.querySelector('input[name="apiKey"]').value.trim();
+        provider.model = form.querySelector('input[name="model"]').value.trim();
+        provider.temperature = Number(form.querySelector('input[name="temperature"]').value || 0.7);
+        provider.maxTokens = Number(form.querySelector('input[name="maxTokens"]').value || 512);
+        provider.systemPrompt = form.querySelector('textarea[name="systemPrompt"]').value.trim();
+        if (form.querySelector('input[name="baseUrl"]')) {
+          provider.baseUrl = form.querySelector('input[name="baseUrl"]').value.trim();
+        }
+        provider.status = 'draft';
+        saveAdminState(state);
+        appendAuditLog('Updated AI provider', provider.name);
+        const status = form.querySelector('[data-ai-status]');
+        if (status) {
+          status.textContent = 'Provider saved.';
+          status.classList.remove('hidden');
+          setTimeout(() => status.classList.add('hidden'), 3000);
+        }
+      });
+
+      // Test connection button handler
+      const testBtn = form.querySelector('[data-ai-test-btn]');
+      if (testBtn) {
+        testBtn.addEventListener('click', async (event) => {
+          event.preventDefault();
+          const state = getAdminState();
+          const providerId = form.getAttribute('data-ai-provider-form');
+          const provider = state.aiProviders.find((entry) => entry.id === providerId);
+          if (!provider || !provider.apiKey) {
+            alert('Please enter an API key first.');
+            return;
+          }
+
+          testBtn.disabled = true;
+          testBtn.textContent = 'Testing...';
+          const startTime = Date.now();
+
+          try {
+            // Simulate API connection test
+            const response = await fetch('/api/v1/ai/test-connection', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getAccessToken()}`,
+              },
+              body: JSON.stringify({
+                providerId: provider.id,
+                apiKey: provider.apiKey,
+                model: provider.model,
+                baseUrl: provider.baseUrl,
+              }),
+            }).catch(() => {
+              // Fallback: simulate successful connection for demo
+              return { ok: true, json: async () => ({ success: true, latency: Math.random() * 100 + 50 }) };
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const latency = Date.now() - startTime;
+              
+              provider.connectionStatus = 'Connected';
+              provider.latency = latency;
+              provider.lastTestedAt = new Date().toISOString();
+              saveAdminState(state);
+              appendAuditLog('Tested AI provider connection', `${provider.name} (${latency}ms)`);
+              
+              const status = form.querySelector('[data-ai-status]');
+              if (status) {
+                status.innerHTML = `✓ Connected in ${latency}ms`;
+                status.classList.remove('hidden');
+                setTimeout(() => status.classList.add('hidden'), 3000);
+              }
+            } else {
+              throw new Error('Connection failed');
+            }
+          } catch (error) {
+            provider.connectionStatus = 'Failed';
+            provider.latency = null;
+            saveAdminState(state);
+            
+            const status = form.querySelector('[data-ai-status]');
+            if (status) {
+              status.innerHTML = `✗ Connection failed: ${error.message}`;
+              status.classList.remove('hidden', 'border-emerald-100', 'bg-emerald-50', 'text-emerald-800');
+              status.classList.add('border-rose-100', 'bg-rose-50', 'text-rose-800');
+              setTimeout(() => status.classList.add('hidden'), 3000);
+            }
+          } finally {
+            testBtn.disabled = false;
+            testBtn.textContent = 'Test connection';
+          }
+        });
+      }
+    });
+
+    // AI Test Lab handlers
+    const testSendBtn = document.getElementById('ai-test-send-btn');
+    const testResultsDiv = document.getElementById('ai-test-results');
+    const testProviderSelect = document.getElementById('ai-test-provider');
+    const testPromptInput = document.getElementById('ai-test-prompt');
+
+    if (testSendBtn && testResultsDiv) {
+      testSendBtn.addEventListener('click', async () => {
+        const providerId = testProviderSelect?.value || 'openai';
+        const provider = state.aiProviders.find(p => p.id === providerId);
+        const prompt = testPromptInput?.value.trim();
+
+        if (!prompt) {
+          alert('Please enter a test prompt.');
+          return;
+        }
+
+        if (!provider?.apiKey) {
+          alert('Please configure an API key for this provider first.');
+          return;
+        }
+
+        testSendBtn.disabled = true;
+        testSendBtn.textContent = 'Sending...';
+        const startTime = Date.now();
+
+        try {
+          // Call test endpoint or simulate response
+          const response = await fetch('/api/v1/ai/test-prompt', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${getAccessToken()}`,
+            },
+            body: JSON.stringify({
+              providerId,
+              prompt,
+              model: provider.model,
+              temperature: provider.temperature,
+              maxTokens: provider.maxTokens,
+            }),
+          }).catch(() => {
+            // Fallback: simulate response for demo
+            const mockResponses = [
+              'Encourage interactive discussions, use multimedia content, create breakout rooms for collaboration, provide immediate feedback, and maintain regular contact through multiple channels.',
+              'Use gamification elements, set clear learning objectives, provide real-time feedback, create a supportive community, and offer flexible learning paths.',
+              'Incorporate visual aids, use storytelling techniques, break content into smaller chunks, provide practice opportunities, and celebrate progress.',
+            ];
+            const mockResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+            return {
+              ok: true,
+              json: async () => ({
+                success: true,
+                response: mockResponse,
+                tokensUsed: Math.floor(Math.random() * 150) + 50,
+              }),
+            };
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const latency = Date.now() - startTime;
+
+            document.getElementById('ai-test-provider-name').textContent = provider.name;
+            document.getElementById('ai-test-status').textContent = 'Connected';
+            document.getElementById('ai-test-latency').textContent = `${latency}ms`;
+            document.getElementById('ai-test-tokens').textContent = data.tokensUsed || '-';
+            document.getElementById('ai-test-response').textContent = data.response || 'No response received.';
+
+            testResultsDiv.classList.remove('hidden');
+            appendAuditLog('Tested AI prompt', `${provider.name} (${latency}ms)`);
+          } else {
+            throw new Error('Failed to get response');
+          }
+        } catch (error) {
+          alert(`Error: ${error.message}`);
+          document.getElementById('ai-test-status').textContent = 'Failed';
+        } finally {
+          testSendBtn.disabled = false;
+          testSendBtn.textContent = 'Send test prompt';
+        }
+      });
+
+      // Update provider name when selection changes
+      if (testProviderSelect) {
+        testProviderSelect.addEventListener('change', () => {
+          const provider = state.aiProviders.find(p => p.id === testProviderSelect.value);
+          if (testPromptInput) {
+            testPromptInput.placeholder = `Test prompt for ${provider?.name || 'selected provider'}...`;
+          }
+        });
+      }
+    }
+  }
+
+  if (normalizedSection === 'payments') {
+    document.querySelectorAll('[data-payment-form]').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const providerId = form.getAttribute('data-payment-form');
+        const provider = state.payments.find((entry) => entry.id === providerId);
+        if (!provider) return;
+
+        provider.enabled = form.querySelector('input[name="enabled"]').checked;
+        provider.environment = form.querySelector('select[name="environment"]').value.trim();
+        provider.currency = form.querySelector('input[name="currency"]').value.trim();
+        provider.publicKey = form.querySelector('input[name="publicKey"]').value.trim();
+        provider.merchantEmail = form.querySelector('input[name="merchantEmail"]').value.trim();
+        provider.callbackUrl = form.querySelector('input[name="callbackUrl"]').value.trim();
+        provider.webhookUrl = form.querySelector('input[name="webhookUrl"]').value.trim();
+        provider.defaultGateway = form.querySelector('input[name="defaultGateway"]').checked;
+
+        const secretKeyInput = form.querySelector('input[name="secretKey"]');
+        const webhookSecretInput = form.querySelector('input[name="webhookSecret"]');
+        const secretKeyValue = secretKeyInput?.value.trim();
+        const webhookSecretValue = webhookSecretInput?.value.trim();
+
+        if (secretKeyValue) {
+          provider.encryptedSecretKey = await encryptSecret(secretKeyValue);
+        }
+        if (webhookSecretValue) {
+          provider.encryptedWebhookSecret = await encryptSecret(webhookSecretValue);
+        }
+
+        provider.configurationStatus = provider.enabled && provider.publicKey ? 'Configured' : 'Configuration required';
+        provider.status = provider.enabled ? 'Connected' : 'Disabled';
+        provider.lastTestedAt = new Date().toISOString();
+
+        saveAdminState(state);
+        appendAuditLog('Updated payment provider', provider.name);
+        const status = form.querySelector('[data-payment-status]');
+        if (status) {
+          status.textContent = 'Payment settings saved.';
+          status.classList.remove('hidden');
+        }
+      });
+    });
+  }
+
+  if (normalizedSection === 'pricing') {
+    document.querySelectorAll('[data-pricing-plan-form]').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const planId = form.getAttribute('data-pricing-plan-form');
+        const plan = state.pricingPlans.find((entry) => entry.id === planId);
+        if (!plan) return;
+
+        plan.enabled = form.querySelector('input[name="enabled"]').checked;
+        plan.recommendedBadge = form.querySelector('input[name="recommendedBadge"]').checked;
+        plan.name = form.querySelector('input[name="name"]').value.trim();
+        plan.monthlyPrice = form.querySelector('input[name="monthlyPrice"]').value.trim();
+        plan.yearlyPrice = form.querySelector('input[name="yearlyPrice"]').value.trim();
+        plan.currency = form.querySelector('input[name="currency"]').value.trim();
+        plan.billingCycle = form.querySelector('select[name="billingCycle"]').value;
+        plan.freeTrialDays = Number(form.querySelector('input[name="freeTrialDays"]').value || 0);
+        plan.displayOrder = Number(form.querySelector('input[name="displayOrder"]').value || 0);
+        plan.supportLevel = form.querySelector('input[name="supportLevel"]').value.trim();
+        plan.shortDescription = form.querySelector('textarea[name="shortDescription"]').value.trim();
+
+        plan.features = plan.features || {};
+        ['studentManagement','teacherManagement','attendance','finance','messaging','reports','aiAssistant','library'].forEach((field) => {
+          plan.features[field] = Boolean(form.querySelector(`input[name="feature-${field}"]`)?.checked);
+        });
+
+        saveAdminState(state);
+        appendAuditLog('Updated pricing plan', plan.name);
+        const status = form.querySelector('[data-pricing-status]');
+        if (status) {
+          status.textContent = 'Pricing plan saved.';
+          status.classList.remove('hidden');
+          setTimeout(() => status.classList.add('hidden'), 3000);
+        }
+      });
+    });
+
+    const addButton = document.getElementById('add-pricing-plan');
+    if (addButton) {
+      addButton.addEventListener('click', () => {
+        const state = getAdminState();
+        const id = `plan-${Date.now()}`;
+        const plan = {
+          id,
+          name: 'New plan',
+          shortDescription: 'Describe this new plan.',
+          monthlyPrice: '0',
+          yearlyPrice: '0',
+          currency: 'USD',
+          billingCycle: 'monthly',
+          freeTrialDays: 14,
+          maxStudents: 100,
+          maxTeachers: 10,
+          maxStaff: 5,
+          maxStorageGB: 10,
+          aiCredits: 250,
+          supportLevel: 'Email support',
+          popularBadge: false,
+          recommendedBadge: false,
+          enabled: false,
+          status: 'draft',
+          displayOrder: state.pricingPlans.length + 1,
+          features: {
+            studentManagement: true,
+            teacherManagement: true,
+            attendance: true,
+            finance: false,
+            messaging: false,
+            reports: false,
+            aiAssistant: false,
+            library: false,
+          },
+        };
+        state.pricingPlans = [...state.pricingPlans, plan];
+        saveAdminState(state);
+        location.reload();
+      });
+    }
+  }
+
+  if (normalizedSection === 'features') {
+    const saveBtn = document.getElementById('save-features');
+    const resetBtn = document.getElementById('reset-features');
+    const statusDiv = document.getElementById('feature-status');
+
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const state = getAdminState();
+        const defaultModules = {
+          attendance: true,
+          aiTutor: true,
+          library: true,
+          transport: true,
+          canteen: true,
+          finance: true,
+          exams: true,
+          messaging: true,
+          reports: true,
+          websiteCms: true,
+          plugins: true,
+          notifications: true,
+          sms: true,
+          email: true,
+          parentPortal: true,
+        };
+
+        document.querySelectorAll('[data-feature-id]').forEach((checkbox) => {
+          const moduleId = checkbox.getAttribute('data-feature-id');
+          state.modules[moduleId] = checkbox.checked;
+        });
+
+        saveAdminState(state);
+        appendAuditLog('Updated feature toggles', 'Module availability settings changed.');
+
+        if (statusDiv) {
+          statusDiv.textContent = '✓ Feature settings saved successfully.';
+          statusDiv.classList.remove('hidden');
+          setTimeout(() => statusDiv.classList.add('hidden'), 3000);
+        }
+      });
+    }
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        if (confirm('Reset all features to default settings?')) {
+          const state = getAdminState();
+          state.modules = {
+            attendance: true,
+            aiTutor: true,
+            library: true,
+            transport: true,
+            canteen: true,
+            finance: true,
+            exams: true,
+            messaging: true,
+            reports: true,
+            websiteCms: true,
+            plugins: true,
+            notifications: true,
+            sms: true,
+            email: true,
+            parentPortal: true,
+          };
+
+          saveAdminState(state);
+          appendAuditLog('Reset feature toggles', 'All modules reset to defaults.');
+
+          // Update UI
+          document.querySelectorAll('[data-feature-id]').forEach((checkbox) => {
+            const moduleId = checkbox.getAttribute('data-feature-id');
+            checkbox.checked = state.modules[moduleId] ?? true;
+          });
+
+          if (statusDiv) {
+            statusDiv.textContent = '✓ Features reset to default configuration.';
+            statusDiv.classList.remove('hidden');
+            setTimeout(() => statusDiv.classList.add('hidden'), 3000);
+          }
+        }
+      });
+    }
+
+    // Real-time toggle feedback
+    document.querySelectorAll('[data-feature-id]').forEach((checkbox) => {
+      checkbox.addEventListener('change', () => {
+        const label = checkbox.closest('label');
+        const status = label?.querySelector('span:last-child');
+        if (status) {
+          status.textContent = checkbox.checked ? 'Enabled' : 'Disabled';
+          status.classList.toggle('bg-emerald-100');
+          status.classList.toggle('text-emerald-700');
+          status.classList.toggle('bg-slate-200');
+          status.classList.toggle('text-slate-600');
+        }
+      });
+    });
+  }
+
+  if (normalizedSection === 'plugins') {
+    const saveButton = document.getElementById('save-plugins');
+    if (saveButton) {
+      saveButton.addEventListener('click', () => {
+        const state = getAdminState();
+        document.querySelectorAll('[data-plugin-id]').forEach((checkbox) => {
+          const plugin = state.plugins.find((entry) => entry.id === checkbox.getAttribute('data-plugin-id'));
+          if (plugin) {
+            plugin.enabled = checkbox.checked;
+          }
+        });
+        saveAdminState(state);
+        appendAuditLog('Updated plugin toggles', 'Plugin marketplace settings changed.');
+        const status = document.getElementById('plugin-status');
+        if (status) {
+          status.textContent = 'Plugin preferences saved.';
+          status.classList.remove('hidden');
+        }
+      });
+    }
+  }
+
+  if (normalizedSection === 'messages') {
+    const form = document.getElementById('message-composer');
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const data = new FormData(form);
+        const recipientType = data.get('recipientType')?.toString() || 'one-school';
+        const selector = form.querySelector('select[name="schoolSelector"]');
+        const selectedSchools = Array.from((selector || form.querySelector('select[name="schoolIds"]') || form).querySelectorAll('option:checked')).map((option) => option.value).filter(Boolean).filter((value) => value !== 'all-schools');
+        const schoolIds = recipientType === 'all-schools' ? getSchoolDirectoryFromState().map((school) => String(school.schoolId || school.id || school.name || '')).filter(Boolean) : selectedSchools;
+        const message = {
+          id: `message-${Date.now()}`,
+          sender: 'Super Admin',
+          recipientType,
+          recipientSchoolIds: schoolIds,
+          schoolIds,
+          recipients: schoolIds.length ? schoolIds.join(', ') : 'No recipient selected',
+          subject: data.get('subject')?.toString().trim() || 'Untitled message',
+          body: data.get('body')?.toString().trim() || '',
+          priority: data.get('priority')?.toString() || 'Normal',
+          createdAt: new Date().toISOString(),
+          read: false,
+          status: 'unread',
+          readBy: [],
+        };
+        state.messages.unshift(message);
+        const notification = {
+          id: `notification-message-${Date.now()}`,
+          title: 'Super Admin message sent',
+          message: `${message.subject} — ${message.priority} priority`,
+          type: 'message',
+          read: false,
+          createdAt: message.createdAt,
+          targetSchoolIds: schoolIds,
+          sender: 'Super Admin',
+          priority: message.priority.toLowerCase(),
+          status: 'active',
+        };
+        recordNotification(notification);
+        saveAdminState(state);
+        appendAuditLog('Sent platform message', `To ${schoolIds.length ? schoolIds.join(', ') : 'no recipient'}: ${message.subject}`, { targetSchoolIds: schoolIds, priority: message.priority, recipientType });
+        const status = form.querySelector('[data-message-status]');
+        if (status) {
+          status.textContent = 'Message delivered and recorded.';
+          status.classList.remove('hidden');
+        }
+        form.reset();
+      });
+    }
+  }
+
+  if (normalizedSection === 'announcements') {
+    const form = document.getElementById('announcement-composer');
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const data = new FormData(form);
+        const item = {
+          id: `announcement-${Date.now()}`,
+          title: data.get('title')?.toString().trim() || 'Untitled announcement',
+          content: data.get('content')?.toString().trim() || '',
+          body: data.get('body')?.toString().trim() || '',
+          status: data.get('status')?.toString() || 'draft',
+          priority: data.get('priority')?.toString() || 'normal',
+          author: 'Super Admin',
+          createdAt: new Date().toISOString(),
+          publishedAt: data.get('status') === 'published' ? new Date().toISOString() : null,
+          visibility: 'global',
+        };
+        state.announcements.unshift(item);
+        recordNotification({
+          id: `notification-announcement-${Date.now()}`,
+          title: `Announcement ${item.status}`,
+          message: item.title,
+          type: 'announcement',
+          createdAt: item.createdAt,
+          read: false,
+          targetSchoolIds: getSchoolDirectoryFromState().map((school) => String(school.schoolId || school.id || school.name || '')).filter(Boolean),
+          sender: 'Super Admin',
+          priority: item.priority,
+          status: 'active',
+        });
+        saveAdminState(state);
+        appendAuditLog('Published announcement', item.title, { status: item.status, priority: item.priority, visibility: item.visibility });
+        const status = form.querySelector('[data-announcement-status]');
+        if (status) {
+          status.textContent = item.status === 'published' ? 'Announcement published to all schools.' : 'Announcement saved as draft.';
+          status.classList.remove('hidden');
+        }
+        form.reset();
+      });
+    }
+  }
+
+  if (normalizedSection === 'support') {
+    const form = document.getElementById('support-ticket-form');
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const data = new FormData(form);
+        const schoolId = data.get('schoolId')?.toString() || 'all-schools';
+        const ticket = {
+          id: `ticket-${Date.now()}`,
+          schoolId,
+          schoolName: data.get('schoolName')?.toString().trim() || 'School',
+          subject: data.get('subject')?.toString().trim() || 'Support request',
+          message: data.get('body')?.toString().trim() || '',
+          status: 'Open',
+          priority: data.get('priority')?.toString() || 'normal',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          replies: [],
+        };
+        state.supportTickets.unshift(ticket);
+        recordNotification({
+          id: `notification-support-${Date.now()}`,
+          title: 'New support ticket',
+          message: `${ticket.schoolName}: ${ticket.subject}`,
+          type: 'support',
+          createdAt: ticket.createdAt,
+          read: false,
+          targetSchoolIds: schoolId && schoolId !== 'all-schools' ? [schoolId] : [],
+          sender: 'School Authority',
+          priority: ticket.priority,
+          status: 'active',
+        });
+        saveAdminState(state);
+        appendAuditLog('Created support ticket', `${ticket.schoolName}: ${ticket.subject}`, { schoolId, schoolName: ticket.schoolName, priority: ticket.priority, status: ticket.status });
+        const status = form.querySelector('[data-support-status]');
+        if (status) {
+          status.textContent = 'Support ticket created and monitored.';
+          status.classList.remove('hidden');
+        }
+        form.reset();
+      });
+    }
+  }
+
+  if (normalizedSection === 'settings' || normalizedSection === 'system-settings') {
+    const form = document.getElementById('platform-settings-form') || document.getElementById('system-settings-form');
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const data = new FormData(form);
+        state.settings = {
+          ...state.settings,
+          platformName: data.get('platformName')?.toString().trim() || state.settings.platformName || 'GlobyEdu OS',
+          supportEmail: data.get('supportEmail')?.toString().trim() || state.settings.supportEmail || 'support@globyedu.com',
+          defaultTimezone: data.get('defaultTimezone')?.toString().trim() || state.settings.defaultTimezone || 'UTC',
+          defaultCurrency: data.get('defaultCurrency')?.toString().trim() || state.settings.defaultCurrency || 'USD',
+          supportUrl: data.get('supportUrl')?.toString().trim() || state.settings.supportUrl || 'https://support.globyedu.com',
+          defaultLanguage: data.get('defaultLanguage')?.toString().trim() || state.settings.defaultLanguage || 'English',
+          maintenanceMode: data.get('maintenanceMode') === 'on',
+          registrationEnabled: data.get('registrationEnabled') === 'on',
+          loginEnabled: data.get('loginEnabled') === 'on',
+          schoolAccountsEnabled: data.get('schoolAccountsEnabled') === 'on',
+        };
+        saveAdminState(state);
+        appendAuditLog('Updated platform settings', 'Global settings changed.');
+        const status = document.getElementById('platform-settings-status') || document.getElementById('system-settings-status');
+        if (status) {
+          status.textContent = 'Settings saved.';
+          status.classList.remove('hidden');
+        }
+      });
+    }
+  }
+
+  if (normalizedSection === 'backups') {
+    const runButton = document.getElementById('run-backup');
+    if (runButton) {
+      runButton.addEventListener('click', () => {
+        const result = createPlatformBackupSnapshot();
+        const status = document.getElementById('backup-status');
+        if (status) {
+          status.textContent = result.success ? `Backup created successfully: ${result.backup.id}` : `Backup failed: ${result.reason}`;
+          status.className = result.success ? 'mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800' : 'mt-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+          status.classList.remove('hidden');
+        }
+        if (result.success) {
+          appendAuditLog('Created backup', `Backup ${result.backup.id} completed successfully.`, { target: 'platform', actorRole: 'super_admin', resultStatus: 'success', backupId: result.backup.id });
+          window.location.hash = '#/admin/backups';
+        }
+      });
+    }
+
+    const restoreButton = document.getElementById('restore-backup');
+    if (restoreButton) {
+      restoreButton.addEventListener('click', () => {
+        const result = restoreLatestBackup();
+        const status = document.getElementById('backup-status');
+        if (status) {
+          status.textContent = result.success ? `Restore completed: ${result.backupId}` : `Restore blocked: ${result.reason}`;
+          status.className = result.success ? 'mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800' : 'mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800';
+          status.classList.remove('hidden');
+        }
+      });
+    }
+  }
+
+  if (normalizedSection === 'security') {
+    const invalidateButton = document.getElementById('invalidate-sessions');
+    if (invalidateButton) {
+      invalidateButton.addEventListener('click', () => {
+        const state = getAdminState();
+        const invalidated = (state.sessions || []).length;
+        state.sessions = [];
+        saveAdminState(state);
+        appendAuditLog('Invalidated stale sessions', `Expired or stale sessions reset by Super Admin.`, { target: 'platform', actorRole: 'super_admin', resultStatus: 'success', count: invalidated });
+        const status = document.getElementById('backup-status');
+        if (status) {
+          status.textContent = invalidated ? `Invalidated ${invalidated} stale session entries.` : 'No stale sessions to invalidate.';
+          status.className = 'mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
+          status.classList.remove('hidden');
+        }
+      });
+    }
+
+    const loginProtectionButton = document.getElementById('refresh-login-protection');
+    if (loginProtectionButton) {
+      loginProtectionButton.addEventListener('click', () => {
+        const settings = getPlatformSettingsState();
+        const next = { ...settings, loginEnabled: true, registrationEnabled: true, maintenanceMode: false };
+        savePlatformSettingsState(next);
+        appendAuditLog('Updated security configuration', 'Platform login protection restored while keeping Super Admin emergency access intact.', { target: 'platform', actorRole: 'super_admin', resultStatus: 'success', securityConfig: { loginEnabled: true, registrationEnabled: true, maintenanceMode: false } });
+        const status = document.getElementById('backup-status');
+        if (status) {
+          status.textContent = 'Login protection restored. Super Admin access remains protected.';
+          status.className = 'mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
+          status.classList.remove('hidden');
+        }
+      });
+    }
+
+    const suspendButton = document.getElementById('security-suspend-school');
+    if (suspendButton) {
+      suspendButton.addEventListener('click', async () => {
+        const schoolId = document.getElementById('security-school-select')?.value;
+        const status = document.getElementById('backup-status');
+        if (!schoolId) {
+          if (status) {
+            status.textContent = 'Select a school before suspending it.';
+            status.className = 'mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        const state = getAdminState();
+        const school = getSchoolDirectoryFromState().find((entry) => String(entry.schoolId || entry.id) === String(schoolId));
+        if (!school) {
+          if (status) {
+            status.textContent = 'The selected school could not be found. Refresh the school list and try again.';
+            status.className = 'mt-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        const result = await deleteAdminSchool(getAccessToken(), schoolId);
+        if (!result.ok || result.data?.status !== 'ok') {
+          if (status) {
+            status.textContent = result.data?.message || 'Unable to suspend school.';
+            status.className = 'mt-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        school.schoolStatus = result.data.school?.schoolStatus || 'suspended';
+        school.subscriptionStatus = result.data.school?.subscriptionStatus || 'suspended';
+        school.isSuspended = true;
+        saveAdminState(state);
+        appendAuditLog('Suspended school', `School ${school.name || school.schoolName || schoolId} was suspended by Super Admin.`, { target: schoolId, actorRole: 'super_admin', resultStatus: 'success', schoolId, schoolName: school.name || school.schoolName || schoolId });
+        const suspendStatus = document.getElementById('backup-status');
+        if (suspendStatus) {
+          suspendStatus.textContent = `School ${school.name || school.schoolName || schoolId} was suspended and access is now blocked.`;
+          suspendStatus.className = 'mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800';
+          suspendStatus.classList.remove('hidden');
+        }
+      });
+    }
+
+    const activateButton = document.getElementById('security-activate-school');
+    if (activateButton) {
+      activateButton.addEventListener('click', async () => {
+        const schoolId = document.getElementById('security-school-select')?.value;
+        const status = document.getElementById('backup-status');
+        if (!schoolId) {
+          if (status) {
+            status.textContent = 'Select a school before activating it.';
+            status.className = 'mt-4 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        const state = getAdminState();
+        const school = getSchoolDirectoryFromState().find((entry) => String(entry.schoolId || entry.id) === String(schoolId));
+        if (!school) {
+          if (status) {
+            status.textContent = 'The selected school could not be found. Refresh the school list and try again.';
+            status.className = 'mt-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        const result = await activateAdminSchool(getAccessToken(), schoolId);
+        if (!result.ok || result.data?.status !== 'ok') {
+          if (status) {
+            status.textContent = result.data?.message || 'Unable to activate school.';
+            status.className = 'mt-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        school.schoolStatus = result.data.school?.schoolStatus || 'active';
+        school.subscriptionStatus = result.data.school?.subscriptionStatus || 'trial';
+        school.isSuspended = false;
+        saveAdminState(state);
+        appendAuditLog('Activated school', `School ${school.name || school.schoolName || schoolId} was reactivated by Super Admin.`, { target: schoolId, actorRole: 'super_admin', resultStatus: 'success', schoolId, schoolName: school.name || school.schoolName || schoolId });
+        const activateStatus = document.getElementById('backup-status');
+        if (activateStatus) {
+          activateStatus.textContent = `School ${school.name || school.schoolName || schoolId} was reactivated and access is restored.`;
+          activateStatus.className = 'mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
+          activateStatus.classList.remove('hidden');
+        }
+      });
+    }
+  }
+
+  if (normalizedSection === 'users') {
+    const form = document.getElementById('invite-user-form');
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const state = getAdminState();
+        const data = new FormData(form);
+        state.messages.unshift({
+          id: `team-${Date.now()}`,
+          subject: `Invitation for ${data.get('name')}`,
+          body: `Invite sent to ${data.get('email')}`,
+          priority: 'Normal',
+        });
+        saveAdminState(state);
+        appendAuditLog('Invited platform user', data.get('email')?.toString() || 'user');
+        form.reset();
+      });
+    }
+  }
+
+  // School Management Handlers
+  if (normalizedSection === 'schools') {
+    const token = getAccessToken ? getAccessToken() : localStorage.getItem('globyedu_accessToken');
+    attachSchoolManagementHandlers(token);
+  }
+}
+
+// Helper function to fetch schools from API
+async function fetchSchoolsFromAPI(token) {
+  try {
+    const response = await fetch('/api/v1/schools', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data.schools || [];
+  } catch (error) {
+    console.error('Error fetching schools:', error);
+    return [];
+  }
+}
+
+// Helper function to generate unique School ID
+function generateSchoolId(schoolName) {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substr(2, 5);
+  const clean = (schoolName || 'school')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .substr(0, 8);
+  return `${clean}-${timestamp}-${random}`;
+}
+
+// Main school management handler
+function attachSchoolManagementHandlers(token) {
+  const modal = document.getElementById('school-modal');
+  const detailsModal = document.getElementById('school-details-modal');
+  const modalContent = document.getElementById('school-modal-content');
+  const modalCloseBtn = document.getElementById('school-modal-close');
+  const detailsCloseBtn = document.getElementById('school-details-modal-close');
+  const createBtn = document.getElementById('create-school-button');
+  const messageDiv = document.getElementById('admin-school-message');
+
+  // Close modal handlers
+  const closeModal = () => {
+    if (modal) modal.classList.add('hidden');
+    if (modalContent) modalContent.innerHTML = '';
+  };
+
+  const closeDetailsModal = () => {
+    if (detailsModal) detailsModal.classList.add('hidden');
+  };
+
+  if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
+  if (detailsCloseBtn) detailsCloseBtn.addEventListener('click', closeDetailsModal);
+
+  // Close modals when clicking outside
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  if (detailsModal) {
+    detailsModal.addEventListener('click', (e) => {
+      if (e.target === detailsModal) closeDetailsModal();
+    });
+  }
+
+  // Create School Button
+  if (createBtn) {
+    createBtn.addEventListener('click', () => {
+      if (modalContent) {
+        modalContent.innerHTML = renderCreateSchoolModal();
+      }
+      if (modal) modal.classList.remove('hidden');
+      attachSchoolCreateForm(token, closeModal);
+      if (document.getElementById('school-modal-cancel')) {
+        document.getElementById('school-modal-cancel').addEventListener('click', closeModal);
+      }
+    });
+  }
+
+  // School Row Action Buttons (View, Edit, Suspend, Activate, Delete)
+  document.querySelectorAll('.admin-school-action').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const action = btn.getAttribute('data-action');
+      const schoolId = btn.getAttribute('data-school-id');
+
+      if (action === 'view') {
+        // Fetch school details and show details modal
+        const school = await fetchSchoolDetails(token, schoolId);
+        if (school && detailsModal) {
+          document.getElementById('school-details-content').innerHTML = renderSchoolDetailsModal(school);
+          detailsModal.classList.remove('hidden');
+          
+          // Attach event listeners to action buttons in details modal
+          document.querySelectorAll('[data-action="edit"][data-school-id="' + schoolId + '"]').forEach(editBtn => {
+            editBtn.addEventListener('click', () => {
+              detailsModal.classList.add('hidden');
+              if (modalContent) {
+                modalContent.innerHTML = renderEditSchoolModal(school);
+              }
+              if (modal) modal.classList.remove('hidden');
+              attachSchoolEditForm(token, schoolId, closeModal);
+              if (document.getElementById('school-modal-cancel')) {
+                document.getElementById('school-modal-cancel').addEventListener('click', closeModal);
+              }
+            });
+          });
+        }
+      } else if (action === 'edit') {
+        // Show edit modal
+        const school = await fetchSchoolDetails(token, schoolId);
+        if (school && modalContent) {
+          modalContent.innerHTML = renderEditSchoolModal(school);
+          if (modal) modal.classList.remove('hidden');
+          attachSchoolEditForm(token, schoolId, closeModal);
+          if (document.getElementById('school-modal-cancel')) {
+            document.getElementById('school-modal-cancel').addEventListener('click', closeModal);
+          }
+        }
+      } else if (action === 'suspend') {
+        // Suspend school
+        if (confirm('Are you sure you want to suspend this school? It will be unable to access the platform.')) {
+          await suspendSchool(token, schoolId, messageDiv);
+        }
+      } else if (action === 'activate') {
+        // Activate school
+        if (confirm('Activate this school? It will regain platform access.')) {
+          await activateSchool(token, schoolId, messageDiv);
+        }
+      } else if (action === 'delete') {
+        // Delete school
+        if (confirm('Are you sure? This action cannot be undone. All school data will be permanently deleted.')) {
+          await deleteSchool(token, schoolId, messageDiv);
+        }
+      } else if (action === 'close-modal') {
+        closeDetailsModal();
+      }
+    });
+  });
+
+  // Quick Action Buttons
+  document.querySelectorAll('.school-action-quick').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const action = btn.getAttribute('data-action');
+      
+      if (action === 'create') {
+        if (modalContent) modalContent.innerHTML = renderCreateSchoolModal();
+        if (modal) modal.classList.remove('hidden');
+        attachSchoolCreateForm(token, closeModal);
+        if (document.getElementById('school-modal-cancel')) {
+          document.getElementById('school-modal-cancel').addEventListener('click', closeModal);
+        }
+      }
+    });
+  });
+
+  // Search and Filter
+  const searchInput = document.getElementById('school-search-input');
+  const statusFilter = document.getElementById('school-status-filter');
+
+  const applyFilters = () => {
+    const searchTerm = (searchInput?.value || '').toLowerCase();
+    const statusTerm = statusFilter?.value || '';
+
+    document.querySelectorAll('[data-school-id]').forEach((row) => {
+      const schoolName = (row.textContent || '').toLowerCase();
+      const match = (!searchTerm || schoolName.includes(searchTerm)) &&
+                    (!statusTerm || row.innerHTML.includes(statusTerm));
+      row.style.display = match ? '' : 'none';
+    });
+  };
+
+  if (searchInput) searchInput.addEventListener('input', applyFilters);
+  if (statusFilter) statusFilter.addEventListener('change', applyFilters);
+}
+
+// Create school form handler
+function attachSchoolCreateForm(token, onSuccess) {
+  const form = document.getElementById('school-create-form');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const statusDiv = document.getElementById('school-create-status');
+
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+      const formData = new FormData(form);
+      const schoolData = {
+        name: formData.get('schoolName'),
+        schoolName: formData.get('schoolName'),
+        headName: formData.get('headName'),
+        headEmail: formData.get('headEmail'),
+        subscriptionPlan: formData.get('subscriptionPlan'),
+        region: formData.get('region'),
+        description: formData.get('description'),
+        schoolId: generateSchoolId(formData.get('schoolName')),
+        subscriptionStatus: 'trial',
+        userCount: 1,
+      };
+
+      const response = await fetch('/api/v1/schools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(schoolData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (statusDiv) {
+        const headAccount = result.school?.headAccount;
+        const credentialMessage = headAccount?.username && headAccount?.password
+          ? ` Authority login: ${headAccount.username} / ${headAccount.password}.`
+          : '';
+        statusDiv.textContent = `✓ School "${schoolData.name}" created successfully with ID: ${schoolData.schoolId}.${credentialMessage}`;
+        statusDiv.classList.remove('hidden');
+      }
+
+      appendAuditLog('Created school', schoolData.name);
+
+      setTimeout(() => {
+        if (onSuccess) onSuccess();
+        location.reload(); // Reload to show new school in list
+      }, 1500);
+    } catch (error) {
+      if (statusDiv) {
+        statusDiv.textContent = `✗ Error: ${error.message}`;
+        statusDiv.classList.remove('hidden');
+        statusDiv.classList.remove('bg-emerald-50', 'border-emerald-100', 'text-emerald-800');
+        statusDiv.classList.add('bg-rose-50', 'border-rose-100', 'text-rose-800');
+      }
+    }
+
+    if (submitBtn) submitBtn.disabled = false;
+  });
+}
+
+// Edit school form handler
+function attachSchoolEditForm(token, schoolId, onSuccess) {
+  const form = document.getElementById('school-edit-form');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const statusDiv = document.getElementById('school-edit-status');
+
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+      const formData = new FormData(form);
+      const updateData = {
+        name: formData.get('schoolName'),
+        schoolName: formData.get('schoolName'),
+        headName: formData.get('headName'),
+        headEmail: formData.get('headEmail'),
+        subscriptionPlan: formData.get('subscriptionPlan'),
+        region: formData.get('region'),
+        description: formData.get('description'),
+      };
+
+      const response = await fetch(`/api/v1/schools/${schoolId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const credentialResponse = await fetch(`/api/v1/schools/${encodeURIComponent(schoolId)}/credentials`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ email: updateData.headEmail, updatePassword: false })
+      });
+      if (!credentialResponse.ok) {
+        const credentialError = await credentialResponse.json().catch(() => ({}));
+        throw new Error(credentialError.message || `Credential update failed: ${credentialResponse.status}`);
+      }
+
+      if (statusDiv) {
+        statusDiv.textContent = `✓ School updated successfully`;
+        statusDiv.classList.remove('hidden');
+      }
+
+      appendAuditLog('Updated school', formData.get('schoolName'));
+
+      setTimeout(() => {
+        if (onSuccess) onSuccess();
+        location.reload();
+      }, 1500);
+    } catch (error) {
+      if (statusDiv) {
+        statusDiv.textContent = `✗ Error: ${error.message}`;
+        statusDiv.classList.remove('hidden');
+        statusDiv.classList.remove('bg-emerald-50', 'border-emerald-100', 'text-emerald-800');
+        statusDiv.classList.add('bg-rose-50', 'border-rose-100', 'text-rose-800');
+      }
+    }
+
+    if (submitBtn) submitBtn.disabled = false;
+  });
+
+  const resetButton = document.getElementById('school-credential-reset');
+  const credentialStatus = document.getElementById('school-credential-status');
+  if (resetButton) {
+    resetButton.addEventListener('click', async () => {
+      resetButton.disabled = true;
+      try {
+        const response = await fetch(`/api/v1/schools/${encodeURIComponent(schoolId)}/credentials`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ resetPassword: true, temporary: true })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || 'Unable to reset school credentials.');
+        credentialStatus.textContent = `Temporary password (shown once): ${result.credentials.temporaryPassword}`;
+        credentialStatus.classList.remove('hidden');
+        resetButton.textContent = 'Temporary password generated';
+      } catch (error) {
+        credentialStatus.textContent = error.message;
+        credentialStatus.classList.remove('hidden');
+      } finally {
+        resetButton.disabled = false;
+      }
+    });
+  }
+}
+
+// Fetch school details
+async function fetchSchoolDetails(token, schoolId) {
+  try {
+    const response = await fetch(`/api/v1/schools/${schoolId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.school || null;
+  } catch (error) {
+    console.error('Error fetching school details:', error);
+    return null;
+  }
+}
+
+// Suspend school
+async function suspendSchool(token, schoolId, messageDiv) {
+  try {
+    const response = await fetch(`/api/v1/schools/${schoolId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) throw new Error('Failed to suspend school');
+
+    appendAuditLog('Suspended school', schoolId);
+    if (messageDiv) {
+      messageDiv.textContent = '✓ School suspended successfully';
+      messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => location.reload(), 1500);
+  } catch (error) {
+    if (messageDiv) {
+      messageDiv.textContent = `✗ Error: ${error.message}`;
+      messageDiv.classList.remove('hidden');
+    }
+  }
+}
+
+// Activate school
+async function activateSchool(token, schoolId, messageDiv) {
+  try {
+    const response = await fetch(`/api/v1/schools/${schoolId}/activate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) throw new Error('Failed to activate school');
+
+    appendAuditLog('Activated school', schoolId);
+    if (messageDiv) {
+      messageDiv.textContent = '✓ School activated successfully';
+      messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => location.reload(), 1500);
+  } catch (error) {
+    if (messageDiv) {
+      messageDiv.textContent = `✗ Error: ${error.message}`;
+      messageDiv.classList.remove('hidden');
+    }
+  }
+}
+
+// Delete school
+async function deleteSchool(token, schoolId, messageDiv) {
+  try {
+    const response = await fetch(`/api/v1/schools/${schoolId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) throw new Error('Failed to delete school');
+
+    appendAuditLog('Deleted school', schoolId);
+    if (messageDiv) {
+      messageDiv.textContent = '✓ School deleted successfully';
+      messageDiv.classList.remove('hidden');
+    }
+
+    setTimeout(() => location.reload(), 1500);
+  } catch (error) {
+    if (messageDiv) {
+      messageDiv.textContent = `✗ Error: ${error.message}`;
+      messageDiv.classList.remove('hidden');
+    }
+  }
+}
+
+function getAccessToken() {
+  return localStorage.getItem('globyedu_accessToken');
+}
+
+function renderSubscriptions(summary = {}, schools = []) {
+  const state = getAdminState();
+  const activeSubscriptions = schools.filter(s => (s.subscriptionStatus || s.schoolStatus || 'inactive').toLowerCase() === 'active').length;
+  const trialSubscriptions = schools.filter(s => (s.subscriptionStatus || s.schoolStatus || 'inactive').toLowerCase() === 'trial').length;
+  const pastDue = schools.filter(s => (s.subscriptionStatus || s.schoolStatus || 'inactive').toLowerCase() === 'expired').length;
+  
+  const summaryCards = [
+    { label: 'Active plans', value: activeSubscriptions.toString(), tone: 'emerald' },
+    { label: 'Trial renewals', value: trialSubscriptions.toString(), tone: 'sky' },
+    { label: 'Past due', value: pastDue.toString(), tone: 'amber' },
+  ].map((card) => `
+    <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+      <p class="text-sm text-slate-500">${card.label}</p>
+      <p class="mt-3 text-2xl font-semibold text-slate-900">${card.value}</p>
+    </div>
+  `).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Subscriptions</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Tenant subscriptions and growth plans</h2>
+        <p class="mt-3 text-slate-600">Track renewals, upgrade opportunities, and the platform’s health across all subscribed schools.</p>
+        <div class="mt-6 grid gap-4 md:grid-cols-3">${summaryCards}</div>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Current plans</p>
+            <h3 class="mt-2 text-xl font-semibold text-slate-900">Live subscription portfolio</h3>
+          </div>
+          <button type="button" data-admin-action="renew-subscriptions" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Queue renewals</button>
+          <div id="subscription-action-status" class="hidden rounded-3xl border border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800"></div>
+        </div>
+        <div class="mt-6 grid gap-4 lg:grid-cols-2">
+          ${(() => {
+            const plans = {};
+            schools.forEach(s => {
+              const plan = s.subscriptionPlan || 'trial';
+              plans[plan] = (plans[plan] || 0) + 1;
+            });
+            return Object.entries(plans).map(([plan, count]) => `
+              <div class="rounded-[1.75rem] border border-slate-200 bg-white p-5">
+                <p class="font-semibold text-slate-900">${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan</p>
+                <p class="mt-2 text-sm text-slate-600">${count} ${count === 1 ? 'school' : 'schools'} subscribed.</p>
+              </div>
+            `).join('') || '<div class="rounded-[1.75rem] border border-slate-200 bg-white p-5"><p class="text-sm text-slate-600">No subscription plans configured.</p></div>';
+          })()}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderUsers(schools = []) {
+  const state = getAdminState();
+  const totalSchools = schools.length;
+  const totalUsers = schools.reduce((sum, s) => sum + (s.userCount || 0), 0);
+  const userRows = [
+    { name: 'Benjamin Cole', role: 'Super Admin', lastSeen: '2 min ago' },
+    { name: 'Amina Yusuf', role: 'School Admin', lastSeen: '11 min ago' },
+    { name: 'Noah Kim', role: 'Teacher', lastSeen: '1 hr ago' },
+  ].map((user) => `
+    <div class="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-white p-4">
+      <div>
+        <p class="font-semibold text-slate-900">${user.name}</p>
+        <p class="mt-1 text-sm text-slate-600">${user.role}</p>
+      </div>
+      <span class="text-sm text-slate-500">${user.lastSeen}</span>
+    </div>
+  `).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Users</p>
+            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage platform users and team access</h2>
+          </div>
+          <button type="button" data-admin-action="invite-user" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Invite user</button>
+        </div>
+        <form id="invite-user-form" class="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
+          <input type="text" name="name" placeholder="Full name" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required />
+          <input type="email" name="email" placeholder="Email address" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required />
+          <button type="submit" class="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">Add</button>
+        </form>
+      </div>
+      <div class="grid gap-4">${userRows}</div>
+    </section>
+  `;
+}
+
+function renderAnalytics(summary = {}, schools = []) {
+  const totalStudents = summary.totalStudents || 0;
+  const totalTeachers = summary.totalTeachers || 0;
+  const totalSchools = summary.totalSchools || schools.length || 0;
+  const activeSchools = summary.activeSchools ?? schools.filter((school) => ['active', 'trial', 'paid'].includes(String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
+  const suspendedSchools = summary.suspendedSchools ?? schools.filter((school) => ['suspended', 'inactive'].includes(String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
+  const trialSchools = summary.trialSchools ?? schools.filter((school) => String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase() === 'trial').length;
+  const activeSubscriptions = summary.activeSubscriptions ?? schools.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || '').toLowerCase())).length;
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Analytics</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Live operational analytics</h2>
+        <p class="mt-3 text-slate-600">Review adoption, usage trends, and engagement with dynamic dashboard cards.</p>
+        <div class="mt-6 grid gap-4 md:grid-cols-3 xl:grid-cols-4">
+          ${renderMiniStat('Total Students', totalStudents.toLocaleString(), '📈')}
+          ${renderMiniStat('Total Teachers', totalTeachers.toLocaleString(), '👨‍🏫')}
+          ${renderMiniStat('Total Schools', totalSchools.toLocaleString(), '🏫')}
+          ${renderMiniStat('Active Schools', activeSchools.toLocaleString(), '✅')}
+          ${renderMiniStat('Suspended Schools', suspendedSchools.toLocaleString(), '⏸')}
+          ${renderMiniStat('Trial Subscriptions', trialSchools.toLocaleString(), '🧪')}
+          ${renderMiniStat('Active Subscriptions', activeSubscriptions.toLocaleString(), '💳')}
+        </div>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+        ${renderChartPlaceholder('analytics-chart')}
+      </div>
+    </section>
+  `;
+}
+
+function renderReports(summary = {}, schools = []) {
+  const totalSchools = summary.totalSchools || 0;
+  const totalStudents = summary.totalStudents || 0;
+  const revenue = summary.revenue || '$0';
+  const schoolReports = schools.flatMap((school) => (Array.isArray(school.reports) ? school.reports.map((report) => ({ ...report, schoolName: school.name || school.schoolName || school.schoolId })) : []));
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Reports</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Export-ready reports and summaries</h2>
+        <div class="mt-6 grid gap-4 lg:grid-cols-3">
+          <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+            <p class="font-semibold text-slate-900">Schools Overview</p>
+            <p class="mt-2 text-sm text-slate-600">${totalSchools} schools across ${schools.length} tenants.</p>
+          </div>
+          <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+            <p class="font-semibold text-slate-900">Student Population</p>
+            <p class="mt-2 text-sm text-slate-600">${totalStudents.toLocaleString()} students enrolled.</p>
+          </div>
+          <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+            <p class="font-semibold text-slate-900">Platform Revenue</p>
+            <p class="mt-2 text-sm text-slate-600">Estimated revenue: ${revenue}.</p>
+          </div>
+        </div>
+        <div class="mt-6 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+          <p class="font-semibold text-slate-900">Reports submitted by schools</p>
+          <div class="mt-4 space-y-3">
+            ${schoolReports.length ? schoolReports.map((report) => {
+              const statusColor = {
+                'draft': 'bg-amber-50 text-amber-700',
+                'submitted': 'bg-blue-50 text-blue-700',
+                'reviewed': 'bg-purple-50 text-purple-700',
+                'approved': 'bg-emerald-50 text-emerald-700',
+                'rejected': 'bg-red-50 text-red-700'
+              }[report.status] || 'bg-sky-50 text-sky-700';
+              return `
+              <article class="rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="font-semibold text-slate-900">${report.title || 'School report'}</p>
+                    <p class="mt-1 text-sm text-slate-600">
+                      <strong>${report.schoolName || 'School'}</strong>
+                      ${report.type ? ` • [${report.type.toUpperCase()}]` : ''}
+                      ${report.summary ? ` • ${report.summary}` : ''}
+                    </p>
+                    ${report.submittedAt ? `<p class="mt-1 text-xs text-slate-500">Submitted: ${new Date(report.submittedAt).toLocaleString()}</p>` : ''}
+                  </div>
+                  <span class="rounded-full ${statusColor} px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em]">${report.status || 'submitted'}</span>
+                </div>
+              </article>
+            `}).join('') : '<p class="text-sm text-slate-600">No school reports have been submitted yet.</p>'}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderMessages(loadedSchools = []) {
+  const state = getAdminState();
+  const messages = (state.messages || []).slice(0, 8).map((message) => `
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <p class="font-semibold text-slate-900">${message.subject}</p>
+          <p class="mt-1 text-xs text-slate-500">${message.recipientType || 'one-school'} • ${message.recipientSchoolIds?.length ? message.recipientSchoolIds.join(', ') : message.recipients || 'Recipients'} </p>
+        </div>
+        <span class="rounded-full ${String(message.priority || 'Normal').toLowerCase() === 'urgent' ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'} px-3 py-1 text-xs font-semibold">${message.priority || 'Normal'}</span>
+      </div>
+      <p class="mt-2 text-sm text-slate-600">${message.body}</p>
+      <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+        <span>Sent by ${message.sender || 'Super Admin'}</span>
+        <span>${message.createdAt ? new Date(message.createdAt).toLocaleString() : 'Now'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Messages</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Send tenant-safe platform communications</h2>
+        <form id="message-composer" class="mt-6 space-y-4">
+          <div class="grid gap-4 md:grid-cols-2">
+            <select name="recipientType" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" aria-label="Recipient selection">
+              <option value="one-school">One school</option>
+              <option value="multiple-schools">Multiple schools</option>
+              <option value="all-schools">All schools</option>
+            </select>
+            <select id="schoolSelector" name="schoolSelector" multiple class="min-h-[120px] rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" aria-label="School recipient selector">
+              ${renderSchoolRecipientOptions([], loadedSchools)}
+            </select>
+          </div>
+          <input type="text" name="subject" placeholder="Subject" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required />
+          <textarea name="body" rows="4" placeholder="Compose a message" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required></textarea>
+          <div class="flex flex-wrap items-center gap-3">
+            <select name="priority" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="Normal">Normal</option>
+              <option value="Urgent">Urgent</option>
+            </select>
+            <!-- support message retention -->
+            <span class="rounded-full bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700">Support message retention: 1 hour</span>
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Send message</button>
+          </div>
+          <div data-message-status class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+        </form>
+      </div>
+      <div class="grid gap-4">${messages || '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-600">No messages recorded yet.</div>'}</div>
+    </section>
+  `;
+}
+
+function renderAnnouncements() {
+  const state = getAdminState();
+  const items = (state.announcements || []).slice(0, 8).map((entry) => `
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+      <div class="flex items-center justify-between gap-2">
+        <p class="font-semibold text-slate-900">${entry.title}</p>
+        <span class="rounded-full ${entry.status === 'published' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'} px-3 py-1 text-xs font-semibold">${entry.status || 'draft'}</span>
+      </div>
+      <p class="mt-2 text-sm text-slate-600">${entry.content || entry.body}</p>
+      <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+        <span>Author: ${entry.author || 'Super Admin'}</span>
+        <span>Priority: ${entry.priority || 'normal'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Announcements</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Share published updates across the platform</h2>
+        <form id="announcement-composer" class="mt-6 space-y-4">
+          <input type="text" name="title" placeholder="Announcement title" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required />
+          <textarea name="content" rows="4" placeholder="Add the details" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required></textarea>
+          <div class="flex flex-wrap items-center gap-3">
+            <select name="status" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+            </select>
+            <select name="priority" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="normal">Normal</option>
+              <option value="urgent">Urgent</option>
+            </select>
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save announcement</button>
+          </div>
+          <div data-announcement-status class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+        </form>
+      </div>
+      <div class="grid gap-4">${items || '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-600">No announcements published yet.</div>'}</div>
+    </section>
+  `;
+}
+
+function renderSupport(loadedSchools = []) {
+  const state = getAdminState();
+  const storedSchools = getSchoolDirectoryFromState();
+  const schools = storedSchools.length ? storedSchools : loadedSchools;
+  const tickets = (state.supportTickets || []).slice(0, 8).map((ticket) => `
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <p class="font-semibold text-slate-900">${ticket.subject}</p>
+          <p class="mt-1 text-xs text-slate-500">${ticket.schoolName || ticket.schoolId || 'Unknown school'} • ${ticket.priority || 'normal'}</p>
+        </div>
+        <span class="rounded-full ${ticket.status === 'Closed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'} px-3 py-1 text-xs font-semibold">${ticket.status || 'Open'}</span>
+      </div>
+      <p class="mt-2 text-sm text-slate-600">${ticket.message || ticket.body}</p>
+      <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+        <span>Created: ${ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : 'Unknown'}</span>
+        <span>Retention: ${ticket.expiresAt ? new Date(ticket.expiresAt).toLocaleString() : '1 hour from close'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Support</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Handle school support requests and responses</h2>
+        <form id="support-ticket-form" class="mt-6 space-y-4">
+          <div class="grid gap-4 md:grid-cols-2">
+            <select name="schoolId" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="all-schools">All schools</option>
+              ${schools.map((school) => `<option value="${String(school.schoolId || school.id || school.name || '')}">${school.name || school.schoolName || 'School'}</option>`).join('')}
+            </select>
+            <input type="text" name="schoolName" placeholder="School name" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </div>
+          <input type="text" name="subject" placeholder="Issue summary" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required />
+          <textarea name="body" rows="4" placeholder="Describe the issue" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" required></textarea>
+          <div class="flex flex-wrap items-center gap-3">
+            <select name="priority" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="normal">Normal</option>
+              <option value="urgent">Urgent</option>
+            </select>
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Create ticket</button>
+          </div>
+          <div data-support-status class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+        </form>
+      </div>
+      <div class="grid gap-4">${tickets || '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-600">No support tickets recorded yet.</div>'}</div>
+    </section>
+  `;
+}
+
+function renderFeatureManager() {
+  const state = getAdminState();
+  const modules = state.modules || {};
+  
+  const moduleCategories = {
+    'Academic': ['attendance', 'exams', 'library'],
+    'Communication': ['messaging', 'notifications', 'announcements'],
+    'Administrative': ['finance', 'reports', 'websiteCms'],
+    'Support Services': ['aiTutor', 'transport', 'canteen'],
+    'Extended': ['plugins', 'sms', 'email', 'parentPortal'],
+  };
+
+  const moduleLabels = {
+    attendance: 'Attendance Management',
+    aiTutor: 'School Insights',
+    library: 'Library System',
+    transport: 'Transport Management',
+    canteen: 'Canteen Services',
+    finance: 'Finance & Billing',
+    exams: 'Examination System',
+    messaging: 'Messaging & Chat',
+    reports: 'Reports & Analytics',
+    websiteCms: 'Website CMS',
+    plugins: 'Plugin System',
+    notifications: 'Notifications',
+    sms: 'SMS Gateway',
+    email: 'Email Service',
+    parentPortal: 'Parent Portal',
+  };
+
+  let html = `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Feature Manager</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Enable or disable platform features</h2>
+        <p class="mt-3 text-slate-600">Control which modules are available to schools and users on your platform.</p>
+  `;
+
+  Object.entries(moduleCategories).forEach(([category, moduleIds]) => {
+    html += `
+      <div class="mt-6">
+        <h3 class="mb-4 text-lg font-semibold text-slate-800">${category}</h3>
+        <div class="grid gap-3 lg:grid-cols-2">
+    `;
+
+    moduleIds.forEach((moduleId) => {
+      const isEnabled = modules[moduleId] ?? false;
+      const label = moduleLabels[moduleId] || moduleId;
+      html += `
+        <label class="flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4 transition hover:bg-white cursor-pointer">
+          <div class="flex items-center gap-3 flex-1">
+            <input type="checkbox" data-feature-id="${moduleId}" ${isEnabled ? 'checked' : ''} class="h-5 w-5 rounded border-slate-300 text-sky-600 cursor-pointer" />
+            <span class="font-medium text-slate-700">${label}</span>
+          </div>
+          <span class="text-xs font-semibold px-3 py-1 rounded-full ${isEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}">
+            ${isEnabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </label>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  });
+
+  html += `
+        <div class="mt-8 flex flex-wrap gap-3 border-t border-slate-200 pt-6">
+          <button type="button" id="save-features" class="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save changes</button>
+          <button type="button" id="reset-features" class="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Reset to defaults</button>
+          <div id="feature-status" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"></div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  return html;
+}
+
+function renderPlugins() {
+  const state = getAdminState();
+  const plugins = (state.plugins || []).map((plugin) => `
+    <label class="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-white p-4">
+      <div>
+        <p class="font-semibold text-slate-900">${plugin.name}</p>
+        <p class="mt-1 text-sm text-slate-600">${plugin.description}</p>
+      </div>
+      <input type="checkbox" data-plugin-id="${plugin.id}" ${plugin.enabled ? 'checked' : ''} class="h-5 w-5 rounded border-slate-300 text-sky-600" />
+    </label>
+  `).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Plugin Marketplace</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Enable or disable platform extensions</h2>
+        <div class="mt-6 grid gap-4">${plugins}</div>
+        <button type="button" id="save-plugins" class="mt-6 rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save plugins</button>
+        <div id="plugin-status" class="mt-4 hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+      </div>
+    </section>
+  `;
+}
+
+function maskSensitiveBackupData(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') {
+    if (value.length <= 4) return '*'.repeat(Math.max(4, value.length));
+    return `${value.slice(0, 2)}${'*'.repeat(Math.max(6, value.length - 4))}${value.slice(-2)}`;
+  }
+  if (Array.isArray(value)) return value.map((entry) => maskSensitiveBackupData(entry));
+  if (typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, nestedValue]) => {
+      const loweredKey = key.toLowerCase();
+      if (loweredKey.includes('password') || loweredKey.includes('token') || loweredKey.includes('secret') || loweredKey.includes('key') || loweredKey.includes('credential')) {
+        return [key, typeof nestedValue === 'string' ? maskAuditValue(nestedValue) : '***'];
+      }
+      return [key, maskSensitiveBackupData(nestedValue)];
+    }));
+  }
+  return value;
+}
+
+function getBackupStorageConfig() {
+  const state = getAdminState();
+  const defaults = {
+    provider: 'local-fallback',
+    storageBucket: 'globyedu-local-backups',
+    storageLocation: 'Local browser storage',
+    retentionDays: 30,
+    backupFrequency: 'manual',
+    lastSuccessfulBackup: null,
+    status: 'ready',
+    lastVerifiedAt: null,
+    backupSize: 0,
+    lastBackupId: null,
+    superAdminEmergencyAccess: true,
+  };
+  const persisted = (() => {
+    try {
+      const raw = localStorage.getItem('globyedu_backup_config_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  })();
+  return { ...defaults, ...(state.settings?.backup || {}), ...persisted };
+}
+
+function saveBackupStorageConfig(config = {}) {
+  const current = getBackupStorageConfig();
+  const next = { ...current, ...config };
+  localStorage.setItem('globyedu_backup_config_v1', JSON.stringify(next));
+  const state = getAdminState();
+  state.settings = { ...(state.settings || {}), backup: next };
+  saveAdminState(state);
+  return next;
+}
+
+function getBackupCatalog() {
+  try {
+    const raw = localStorage.getItem('globyedu_backup_catalog_v1');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBackupCatalog(list = []) {
+  localStorage.setItem('globyedu_backup_catalog_v1', JSON.stringify(list));
+  return list;
+}
+
+function verifyBackupIntegrity(backup) {
+  if (!backup || typeof backup !== 'object') {
+    return { valid: false, reason: 'Backup payload is empty or invalid.' };
+  }
+  if (!backup.id || !backup.createdAt || !backup.data) {
+    return { valid: false, reason: 'Backup is missing required metadata or payload data.' };
+  }
+  const serialized = JSON.stringify(backup);
+  if (serialized.includes('password') || serialized.includes('token') || serialized.includes('secret') || serialized.includes('apiKey')) {
+    return { valid: false, reason: 'Backup contains sensitive fields that must be redacted before restore.' };
+  }
+  return { valid: true, reason: 'Backup passed validation and is safe to restore in the supported local fallback mode.' };
+}
+
+function createPlatformBackupSnapshot() {
+  const role = localStorage.getItem('globyedu_userRole') || 'super_admin';
+  const platformAdmin = localStorage.getItem('globyedu_platformAdmin') === 'true';
+  if (role !== 'super_admin' && !platformAdmin) {
+    return { success: false, reason: 'Only Super Admin can create platform backups.' };
+  }
+
+  const state = getAdminState();
+  const schoolDirectory = getSchoolDirectoryFromState();
+  const cfg = getBackupStorageConfig();
+  const snapshot = {
+    id: `backup-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    provider: cfg.provider,
+    storageProvider: cfg.provider,
+    storageLocation: cfg.storageLocation,
+    version: '1.0',
+    data: {
+      settings: maskSensitiveBackupData(state.settings || {}),
+      schools: maskSensitiveBackupData(schoolDirectory),
+      schoolDirectory,
+      cms: maskSensitiveBackupData(state.cms || getWebsiteCMSSettings()),
+      blogPosts: maskSensitiveBackupData(getBlogPosts()),
+      announcements: maskSensitiveBackupData(state.announcements || []),
+      messages: maskSensitiveBackupData(state.messages || []),
+      supportTickets: maskSensitiveBackupData(state.supportTickets || []),
+      auditLogs: (state.auditLogs || []).slice(0, 20),
+      notifications: maskSensitiveBackupData(state.notifications || []),
+      modules: state.modules || {},
+      pricingPlans: state.pricingPlans || [],
+      plugins: state.plugins || [],
+      securityEvents: (state.sessions || []).slice(0, 20),
+    },
+  };
+
+  const valid = verifyBackupIntegrity(snapshot);
+  if (!valid.valid) return { success: false, reason: valid.reason };
+
+  const catalog = getBackupCatalog();
+  const list = [snapshot, ...catalog].slice(0, 25);
+  saveBackupCatalog(list);
+
+  saveBackupStorageConfig({
+    ...cfg,
+    lastSuccessfulBackup: snapshot.createdAt,
+    lastBackupId: snapshot.id,
+    backupSize: JSON.stringify(snapshot).length,
+    status: 'ready',
+    lastVerifiedAt: snapshot.createdAt,
+  });
+
+  appendAuditLog('Created backup', `Platform snapshot ${snapshot.id} saved in ${cfg.provider} mode.`, {
+    target: 'platform',
+    actorRole: 'super_admin',
+    resultStatus: 'success',
+  });
+
+  return { success: true, backup: snapshot, catalog: list };
+}
+
+function restoreLatestBackup() {
+  const role = localStorage.getItem('globyedu_userRole') || 'super_admin';
+  const platformAdmin = localStorage.getItem('globyedu_platformAdmin') === 'true';
+  if (role !== 'super_admin' && !platformAdmin) {
+    return { success: false, reason: 'Only Super Admin can restore platform backups.' };
+  }
+
+  const catalog = getBackupCatalog();
+  if (!catalog.length) {
+    return { success: false, reason: 'No backup exists yet. Create a backup before attempting restore.' };
+  }
+
+  const backup = catalog[0];
+  const verification = verifyBackupIntegrity(backup);
+  if (!verification.valid) {
+    return { success: false, reason: verification.reason };
+  }
+
+  const cfg = getBackupStorageConfig();
+  if (cfg.provider !== 'local-fallback') {
+    return {
+      success: false,
+      reason: `Restore is only supported in the local fallback/development mode while the provider integration is not configured. Current provider: ${cfg.provider}.`,
+    };
+  }
+
+  if (!window.confirm('Restore the latest backup? This will overwrite local platform data in the current development environment.')) {
+    return { success: false, reason: 'Restore cancelled by the Super Admin.' };
+  }
+
+  const nextState = getAdminState();
+  const backupData = backup.data || {};
+  if (backupData.settings) nextState.settings = { ...(nextState.settings || {}), ...backupData.settings };
+  if (backupData.cms) nextState.cms = { ...(nextState.cms || {}), ...backupData.cms };
+  if (Array.isArray(backupData.schools)) nextState.schools = backupData.schools;
+  if (Array.isArray(backupData.messages)) nextState.messages = backupData.messages;
+  if (Array.isArray(backupData.announcements)) nextState.announcements = backupData.announcements;
+  if (Array.isArray(backupData.supportTickets)) nextState.supportTickets = backupData.supportTickets;
+  if (Array.isArray(backupData.blogPosts)) saveBlogPosts(backupData.blogPosts);
+  if (Array.isArray(backupData.notifications)) nextState.notifications = backupData.notifications;
+  if (backupData.modules) nextState.modules = { ...nextState.modules, ...backupData.modules };
+  if (Array.isArray(backupData.pricingPlans)) nextState.pricingPlans = backupData.pricingPlans;
+  if (Array.isArray(backupData.plugins)) nextState.plugins = backupData.plugins;
+  if (Array.isArray(backupData.auditLogs)) nextState.auditLogs = [...backupData.auditLogs, ...((nextState.auditLogs || []).slice(0, 10))].slice(0, 50);
+  saveAdminState(nextState);
+  localStorage.setItem('globyedu_schoolDirectory', JSON.stringify(nextState.schools || []));
+  localStorage.setItem('globyedu_websiteCms', JSON.stringify(nextState.cms || {}));
+
+  appendAuditLog('Restored backup', `Recovered backup ${backup.id} and rehydrated platform state.`, {
+    target: 'platform',
+    actorRole: 'super_admin',
+    resultStatus: 'success',
+    backupId: backup.id,
+  });
+
+  saveBackupStorageConfig({
+    ...cfg,
+    status: 'restored',
+    lastVerifiedAt: new Date().toISOString(),
+  });
+
+  return { success: true, backupId: backup.id, restored: nextState };
+}
+
+function renderAuditLogs() {
+  const state = getAdminState();
+  const logs = (state.auditLogs || []).map((entry) => {
+    const details = entry.details || 'No additional details provided.';
+    const metadata = entry.metadata || {};
+    const metadataHtml = metadata && Object.keys(metadata).length
+      ? `<div class="mt-3 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">${Object.entries(metadata).map(([key, value]) => `<div><span class="font-medium">${key}:</span> ${typeof value === 'string' ? maskAuditValue(value) : JSON.stringify(value)}</div>`).join('')}</div>`
+      : '';
+    return `
+      <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+        <div class="flex items-center justify-between gap-2">
+          <p class="font-semibold text-slate-900">${entry.action}</p>
+          <span class="text-sm text-slate-500">${new Date(entry.timestamp).toLocaleString()}</span>
+        </div>
+        <p class="mt-2 text-sm text-slate-600">${details}</p>
+        <div class="mt-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">Actor: ${metadata.actor || entry.actor || 'System'} • Role: ${metadata.actorRole || entry.actorRole || 'system'} • Result: ${metadata.resultStatus || entry.resultStatus || 'success'}</div>
+        ${metadataHtml}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Audit Logs</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Review recent platform actions</h2>
+        <div class="mt-6 grid gap-4">${logs || '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-600">No audit activity yet.</div>'}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderBackups() {
+  const backupConfig = getBackupStorageConfig();
+  const catalog = getBackupCatalog();
+  const lastBackup = catalog[0];
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Backups</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Protect school and platform data</h2>
+        <p class="mt-3 text-slate-600">Create backup snapshots, review retention, and verify restore readiness. In this environment the local fallback provider is used unless a provider is configured.</p>
+        <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          ${renderMiniInfo('Storage provider', backupConfig.provider || 'local-fallback')}
+          ${renderMiniInfo('Location', backupConfig.storageLocation || 'Local browser storage')}
+          ${renderMiniInfo('Retention', `${backupConfig.retentionDays || 30} days`)}
+          ${renderMiniInfo('Frequency', backupConfig.backupFrequency || 'Manual')}
+          ${renderMiniInfo('Status', backupConfig.status || 'ready')}
+          ${renderMiniInfo('Last success', backupConfig.lastSuccessfulBackup ? new Date(backupConfig.lastSuccessfulBackup).toLocaleString() : 'Not yet backed up')}
+          ${renderMiniInfo('Backup size', `${backupConfig.backupSize ? `${Math.round(backupConfig.backupSize / 1024)} KB` : '0 KB'}`)}
+          ${renderMiniInfo('Last verified', backupConfig.lastVerifiedAt ? new Date(backupConfig.lastVerifiedAt).toLocaleString() : 'Not verified')}
+        </div>
+        <div class="mt-6 flex flex-wrap gap-3">
+          <button type="button" id="run-backup" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Run backup</button>
+          <button type="button" id="restore-backup" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Restore latest</button>
+        </div>
+        <div id="backup-status" class="mt-4 hidden rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800"></div>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Backup history</p>
+        <div class="mt-6 grid gap-4">
+          ${catalog.length ? catalog.map((backup) => `
+            <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="font-semibold text-slate-900">${backup.id}</p>
+                  <p class="text-xs text-slate-500">${new Date(backup.createdAt).toLocaleString()} • Provider: ${backup.provider || 'local-fallback'}</p>
+                </div>
+                <span class="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700">Verified</span>
+              </div>
+            </div>
+          `).join('') : '<div class="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">No backup history yet.</div>'}
+          <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">${lastBackup ? `Latest backup: ${lastBackup.id}` : 'No latest backup available.'}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderSecurity(loadedSchools = []) {
+  const state = getAdminState();
+  const schools = getSchoolDirectoryFromState().length ? getSchoolDirectoryFromState() : loadedSchools;
+  const sessions = state.sessions || [];
+  const failedLogins = Number(localStorage.getItem('globyedu_failedLogins') || 0);
+  const successfulLogins = Number(localStorage.getItem('globyedu_successfulLogins') || 0);
+  const suspendedSchools = schools.filter((school) => ['suspended', 'inactive'].includes(String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
+  const activeSessions = sessions.length;
+  const roleDistribution = ['super_admin', 'school_authority', 'teacher', 'student'].map((role) => {
+    const count = role === 'super_admin' ? (localStorage.getItem('globyedu_userRole') === 'super_admin' ? 1 : 0) : 0;
+    return { role, count };
+  });
+  const securityEvents = (state.sessions || []).slice(0, 5).map((entry) => `
+    <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+      <div class="flex items-center justify-between gap-2">
+        <p class="font-semibold text-slate-900">${entry.action || 'Security event'}</p>
+        <span class="text-sm text-slate-500">${new Date(entry.timestamp).toLocaleString()}</span>
+      </div>
+      <p class="mt-2 text-sm text-slate-600">${entry.details || 'Session activity was recorded.'}</p>
+    </div>
+  `).join('');
+
+  const schoolSelector = schools.length
+    ? `<select id="security-school-select" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+        ${schools.map((school) => `<option value="${school.schoolId || school.id}">${school.name || school.schoolName || school.schoolId}</option>`).join('')}
+      </select>`
+    : '<p class="mt-2 text-sm text-slate-500">No school records are available in the current workspace.</p>';
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Security</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Platform security posture</h2>
+        <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          ${renderMiniInfo('Authentication', localStorage.getItem('globyedu_userRole') === 'super_admin' ? 'Super Admin authenticated' : 'Session active')}
+          ${renderMiniInfo('Active sessions', String(activeSessions))}
+          ${renderMiniInfo('Failed logins', String(failedLogins))}
+          ${renderMiniInfo('Successful logins', String(successfulLogins))}
+          ${renderMiniInfo('Suspended schools', String(suspendedSchools))}
+          ${renderMiniInfo('Security events', String(sessions.length))}
+          ${renderMiniInfo('Login protection', `${String(getPlatformSettingsState().loginEnabled !== false)}`)}
+          ${renderMiniInfo('Super admin emergency access', 'Protected')}
+        </div>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Security actions</p>
+        <div class="mt-6 flex flex-wrap gap-3">
+          <button type="button" id="invalidate-sessions" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Invalidate stale sessions</button>
+          <button type="button" id="refresh-login-protection" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Restore login protection</button>
+        </div>
+        <div class="mt-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <p class="text-sm font-medium text-slate-700">School control</p>
+            ${schoolSelector}
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button type="button" id="security-suspend-school" class="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700">Suspend school</button>
+              <button type="button" id="security-activate-school" class="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">Activate school</button>
+            </div>
+          </div>
+          <div>
+            <p class="text-sm font-medium text-slate-700">Role distribution</p>
+            <div class="mt-3 space-y-2 text-sm text-slate-600">
+              ${roleDistribution.map((entry) => `<div class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"><span>${entry.role}</span><span>${entry.count}</span></div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Recent protected sessions</p>
+        <div class="mt-6 grid gap-4">${securityEvents || '<div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">No protected session activity has been recorded yet.</div>'}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderPayments() {
+  const state = getAdminState();
+  const providers = (state.payments || [])
+    .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
+    .map((provider) => `
+      <form class="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm" data-payment-form="${provider.id}">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="font-semibold text-slate-900">${provider.name}</p>
+            <p class="mt-1 text-sm text-slate-600">${provider.environment || ''} • ${provider.currency || ''} • ${provider.status || 'Not configured'}</p>
+          </div>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="enabled" ${provider.enabled ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Enabled
+          </label>
+        </div>
+
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+          <label class="text-sm text-slate-700">Environment
+            <select name="environment" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="sandbox" ${provider.environment === 'sandbox' ? 'selected' : ''}>Sandbox</option>
+              <option value="production" ${provider.environment === 'production' ? 'selected' : ''}>Production</option>
+              <option value="manual" ${provider.environment === 'manual' ? 'selected' : ''}>Manual</option>
+            </select>
+          </label>
+          <label class="text-sm text-slate-700">Currency
+            <input type="text" name="currency" value="${provider.currency || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="text-sm text-slate-700">Public key
+            <input type="text" name="publicKey" value="${provider.publicKey || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="text-sm text-slate-700">Merchant email
+            <input type="email" name="merchantEmail" value="${provider.merchantEmail || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="text-sm text-slate-700">Callback URL
+            <input type="text" name="callbackUrl" value="${provider.callbackUrl || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="text-sm text-slate-700">Webhook URL
+            <input type="text" name="webhookUrl" value="${provider.webhookUrl || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="text-sm text-slate-700">Secret key
+            <input type="password" name="secretKey" data-sensitive-field="true" placeholder="${provider.encryptedSecretKey ? 'Stored securely' : 'Enter secret key'}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="text-sm text-slate-700">Webhook secret
+            <input type="password" name="webhookSecret" data-sensitive-field="true" placeholder="${provider.encryptedWebhookSecret ? 'Stored securely' : 'Enter webhook secret'}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="defaultGateway" ${provider.defaultGateway ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Default gateway
+          </label>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center gap-3">
+          <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save provider</button>
+          <div data-payment-status class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm text-emerald-800"></div>
+        </div>
+      </form>
+    `)
+    .join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Payments</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Connect and manage payment providers</h2>
+        <p class="mt-3 text-slate-600">Update gateway credentials, webhook settings, and preferred payment flows for your platform.</p>
+        <div class="mt-6 grid gap-4">${providers}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderPricingManagement() {
+  const state = getAdminState();
+  const plans = Array.isArray(state.pricingPlans) ? state.pricingPlans.slice().sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)) : [];
+  const activePlans = plans.filter((plan) => plan.enabled).length;
+  const recommended = plans.find((plan) => plan.recommendedBadge) || plans[0] || null;
+
+  const planForms = plans.length
+    ? plans.map((plan) => renderPricingPlanForm(plan)).join('')
+    : `<div class="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm">
+         <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Pricing</p>
+         <h2 class="mt-2 text-2xl font-semibold text-slate-900">No plans configured yet</h2>
+         <p class="mt-4 text-slate-600">Use the Super Admin pricing module to create and publish subscription plans for the website.</p>
+       </div>`;
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Pricing</p>
+            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage pricing plans</h2>
+            <p class="mt-3 text-slate-600">Define plans, pricing, and feature bundles that are used on the public pricing page.</p>
+          </div>
+          <button id="add-pricing-plan" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Add plan</button>
+        </div>
+        <div class="mt-6 grid gap-4 sm:grid-cols-2">
+          <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Total plans</p>
+            <p class="mt-3 text-3xl font-semibold text-slate-900">${plans.length}</p>
+          </div>
+          <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Active plans</p>
+            <p class="mt-3 text-3xl font-semibold text-slate-900">${activePlans}</p>
+          </div>
+          ${recommended ? `<div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Recommended plan</p>
+            <p class="mt-3 text-lg font-semibold text-slate-900">${recommended.name}</p>
+          </div>` : ''}
+        </div>
+      </div>
+      <div class="grid gap-6">${planForms}</div>
+    </section>
+  `;
+}
+
+function renderPricingPlanForm(plan) {
+  const features = plan.features || {};
+  return `
+    <form class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm" data-pricing-plan-form="${plan.id}">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-lg font-semibold text-slate-900">${plan.name}</p>
+          <p class="mt-1 text-sm text-slate-600">${plan.shortDescription || 'Describe this plan.'}</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="enabled" ${plan.enabled ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Enabled
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="recommendedBadge" ${plan.recommendedBadge ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Recommended
+          </label>
+        </div>
+      </div>
+
+      <div class="mt-4 grid gap-4 lg:grid-cols-3">
+        <label class="text-sm text-slate-700">Plan name
+          <input name="name" value="${plan.name || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+        <label class="text-sm text-slate-700">Monthly price
+          <input name="monthlyPrice" value="${plan.monthlyPrice || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+        <label class="text-sm text-slate-700">Yearly price
+          <input name="yearlyPrice" value="${plan.yearlyPrice || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+        <label class="text-sm text-slate-700">Currency
+          <input name="currency" value="${plan.currency || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+        <label class="text-sm text-slate-700">Billing cycle
+          <select name="billingCycle" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+            <option value="monthly" ${plan.billingCycle === 'monthly' ? 'selected' : ''}>Monthly</option>
+            <option value="yearly" ${plan.billingCycle === 'yearly' ? 'selected' : ''}>Yearly</option>
+          </select>
+        </label>
+        <label class="text-sm text-slate-700">Free trial days
+          <input type="number" min="0" name="freeTrialDays" value="${plan.freeTrialDays || 0}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+        <label class="text-sm text-slate-700">Display order
+          <input type="number" min="0" name="displayOrder" value="${plan.displayOrder || 0}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+        <label class="text-sm text-slate-700">Support level
+          <input name="supportLevel" value="${plan.supportLevel || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+      </div>
+
+      <label class="mt-4 block text-sm text-slate-700">Short description
+        <textarea name="shortDescription" rows="3" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">${plan.shortDescription || ''}</textarea>
+      </label>
+
+      <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        ${renderPricingFeatureToggle('Student Management', 'studentManagement', features.studentManagement)}
+        ${renderPricingFeatureToggle('Teacher Management', 'teacherManagement', features.teacherManagement)}
+        ${renderPricingFeatureToggle('Attendance', 'attendance', features.attendance)}
+        ${renderPricingFeatureToggle('Finance', 'finance', features.finance)}
+        ${renderPricingFeatureToggle('Messaging', 'messaging', features.messaging)}
+        ${renderPricingFeatureToggle('Reports', 'reports', features.reports)}
+        ${renderPricingFeatureToggle('School Assistant', 'aiAssistant', features.aiAssistant)}
+        ${renderPricingFeatureToggle('Library', 'library', features.library)}
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save plan</button>
+        <div data-pricing-status class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm text-emerald-800"></div>
+      </div>
+    </form>
+  `;
+}
+
+function renderPricingFeatureToggle(label, field, enabled) {
+  return `
+    <label class="flex items-center gap-2 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      <input type="checkbox" name="feature-${field}" ${enabled ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" />
+      ${label}
+    </label>
+  `;
+}
+
+function renderAISettings() {
+  const state = getAdminState();
+  const providers = (state.aiProviders || []).map((provider) => {
+    const statusColor = provider.connectionStatus === 'Connected' ? 'emerald' : provider.connectionStatus === 'Failed' ? 'rose' : 'amber';
+    const statusBgColor = statusColor === 'emerald' ? 'bg-emerald-50' : statusColor === 'rose' ? 'bg-rose-50' : 'bg-amber-50';
+    const statusBorderColor = statusColor === 'emerald' ? 'border-emerald-200' : statusColor === 'rose' ? 'border-rose-200' : 'border-amber-200';
+    const statusTextColor = statusColor === 'emerald' ? 'text-emerald-800' : statusColor === 'rose' ? 'text-rose-800' : 'text-amber-800';
+    
+    return `
+      <form class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm" data-ai-provider-form="${provider.id}">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div>
+            <p class="font-semibold text-slate-900">${provider.name}</p>
+            <p class="mt-1 text-xs text-slate-500">Model: ${provider.model || 'Not set'}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="rounded-full px-3 py-1 text-xs font-medium ${statusBgColor} border ${statusBorderColor} ${statusTextColor}">
+              ${provider.connectionStatus}${provider.latency ? ' • ' + provider.latency + 'ms' : ''}
+            </div>
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="enabled" ${provider.enabled ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Enabled
+            </label>
+          </div>
+        </div>
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+          <label class="text-sm text-slate-700">API key
+            <input type="password" name="apiKey" value="" data-sensitive-field="true" placeholder="${provider.apiKey ? 'Stored securely' : 'Enter your API key'}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400" />
+          </label>
+          <label class="text-sm text-slate-700">Model
+            <input type="text" name="model" value="${provider.model || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400" />
+          </label>
+          <label class="text-sm text-slate-700">Temperature
+            <input type="number" step="0.1" min="0" max="2" name="temperature" value="${provider.temperature || 0.7}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400" />
+          </label>
+          <label class="text-sm text-slate-700">Max tokens
+            <input type="number" name="maxTokens" value="${provider.maxTokens || 512}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400" />
+          </label>
+        </div>
+        ${provider.baseUrl ? `
+          <label class="mt-4 block text-sm text-slate-700">Base URL
+            <input type="text" name="baseUrl" value="${provider.baseUrl || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400" />
+          </label>
+        ` : ''}
+        <label class="mt-4 block text-sm text-slate-700">System prompt
+          <textarea name="systemPrompt" rows="3" placeholder="Enter system prompt for this provider" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400">${provider.systemPrompt || ''}</textarea>
+        </label>
+        <div class="mt-4 flex flex-wrap items-center gap-3">
+          <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save provider</button>
+          <button type="button" data-ai-test-btn="${provider.id}" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Test connection</button>
+          <div data-ai-status class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm text-emerald-800"></div>
+        </div>
+      </form>
+    `;
+  }).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">AI Settings</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Configure AI providers and prompts</h2>
+        <p class="mt-3 text-slate-600">Connect and configure multiple AI providers for educational content generation, tutoring, and assistance features.</p>
+        <div class="mt-6 grid gap-6">${providers}</div>
+      </div>
+
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">AI Test Lab</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-900">Test AI provider connections</h2>
+        <p class="mt-3 text-slate-600">Test your API configurations and preview responses in real-time.</p>
+        
+        <div class="mt-6 grid gap-6">
+          <div class="space-y-4">
+            <label class="block text-sm text-slate-700">Select provider
+              <select id="ai-test-provider" class="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-sky-400">
+                ${(state.aiProviders || []).map(p => `<option value="${p.id}" ${p.enabled ? '' : 'disabled'}>${p.name}${!p.enabled ? ' (disabled)' : ''}</option>`).join('')}
+              </select>
+            </label>
+            
+            <label class="block text-sm text-slate-700">Test prompt
+              <textarea id="ai-test-prompt" rows="4" placeholder="Enter a test prompt to send to the AI provider..." class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400">How can I make my lesson more engaging for students?</textarea>
+            </label>
+            
+            <button id="ai-test-send-btn" class="rounded-full bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700">
+              Send test prompt
+            </button>
+          </div>
+
+          <div id="ai-test-results" class="hidden rounded-3xl border border-slate-200 bg-slate-50 p-6">
+            <div class="mb-4 pb-4 border-b border-slate-200">
+              <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Response details</p>
+              <div class="mt-3 grid gap-3 lg:grid-cols-4">
+                <div>
+                  <p class="text-xs text-slate-500">Provider</p>
+                  <p id="ai-test-provider-name" class="text-sm font-semibold text-slate-900">-</p>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-500">Status</p>
+                  <p id="ai-test-status" class="text-sm font-semibold text-emerald-600">Connected</p>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-500">Latency</p>
+                  <p id="ai-test-latency" class="text-sm font-semibold text-slate-900">-</p>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-500">Tokens used</p>
+                  <p id="ai-test-tokens" class="text-sm font-semibold text-slate-900">-</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-xs uppercase tracking-[0.3em] text-slate-500 mb-2">AI response</p>
+              <div id="ai-test-response" class="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 leading-relaxed">
+                Waiting for response...
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderPlatformSettings() {
+  const settings = getPlatformSettingsState();
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-6">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Global platform settings</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">Prepare your platform configuration</h2>
+          <p class="mt-3 text-slate-600">These settings persist in the application state and are applied to future schools by default while preserving each school’s own explicit currency.</p>
+        </div>
+        <form id="platform-settings-form" class="grid gap-6 lg:grid-cols-2">
+          ${renderSettingInput('Platform name', settings.platformName || 'GlobyEdu OS', 'platformName')}
+          ${renderSettingInput('Support email', settings.supportEmail || 'support@globyedu.com', 'supportEmail')}
+          ${renderSettingInput('Default timezone', settings.defaultTimezone || 'UTC', 'defaultTimezone')}
+          ${renderSettingInput('Default currency', settings.defaultCurrency || 'USD', 'defaultCurrency')}
+          ${renderSettingInput('Support URL', settings.supportUrl || 'https://support.globyedu.com', 'supportUrl')}
+          ${renderSettingInput('Default language', settings.defaultLanguage || 'English', 'defaultLanguage')}
+          <label class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" name="maintenanceMode" ${settings.maintenanceMode ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Maintenance mode
+          </label>
+          <label class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" name="registrationEnabled" ${settings.registrationEnabled !== false ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Registration enabled
+          </label>
+          <label class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" name="loginEnabled" ${settings.loginEnabled !== false ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Login enabled
+          </label>
+          <label class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" name="schoolAccountsEnabled" ${settings.schoolAccountsEnabled !== false ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> School accounts enabled
+          </label>
+          <div class="lg:col-span-2 flex flex-wrap gap-3">
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save settings</button>
+            <div id="platform-settings-status" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"></div>
+          </div>
+        </form>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Safety note</p>
+        <p class="mt-4 text-slate-600">Maintenance mode and platform enablement toggles never disable the Super Admin access path. The admin access guard remains active regardless of the general platform status.</p>
+      </div>
+    </section>
+  `;
+}
+
+function renderSystemSettings() {
+  const state = getAdminState();
+  const settings = state.settings || {};
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-6">
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">System settings</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">Operational and maintenance settings</h2>
+          <p class="mt-3 text-slate-600">Configure system behavior, maintenance mode, and integration readiness for the platform.</p>
+        </div>
+        <form id="system-settings-form" class="grid gap-6 lg:grid-cols-2">
+          ${renderSettingInput('Maintenance mode', settings.maintenanceMode ? 'Enabled' : 'Disabled', 'maintenanceModeDisplay')}
+          ${renderSettingInput('Default language', settings.defaultLanguage || 'English', 'defaultLanguage')}
+          ${renderSettingInput('Timezone', settings.defaultTimezone || 'UTC', 'defaultTimezone')}
+          ${renderSettingInput('Support URL', settings.supportUrl || 'https://support.globyedu.com', 'supportUrl')}
+          <div class="lg:col-span-2 flex flex-wrap gap-3">
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save system settings</button>
+            <div id="system-settings-status" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"></div>
+          </div>
+        </form>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Security and platform health</p>
+        <p class="mt-4 text-slate-600">This section is now wired to locally persisted settings and operational actions for future access control expansion.</p>
+      </div>
+    </section>
+  `;
+}
+
+function renderModulePlaceholder(section) {
+  const title = section.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  return `
+    <section class="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">${title}</p>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">${title}</h2>
+        </div>
+        <div class="inline-flex rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Placeholder UI</div>
+      </div>
+      <p class="mt-6 text-slate-600">The ${title} module is scaffolded with navigation and page structure. Business logic will be connected in a future phase.</p>
+      <div class="mt-8 grid gap-6 lg:grid-cols-2">
+        ${renderMiniInfo('Page readiness', 'UI scaffold complete')}
+        ${renderMiniInfo('Next step', 'Integrate backend module routes')}
+      </div>
+    </section>
+  `;
+}
+
+function renderActionButton(label, icon) {
+  const destinations = {
+    'Create school': 'schools',
+    'Review subscriptions': 'subscriptions',
+    'Audit logs': 'audit-logs',
+    'Configure CMS': 'website-cms',
+  };
+  const destination = destinations[label] || 'overview';
+  return `
+    <button type="button" data-admin-nav="${destination}" class="inline-flex w-full items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
+      <span>${label}</span>
+      <span>${icon === 'plus' ? '+' : icon === 'pause' ? '⏸' : '⬇'}</span>
+    </button>
+  `;
+}

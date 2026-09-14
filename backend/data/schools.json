@@ -1,0 +1,510 @@
+{
+  "schools": [
+    {
+      "id": "GLOBY-DEMO-001",
+      "schoolId": "globy-school",
+      "name": "Globy School",
+      "email": "authority@globyedu.test",
+      "description": "Development-only seed tenant for local testing.",
+      "country": "Ghana",
+      "region": "Ashanti",
+      "subscriptionPlan": "5-Day Trial",
+      "subscriptionStatus": "trial",
+      "trialStatus": "Suspended",
+      "schoolStatus": "active",
+      "developmentOnly": true,
+      "settings": {
+        "theme": "default",
+        "notifications": {
+          "emailEnabled": true,
+          "smsEnabled": false
+        },
+        "featureFlags": {
+          "messaging": true,
+          "analytics": true
+        }
+      },
+      "classes": [
+        {
+          "classId": "JHS-3A",
+          "name": "JHS 3A",
+          "grade": "JHS 3",
+          "teacher": "T001",
+          "students": [
+            "STU001"
+          ],
+          "status": "active"
+        }
+      ],
+      "students": [
+        {
+          "studentId": "STU001",
+          "fullName": "Test Student",
+          "email": "student@globyedu.test",
+          "className": "JHS 3",
+          "role": "student",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "schoolId": "globy-school",
+          "studentPasswordHash": "$2b$04$hlNbZHXoMA4h4aIcg9x0M.7WPxhY40rxnpCf3ExGPdFvCeBKkoiPa",
+          "passwordNeedsReset": true
+        }
+      ],
+      "users": [
+        {
+          "username": "hellogloby@gmail.com",
+          "passwordHash": "$2b$12$54OhWaD0konuccW4iZOTk.TsQGJYJwH3AyG4zRLk2HMVhlrUl.XHy",
+          "role": "super_admin",
+          "grade": "N/A",
+          "fullName": "Benjamin",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": true
+        },
+        {
+          "username": "ataetaben@gmail.com",
+          "passwordHash": "$2b$12$54OhWaD0konuccW4iZOTk.TsQGJYJwH3AyG4zRLk2HMVhlrUl.XHy",
+          "role": "super_admin",
+          "grade": "N/A",
+          "fullName": "Benjamin",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": true,
+          "passwordNeedsReset": false,
+          "passwordChangedAt": "2026-09-13T13:38:27.199Z"
+        },
+        {
+          "username": "ataetabenjamin@gmail.com",
+          "passwordHash": "$2b$12$54OhWaD0konuccW4iZOTk.TsQGJYJwH3AyG4zRLk2HMVhlrUl.XHy",
+          "role": "super_admin",
+          "grade": "N/A",
+          "fullName": "Benjamin",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": true
+        },
+        {
+          "username": "benjaminataeta@gmail.com",
+          "passwordHash": "$2b$12$54OhWaD0konuccW4iZOTk.TsQGJYJwH3AyG4zRLk2HMVhlrUl.XHy",
+          "role": "super_admin",
+          "grade": "N/A",
+          "fullName": "Benjamin",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": true
+        },
+        {
+          "username": "authority@globyedu.test",
+          "passwordHash": "$2b$12$E3nNtkHAZdNs5OBZVFOx7.d85NRiJkVgh3t0malbtxzCsmetVxHgW",
+          "role": "school_authority",
+          "grade": "N/A",
+          "fullName": "Globy School Authority",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": false,
+          "passwordNeedsReset": false,
+          "passwordChangedAt": "2026-09-13T13:38:24.801Z"
+        },
+        {
+          "username": "T001",
+          "passwordHash": "$2b$12$6NVHR0sQ1rbzoQXTa1yy7OF7a5sys06uF2RIJ7BzV82Pkak9W8tFu",
+          "role": "teacher",
+          "grade": "JHS 3",
+          "fullName": "Test Teacher",
+          "email": "teacher@globyedu.test",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": false,
+          "teacherId": "T001",
+          "className": "JHS 3"
+        },
+        {
+          "username": "STU001",
+          "studentPasswordHash": "$2b$12$TEw6OJi1jSwaVuy3TGvy..xyCiq72n2zX4NtfB55dOchDpuEpnoa.",
+          "role": "student",
+          "grade": "JHS 3",
+          "fullName": "Test Student",
+          "email": "student@globyedu.test",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": true,
+          "platformAdmin": false,
+          "studentId": "STU001",
+          "className": "JHS 3",
+          "passwordNeedsReset": true
+        }
+      ],
+      "trialEndsAt": "2026-09-18T12:33:40.834Z",
+      "schoolName": "Globy School",
+      "headName": "",
+      "headEmail": "",
+      "updatedAt": "2026-09-14T01:15:37.489Z",
+      "reports": [
+        {
+          "title": "ijagsfvby",
+          "type": "finance",
+          "summary": "sjg08rtugw he89- ahvu i",
+          "status": "submitted",
+          "submittedAt": "2026-09-13T13:25:04.015Z",
+          "category": null,
+          "author": null,
+          "relatedStudents": [],
+          "createdAt": "2026-09-13T13:24:48.133Z"
+        },
+        {
+          "title": "i nredjb more help on something right noe",
+          "type": "discipline",
+          "summary": "fguzg h s...Continue the 18-phase authentication and credential-management plan on GlobyEdu OS. Password hashing, temporary passwords, Super Admin credential management, and audit logging are already implemented and tested (per earlier phases). \n\nNow focus specifically on:\n1. PHASE 10 — Rate limiting: inspect whether login endpoints already have brute-force protection. If not, add it (reuse any existing rate-limiting library/middleware if present).\n2. PHASE 9 — Password reset/recovery: confirm change-password (self-service) and admin-reset (Super Admin resetting another user's password) both work correctly and are separate flows. If full self-service account recovery (forgot password via email) isn't supported due to missing production email infrastructure, report that clearly as NOT SUPPORTED — REQUIRES PRODUCTION EMAIL/RECOVERY INFRASTRUCTURE rather than faking it.\n3. PHASE 11 — Authorization: test that Super Admin, School Authority, Teacher, and Student roles are all enforced on the backend, not just hidden in the frontend UI. Try bypassing via direct API calls with a mismatched role/tenant and confirm requests are rejected.\n\nRun focused tests for each, then the full suite and build. Report PASS/FAIL/NOT SUPPORTED for each of the three items — don't claim PASS for anything not actually tested.",
+          "status": "submitted",
+          "submittedAt": "2026-09-13T13:26:26.104Z",
+          "category": null,
+          "author": null,
+          "relatedStudents": [],
+          "createdAt": "2026-09-13T13:26:19.220Z"
+        }
+      ],
+      "recentActivities": [
+        {
+          "title": "Report created",
+          "detail": "A discipline report titled \"i nredjb more help on something right noe\" was created."
+        },
+        {
+          "title": "Report created",
+          "detail": "A finance report titled \"ijagsfvby\" was created."
+        }
+      ],
+      "attendanceRecords": [
+        {
+          "date": "2026-09-13",
+          "className": "JHS 3",
+          "studentId": "STU001",
+          "studentName": "Test Student",
+          "status": "present"
+        },
+        {
+          "schoolId": "globy-school",
+          "date": "2026-09-14",
+          "className": "JHS 3",
+          "studentId": "STU001",
+          "studentName": "Test Student",
+          "status": "present",
+          "recordedAt": "2026-09-14T01:15:36.867Z"
+        }
+      ]
+    },
+    {
+      "schoolId": "GLB-2026-00001",
+      "tenantId": "GLB-2026-00001",
+      "name": "Tenant Isolation Test School",
+      "description": "School created by GlobyEdu registration flow.",
+      "logo": null,
+      "website": null,
+      "country": "Ghana",
+      "region": null,
+      "city": null,
+      "address": null,
+      "phone": "+233200000000",
+      "email": "tenant-isolation@test.local",
+      "subscriptionPlan": "5-Day Trial",
+      "subscriptionStatus": "suspended",
+      "trialStatus": "Suspended",
+      "schoolStatus": "suspended",
+      "trialEndsAt": "2026-09-18T14:54:02.799Z",
+      "settings": {
+        "theme": "default",
+        "notifications": {
+          "emailEnabled": true,
+          "smsEnabled": false
+        },
+        "featureFlags": {
+          "messaging": true,
+          "analytics": true
+        }
+      },
+      "users": [
+        {
+          "username": "isolation-admin@test.local",
+          "passwordHash": "$2b$12$9QpHWGmBnfH/r.MrB2zPV.xIOpSO1m6yjqCQCrzktd3.t5Iw4RaHW",
+          "role": "school_authority",
+          "platformAdmin": false,
+          "grade": "N/A",
+          "fullName": "Isolation Admin",
+          "status": "active",
+          "emailVerified": true,
+          "permissions": [
+            "school.manage",
+            "classes.manage",
+            "users.manage"
+          ]
+        }
+      ],
+      "id": "GLB-2026-00001"
+    },
+    {
+      "schoolId": "GLB-2026-00002",
+      "tenantId": "GLB-2026-00002",
+      "name": "QA Auto Register 1789345000740",
+      "description": "School created by GlobyEdu registration flow.",
+      "logo": null,
+      "website": null,
+      "country": "ghana",
+      "region": null,
+      "city": null,
+      "address": null,
+      "phone": null,
+      "email": null,
+      "subscriptionPlan": "5-Day Trial",
+      "subscriptionStatus": "suspended",
+      "trialStatus": "Suspended",
+      "schoolStatus": "suspended",
+      "trialEndsAt": "2026-09-19T00:16:43.912Z",
+      "settings": {
+        "theme": "default",
+        "notifications": {
+          "emailEnabled": true,
+          "smsEnabled": false
+        },
+        "featureFlags": {
+          "messaging": true,
+          "analytics": true
+        }
+      },
+      "users": [
+        {
+          "username": "qa-auto-1789345000741@example.com",
+          "passwordHash": "$2b$12$hPOE4HXns/x3vwiOcXsF6OcG4FxfZ6z3MS/t2kLyp0GOm3tCfmY5m",
+          "role": "school_authority",
+          "platformAdmin": false,
+          "grade": "N/A",
+          "fullName": "QA Auto User",
+          "status": "active",
+          "emailVerified": true,
+          "permissions": [
+            "school.manage",
+            "classes.manage",
+            "users.manage"
+          ]
+        }
+      ],
+      "id": "GLB-2026-00002"
+    },
+    {
+      "schoolId": "GLB-2026-00003",
+      "tenantId": "GLB-2026-00003",
+      "name": "QA Auto Register 20260914001657",
+      "description": "School created by GlobyEdu registration flow.",
+      "logo": null,
+      "website": null,
+      "country": "ghana",
+      "region": null,
+      "city": null,
+      "address": null,
+      "phone": null,
+      "email": null,
+      "subscriptionPlan": "5-Day Trial",
+      "subscriptionStatus": "suspended",
+      "trialStatus": "Suspended",
+      "schoolStatus": "suspended",
+      "trialEndsAt": "2026-09-19T00:16:59.523Z",
+      "settings": {
+        "theme": "default",
+        "notifications": {
+          "emailEnabled": true,
+          "smsEnabled": false
+        },
+        "featureFlags": {
+          "messaging": true,
+          "analytics": true
+        }
+      },
+      "users": [
+        {
+          "username": "qa-auto-20260914001657@example.com",
+          "passwordHash": "$2b$12$/vgcRcyIEoGUaJVIxq1W.OhzSn7HI9VhZO1Db8fBjIvFiWqf6a.Fq",
+          "role": "school_authority",
+          "platformAdmin": false,
+          "grade": "N/A",
+          "fullName": "QA Auto User",
+          "status": "active",
+          "emailVerified": true,
+          "permissions": [
+            "school.manage",
+            "classes.manage",
+            "users.manage"
+          ]
+        }
+      ],
+      "id": "GLB-2026-00003"
+    },
+    {
+      "schoolId": "GLB-2026-00004",
+      "tenantId": "GLB-2026-00004",
+      "name": "Ben School",
+      "description": "School created by GlobyEdu registration flow.",
+      "logo": "data:image/png;base64,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",
+      "website": null,
+      "country": "Ghana",
+      "region": "bono",
+      "city": "nkz",
+      "address": null,
+      "phone": "36689--6878",
+      "email": "benschool@gmail.com",
+      "subscriptionPlan": "5-Day Trial",
+      "subscriptionStatus": "suspended",
+      "trialStatus": "Suspended",
+      "schoolStatus": "suspended",
+      "trialEndsAt": "2026-09-19T00:20:47.552Z",
+      "settings": {
+        "theme": "default",
+        "notifications": {
+          "emailEnabled": true,
+          "smsEnabled": false
+        },
+        "featureFlags": {
+          "messaging": true,
+          "analytics": true
+        }
+      },
+      "users": [
+        {
+          "username": "ben@g.c60",
+          "passwordHash": "$2b$12$kThntiOg.VDrRZEvQoAjWO0ETyPeP70M/.vRhNPgdkENEHdL.APzq",
+          "role": "school_authority",
+          "platformAdmin": false,
+          "grade": "N/A",
+          "fullName": "ben",
+          "status": "active",
+          "emailVerified": true,
+          "permissions": [
+            "school.manage",
+            "classes.manage",
+            "users.manage"
+          ]
+        },
+        {
+          "username": "zfdgh@df",
+          "role": "teacher",
+          "grade": "N/A",
+          "fullName": "asdfgfh",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": false,
+          "platformAdmin": false,
+          "teacherId": "T-001-ASD",
+          "email": "zfdgh@df",
+          "phone": "2345678",
+          "department": null,
+          "className": null,
+          "assignedClasses": [
+            "sdf"
+          ],
+          "assignedSubjects": [
+            "Creative Arts",
+            "Computing / ICT"
+          ],
+          "passwordHash": "$2b$12$sYJMVWVtSg0F7GocxYI2cOYiaFaO6Jl87V.FNeGuJ987lb8/Ai46y",
+          "permissions": [
+            "classes.manage",
+            "students.view"
+          ],
+          "profilePhoto": null,
+          "gender": "male",
+          "dateOfBirth": "0005-02-05",
+          "position": "Teacher",
+          "qualification": null,
+          "yearsOfExperience": null,
+          "classTeacher": false,
+          "employmentType": "permanent",
+          "address": null,
+          "country": null,
+          "region": null,
+          "employeeNumber": null,
+          "currentAcademicYear": null,
+          "currentTerm": null,
+          "houseMaster": false,
+          "employmentDate": null,
+          "subjectSpecialty": null,
+          "documents": []
+        }
+      ],
+      "departments": [],
+      "streams": [],
+      "subjects": [],
+      "academicYears": [],
+      "terms": [],
+      "semesters": [],
+      "classes": [
+        {
+          "name": "sdf",
+          "grade": "rt",
+          "section": null,
+          "status": "active",
+          "streamId": null,
+          "classId": "sdf",
+          "teacherId": "T-001-ASD",
+          "teacher": "T-001-ASD"
+        }
+      ],
+      "teachers": [
+        {
+          "username": "zfdgh@df",
+          "role": "teacher",
+          "grade": "N/A",
+          "fullName": "asdfgfh",
+          "status": "active",
+          "emailVerified": true,
+          "developmentOnly": false,
+          "platformAdmin": false,
+          "teacherId": "T-001-ASD",
+          "email": "zfdgh@df",
+          "phone": "2345678",
+          "department": null,
+          "className": null,
+          "assignedClasses": [
+            "sdf"
+          ],
+          "assignedSubjects": [
+            "Creative Arts",
+            "Computing / ICT"
+          ],
+          "passwordHash": "$2b$12$sYJMVWVtSg0F7GocxYI2cOYiaFaO6Jl87V.FNeGuJ987lb8/Ai46y",
+          "permissions": [
+            "classes.manage",
+            "students.view"
+          ],
+          "profilePhoto": null,
+          "gender": "male",
+          "dateOfBirth": "0005-02-05",
+          "position": "Teacher",
+          "qualification": null,
+          "yearsOfExperience": null,
+          "classTeacher": false,
+          "employmentType": "permanent",
+          "address": null,
+          "country": null,
+          "region": null,
+          "employeeNumber": null,
+          "currentAcademicYear": null,
+          "currentTerm": null,
+          "houseMaster": false,
+          "employmentDate": null,
+          "subjectSpecialty": null,
+          "documents": []
+        }
+      ],
+      "students": [],
+      "events": [],
+      "announcements": [],
+      "messages": [],
+      "supportTickets": [],
+      "id": "GLB-2026-00004"
+    }
+  ]
+}
