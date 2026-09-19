@@ -9,6 +9,7 @@
     "frontend"
   ],
   "scripts": {
+    "start": "node backend/server.js",
     "build": "node scripts/build-production.js",
     "build:marketing-css": "npx @tailwindcss/cli -i ./frontend/marketing/src/styles.css -o ./frontend/marketing/src/styles.generated.css --config ./frontend/marketing/tailwind.config.js",
     "dev": "concurrently \"npm --prefix backend run dev\"",
