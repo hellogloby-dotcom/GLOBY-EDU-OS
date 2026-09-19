@@ -169,11 +169,11 @@ export function RegisterWizardPage() {
               <div class="mt-4 space-y-3">
                 <label class="inline-flex w-full items-start gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <input type="checkbox" id="agree-terms" data-required class="mt-1 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
-                  <span>I accept the Terms of Service.</span>
+                  <span>I accept the ${'<a href="#/legal/terms" class="font-semibold text-sky-700">Terms of Service</a>'}.</span>
                 </label>
                 <label class="inline-flex w-full items-start gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <input type="checkbox" id="agree-privacy" data-required class="mt-1 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
-                  <span>I accept the Privacy Policy.</span>
+                  <span>I accept the ${'<a href="#/legal/privacy" class="font-semibold text-sky-700">Privacy Policy</a>'}.</span>
                 </label>
                 <label class="inline-flex w-full items-start gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <input type="checkbox" id="agree-acceptable-use" data-required class="mt-1 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />

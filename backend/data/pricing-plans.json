@@ -1,0 +1,7 @@
+{
+  "plans": [
+    { "id": "starter-plan", "slug": "starter", "name": "Starter", "studentLimit": 100, "monthlyAmount": 150, "yearlyAmount": 1500, "currency": "GHS", "active": true, "displayOrder": 1 },
+    { "id": "growth-plan", "slug": "growth", "name": "Growth", "studentLimit": 300, "monthlyAmount": 300, "yearlyAmount": 3000, "currency": "GHS", "active": true, "displayOrder": 2 },
+    { "id": "pro-plan", "slug": "pro", "name": "Pro", "studentLimit": 700, "monthlyAmount": 500, "yearlyAmount": 5000, "currency": "GHS", "active": true, "displayOrder": 3 }
+  ]
+}

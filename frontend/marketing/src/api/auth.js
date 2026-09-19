@@ -6,6 +6,7 @@ async function postJson(url, body) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);
@@ -15,32 +16,27 @@ async function postJson(url, body) {
 async function getJson(url, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, { method: 'GET', headers });
+  const res = await fetch(url, { method: 'GET', headers, credentials: 'include' });
   const data = await res.json().catch(() => null);
   return { ok: res.ok, status: res.status, data };
 }
 
-export async function studentLogin(schoolId, email, password, options = {}) {
+export async function studentLogin(schoolId, studentId, password, options = {}) {
   const payload = {
     schoolId,
-    username: email,
+    username: studentId,
     password,
     loginType: 'student',
-    schoolName: options.schoolName || '',
-    studentName: options.studentName || '',
-    className: options.studentClass || '',
   };
   return postJson('/api/v1/auth/school-login', payload);
 }
 
-export async function teacherLogin(schoolId, email, password, options = {}) {
+export async function teacherLogin(schoolId, teacherId, password, options = {}) {
   const payload = {
     schoolId: schoolId || '',
-    username: email,
+    username: teacherId,
     password,
     loginType: 'teacher',
-    schoolName: options.schoolName || '',
-    teacherName: options.teacherName || '',
   };
   return postJson('/api/v1/auth/school-login', payload);
 }
@@ -60,8 +56,12 @@ export async function schoolLogin(email, password, schoolId) {
   return postJson('/api/v1/auth/login', payload);
 }
 
-export async function firebaseLogin(idToken, schoolId, platformAdmin = false) {
-  return postJson('/api/v1/auth/firebase-login', { idToken, schoolId, platformAdmin });
+export async function firebaseLogin(idToken, schoolId, platformAdmin = false, options = {}) {
+  return postJson('/api/v1/auth/firebase-login', { idToken, schoolId, platformAdmin, identifier: options.identifier, loginType: options.loginType });
+}
+
+export async function linkFirebaseIdentity(idToken, accessToken) {
+  return postJsonWithToken('/api/v1/auth/firebase-link', { idToken }, accessToken);
 }
 
 export async function platformAdminLogin(email, password) {
@@ -90,6 +90,7 @@ async function postJsonWithToken(url, body, token) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    credentials: 'include',
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);

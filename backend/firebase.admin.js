@@ -1,32 +1,34 @@
 const admin = require('firebase-admin');
 
+const DEFAULT_PROJECT_ID = 'globyedu-os';
+
 function isFirebaseConfigured() {
-  return Boolean(process.env.FIREBASE_PROJECT_ID);
+  return Boolean(process.env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID);
+}
+
+function getFirebaseCredential() {
+  if (!admin.credential || typeof admin.credential.applicationDefault !== 'function') {
+    return null;
+  }
+  return admin.credential.applicationDefault();
 }
 
 function initializeFirebaseAdmin() {
-  if (!isFirebaseConfigured()) {
-    return null;
-  }
-
   if (admin.apps.length > 0) {
     return admin;
   }
 
+  const credential = getFirebaseCredential();
   admin.initializeApp({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    credential: admin.credential.applicationDefault(),
+    projectId: process.env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID,
+    ...(credential ? { credential } : {}),
   });
 
   return admin;
 }
 
 function getFirebaseAdmin() {
-  const app = initializeFirebaseAdmin();
-  if (!app) {
-    throw new Error('Firebase Admin SDK is not configured. Set FIREBASE_PROJECT_ID.');
-  }
-  return app;
+  return initializeFirebaseAdmin();
 }
 
 async function verifyIdToken(idToken) {
@@ -42,6 +44,11 @@ async function getUser(uid) {
 async function getUserByEmail(email) {
   const app = getFirebaseAdmin();
   return app.auth().getUserByEmail(email);
+}
+
+async function setCustomUserClaims(uid, claims) {
+  const app = getFirebaseAdmin();
+  return app.auth().setCustomUserClaims(uid, claims);
 }
 
 async function createUser({ email, password, displayName }) {
@@ -67,10 +74,12 @@ async function generatePasswordResetLink(email, actionCodeSettings) {
 module.exports = {
   isFirebaseConfigured,
   initializeFirebaseAdmin,
+  getFirebaseCredential,
   getFirebaseAdmin,
   verifyIdToken,
   getUser,
   getUserByEmail,
+  setCustomUserClaims,
   createUser,
   deleteUser,
   generateEmailVerificationLink,

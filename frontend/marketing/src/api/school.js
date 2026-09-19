@@ -115,6 +115,10 @@ export async function updateSchoolDetails(token, schoolId, payload) {
   return putJson(`/api/v1/schools/${encodeURIComponent(schoolId)}`, payload, token);
 }
 
+export async function createFeePayment(token, schoolId, payload) {
+  return postJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/payments`, payload, token);
+}
+
 export async function searchSchoolData(token, schoolId, term, scope = '') {
   const params = new URLSearchParams();
   if (term) params.set('term', term);
@@ -122,8 +126,14 @@ export async function searchSchoolData(token, schoolId, term, scope = '') {
   return getJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/search?${params.toString()}`, token);
 }
 
-export async function fetchAdminDashboardSummary(token) {
-  return getJson('/api/v1/schools/summary', token);
+export async function fetchAdminDashboardSummary(token, days = 365) {
+  return getJson(`/api/v1/schools/summary?days=${encodeURIComponent(days)}`, token);
+}
+
+export async function fetchPlatformAuditLogs(token, filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, value); });
+  return getJson(`/api/v1/audit-logs?${params.toString()}`, token);
 }
 
 export async function fetchAdminSchoolList(token, search = '') {
@@ -171,11 +181,38 @@ export async function deleteSchoolEntity(token, schoolId, entityType, entityId) 
   return deleteJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`, token);
 }
 
+export async function fetchAssignments(token, schoolId, query = {}) {
+  const params = new URLSearchParams(query);
+  return getJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/assignments${params.toString() ? `?${params}` : ''}`, token);
+}
+
+export async function createAssignment(token, schoolId, payload) {
+  return postJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/assignments`, payload, token);
+}
+
+export async function submitAssignment(token, schoolId, assignmentId, payload) {
+  return postJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/assignments/${encodeURIComponent(assignmentId)}/submissions`, payload, token);
+}
+
+export async function fetchLessons(token, schoolId, query = {}) {
+  const params = new URLSearchParams(query);
+  return getJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/lessons${params.toString() ? `?${params}` : ''}`, token);
+}
+
+export async function createLesson(token, schoolId, payload) {
+  return postJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/lessons`, payload, token);
+}
+
 export async function fetchWorkspaceMessages(token, schoolId, query = {}) {
   const params = new URLSearchParams();
   if (query.folder) params.set('folder', query.folder);
+  if (query.search) params.set('search', query.search);
   const path = `/api/v1/schools/${encodeURIComponent(schoolId)}/messages${params.toString() ? `?${params.toString()}` : ''}`;
   return getJson(path, token);
+}
+
+export async function fetchMessageRecipients(token, schoolId) {
+  return getJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/message-recipients`, token);
 }
 
 export async function createWorkspaceMessage(token, schoolId, payload) {

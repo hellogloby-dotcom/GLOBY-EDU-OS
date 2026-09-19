@@ -36,21 +36,25 @@ router.use('/schools', schoolRoutes);
 const platformAdminRoutes = require('../modules/platform-admin/platform-admin.routes');
 router.use('/platform-admins', platformAdminRoutes);
 
+const pricingRoutes = require('../modules/pricing/pricing.routes');
+const contactRoutes = require('./contact');
+router.use('/pricing', pricingRoutes);
+router.use('/contact', contactRoutes);
+
 router.get('/audit-logs', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
   try {
-    const auditLogs = await listAuditEvents({ isSuperAdmin: true, limit: req.query.limit });
+    const auditLogs = await listAuditEvents({
+      isSuperAdmin: true,
+      limit: req.query.limit,
+      actorRole: req.query.role,
+      action: req.query.action,
+      success: req.query.success,
+      since: req.query.since,
+    });
     return res.json({ status: 'ok', auditLogs });
   } catch (error) {
     return res.status(500).json({ status: 'error', message: 'Unable to load audit logs.' });
   }
-});
-
-// Starter route shell for lesson-related APIs.
-router.use('/lessons', (req, res) => {
-  res.status(501).json({
-    status: 'not_implemented',
-    message: 'Lesson module routes are not implemented yet.',
-  });
 });
 
 module.exports = router;

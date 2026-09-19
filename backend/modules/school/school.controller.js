@@ -47,7 +47,7 @@ router.get('/', authMiddleware, roleGuard(['super_admin']), async (req, res) => 
 // GET /api/v1/schools/summary - Super Admin only
 router.get('/summary', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
   try {
-    const summary = await schoolService.getPlatformSummary();
+    const summary = await schoolService.getPlatformSummary({ days: req.query.days });
     return res.json({ status: 'ok', summary });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });
@@ -69,28 +69,81 @@ router.post('/:schoolId/credentials', authMiddleware, roleGuard(['super_admin'])
 router.get('/:schoolId/messages', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
   try {
     const { schoolId } = req.params;
-    const response = await schoolService.listWorkspaceMessages(schoolId, req.query || {});
-    const school = await schoolService.getSchoolBySchoolId(schoolId);
-    const messages = req.user?.roles?.includes('teacher')
-      ? schoolService.getTeacherSchoolView(school, req.user).messages.filter((item) => !req.query.folder || String(item.folder || '').toLowerCase() === String(req.query.folder).toLowerCase())
-      : req.user?.roles?.includes('student')
-        ? schoolService.getStudentSchoolView(school, req.user).messages.filter((item) => !req.query.folder || String(item.folder || '').toLowerCase() === String(req.query.folder).toLowerCase())
-        : response.items;
-    return res.json({ status: 'ok', schoolId, messages, total: messages.length });
+    const response = await schoolService.listWorkspaceMessages(schoolId, req.query || {}, req.user);
+    return res.json({ status: 'ok', schoolId, messages: response.items, total: response.total });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
+router.get('/:schoolId/message-recipients', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
+  try {
+    const school = await schoolService.getSchoolBySchoolId(req.params.schoolId);
+    if (!school) return res.status(404).json({ status: 'error', message: 'School not found' });
+    return res.json({ status: 'ok', recipients: schoolService.getMessagingRecipientOptions(school, req.user) });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
+router.get('/:schoolId/assignments', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    const result = req.user?.roles?.includes('student')
+      ? await schoolService.listAssignmentsForStudent(schoolId, req.query || {}, req.user)
+      : await schoolService.listAssignments(schoolId, req.query || {}, req.user);
+    return res.json({ status: 'ok', ...result });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
+router.post('/:schoolId/assignments', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
+  try {
+    const assignment = await schoolService.createAssignment(req.params.schoolId, req.body || {}, req.user);
+    return res.status(201).json({ status: 'ok', assignment });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
+router.post('/:schoolId/assignments/:assignmentId/submissions', authMiddleware, tenantMiddleware, roleGuard(['student']), async (req, res) => {
+  try {
+    const assignment = await schoolService.submitAssignment(req.params.schoolId, req.params.assignmentId, req.body || {}, req.user);
+    return res.json({ status: 'ok', assignment });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
+router.get('/:schoolId/lessons', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    const result = req.user?.roles?.includes('student')
+      ? await schoolService.listLessonsForStudent(schoolId, req.query || {}, req.user)
+      : await schoolService.listLessons(schoolId, req.query || {}, req.user);
+    return res.json({ status: 'ok', ...result });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
+router.post('/:schoolId/lessons', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
+  try {
+    const lesson = await schoolService.createLesson(req.params.schoolId, req.body || {}, req.user);
+    return res.status(201).json({ status: 'ok', lesson });
   } catch (err) {
     return res.status(400).json({ status: 'error', message: err.message });
   }
 });
 
 // POST /api/v1/schools/:schoolId/messages - Tenant-scoped workspace messages
-router.post('/:schoolId/messages', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
+router.post('/:schoolId/messages', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
   try {
     const { schoolId } = req.params;
     const payload = req.body || {};
-    if (req.user?.roles?.includes('teacher') && !['all', 'everyone', 'teachers', 'teacher'].includes(String(payload.recipientType || payload.audience || payload.recipient || 'teachers').toLowerCase())) {
-      return res.status(403).json({ status: 'error', message: 'Teachers can only message authorized teacher audiences.' });
-    }
-    const message = await schoolService.createWorkspaceMessage(schoolId, { ...payload, from: payload.from || 'Teacher' });
+    const message = await schoolService.createWorkspaceMessage(schoolId, payload, req.user);
+    await auditSchoolAction(req, { action: 'message.sent', resourceType: 'message', resourceId: message.id });
     return res.status(201).json({ status: 'ok', message });
   } catch (err) {
     return res.status(400).json({ status: 'error', message: err.message });
@@ -98,10 +151,10 @@ router.post('/:schoolId/messages', authMiddleware, tenantMiddleware, roleGuard([
 });
 
 // PUT /api/v1/schools/:schoolId/messages/:messageId - Tenant-scoped workspace message updates
-router.put('/:schoolId/messages/:messageId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
+router.put('/:schoolId/messages/:messageId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, messageId } = req.params;
-    const message = await schoolService.updateWorkspaceMessage(schoolId, messageId, req.body || {});
+    const message = await schoolService.updateWorkspaceMessage(schoolId, messageId, req.body || {}, req.user);
     return res.json({ status: 'ok', message });
   } catch (err) {
     return res.status(400).json({ status: 'error', message: err.message });
@@ -109,10 +162,10 @@ router.put('/:schoolId/messages/:messageId', authMiddleware, tenantMiddleware, r
 });
 
 // DELETE /api/v1/schools/:schoolId/messages/:messageId - Tenant-scoped workspace message removal
-router.delete('/:schoolId/messages/:messageId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
+router.delete('/:schoolId/messages/:messageId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, messageId } = req.params;
-    const message = await schoolService.deleteWorkspaceMessage(schoolId, messageId);
+    const message = await schoolService.deleteWorkspaceMessage(schoolId, messageId, req.user);
     return res.json({ status: 'ok', message });
   } catch (err) {
     return res.status(400).json({ status: 'error', message: err.message });
@@ -174,10 +227,21 @@ router.get('/:schoolId', authMiddleware, tenantMiddleware, async (req, res) => {
       ? schoolService.getTeacherSchoolView(school, req.user)
       : roles.includes('student')
         ? schoolService.getStudentSchoolView(school, req.user)
-        : school;
+        : schoolService.sanitizeSchoolResponse(school);
     return res.json({ status: 'ok', school: responseSchool });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// POST /api/v1/schools/:schoolId/payments - authorized school finance users only
+router.post('/:schoolId/payments', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
+  try {
+    const result = await schoolService.createFeePayment(req.params.schoolId, req.body || {}, req.user || {});
+    await auditSchoolAction(req, { action: 'payment.created', resourceType: 'payment', resourceId: result.payment.id });
+    return res.status(201).json({ status: 'ok', payment: result.payment, receipt: result.receipt });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
   }
 });
 
@@ -204,7 +268,7 @@ router.put('/:schoolId', authMiddleware, tenantMiddleware, roleGuard(['school_he
       return res.json({ status: 'ok', school: schoolService.getTeacherSchoolView(persisted, req.user) });
     }
     const updated = await schoolService.updateSchool(school.id, payload);
-    return res.json({ status: 'ok', school: updated });
+    return res.json({ status: 'ok', school: schoolService.sanitizeSchoolResponse(updated) });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });
   }
@@ -218,7 +282,7 @@ router.delete('/:schoolId', authMiddleware, roleGuard(['super_admin']), async (r
     if (!school) return res.status(404).json({ status: 'error', message: 'School not found' });
     const suspended = await schoolService.deleteSchool(school.id);
     await auditSchoolAction(req, { action: 'school.suspended', resourceType: 'school', resourceId: schoolId });
-    return res.json({ status: 'ok', school: suspended });
+    return res.json({ status: 'ok', school: schoolService.sanitizeSchoolResponse(suspended) });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });
   }
@@ -239,7 +303,7 @@ router.post('/:schoolId/activate', authMiddleware, roleGuard(['super_admin']), a
 });
 
 // GET /api/v1/schools/:schoolId/entities/:entityType - Tenant-scoped School Head entity list
-router.get('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
+router.get('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType } = req.params;
     const query = {
@@ -256,11 +320,11 @@ router.get('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, 
 });
 
 // POST /api/v1/schools/:schoolId/entities/:entityType - Tenant-scoped create entity
-router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
+router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType } = req.params;
     const payload = req.body || {};
-    const entity = await schoolService.createEntity(schoolId, entityType, payload);
+    const entity = await schoolService.createEntity(schoolId, entityType, payload, req.user);
     if (['students', 'teachers'].includes(entityType)) {
       await auditSchoolAction(req, { action: `${entityType.slice(0, -1)}.created`, resourceType: entityType.slice(0, -1), resourceId: entity?.id || entity?.teacherId || entity?.studentId || entity?.email });
     }
@@ -271,11 +335,11 @@ router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware,
 });
 
 // PUT /api/v1/schools/:schoolId/entities/:entityType/:entityId - Tenant-scoped edit entity
-router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
+router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType, entityId } = req.params;
     const updates = req.body || {};
-    const entity = await schoolService.updateEntity(schoolId, entityType, entityId, updates);
+    const entity = await schoolService.updateEntity(schoolId, entityType, entityId, updates, req.user);
     if (['students', 'teachers'].includes(entityType)) {
       await auditSchoolAction(req, { action: `${entityType.slice(0, -1)}.updated`, resourceType: entityType.slice(0, -1), resourceId: entityId });
     }

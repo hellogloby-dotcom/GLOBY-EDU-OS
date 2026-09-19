@@ -26,6 +26,26 @@ function canManageUserSession(req, userId) {
   return req.user?.userId === userId || roles.some((role) => String(role).toLowerCase() === 'super_admin');
 }
 
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: '/api/v1/auth',
+    ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+  };
+}
+
+function setRefreshCookie(res, refreshToken) {
+  if (refreshToken) res.cookie('globyedu_refresh_token', refreshToken, { ...sessionCookieOptions(), maxAge: 30 * 24 * 60 * 60 * 1000 });
+}
+
+function getRefreshCookie(req) {
+  const header = String(req.headers.cookie || '');
+  const match = header.split(';').map((part) => part.trim()).find((part) => part.startsWith('globyedu_refresh_token='));
+  return match ? decodeURIComponent(match.slice('globyedu_refresh_token='.length)) : null;
+}
+
 function loadSchoolData() {
   const filePath = path.join(__dirname, '../../data/schools.json');
   const raw = fs.readFileSync(filePath, 'utf-8');
@@ -187,6 +207,7 @@ router.post('/login', async (req, res) => {
 
     const result = await authService.login(schoolId, username, password);
     clearLoginFailures(loginAttemptKey);
+    setRefreshCookie(res, result.refreshToken);
     await recordAuditEvent({ req, actorId: result.user.id, actorRole: result.user.roles?.[0], tenantId: result.user.tenantId || schoolId, action: 'auth.login_succeeded', resourceType: 'user', resourceId: result.user.id, metadata: { loginType: 'prisma' } });
     return res.json({ status: 'ok', accessToken: result.accessToken, refreshToken: result.refreshToken, user: { id: result.user.id, email: result.user.email, roles: result.user.roles } });
   } catch (err) {
@@ -199,29 +220,44 @@ router.post('/login', async (req, res) => {
 // POST /api/v1/auth/firebase-login
 router.post('/firebase-login', async (req, res) => {
   try {
-    const { idToken, schoolId, platformAdmin } = req.body || {};
+    const { idToken, schoolId, platformAdmin, identifier, loginType } = req.body || {};
     if (!idToken || !schoolId) return res.status(400).json({ status: 'error', message: 'Missing Firebase token or school ID' });
 
-    const result = await authService.loginWithFirebaseIdToken(idToken, schoolId, { platformAdminMode: platformAdmin === true });
+    const result = await authService.loginWithFirebaseIdToken(idToken, schoolId, { platformAdminMode: platformAdmin === true, identifier, loginType });
+    setRefreshCookie(res, result.refreshToken);
     return res.json({
       status: 'ok',
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
       tenantId: result.tenantId,
       schoolId: result.schoolId,
-      user: { id: result.user.id, email: result.user.email, roles: result.user.roles },
+      user: { id: result.user.id, email: result.user.email, displayName: result.user.displayName, roles: result.user.roles },
     });
   } catch (err) {
     return res.status(401).json({ status: 'error', message: err.message });
   }
 });
 
+router.post('/firebase-link', authMiddleware, async (req, res) => {
+  try {
+    const { idToken } = req.body || {};
+    const userId = req.user?.userId;
+    const tenantId = req.user?.tenantId;
+    if (!idToken || !userId || !tenantId) return res.status(400).json({ status: 'error', message: 'Missing Firebase token or authenticated user.' });
+    const user = await authService.linkFirebaseIdentity(idToken, userId, tenantId);
+    return res.json({ status: 'ok', linked: true, user: { id: user.id, googleEmail: user.googleEmail } });
+  } catch (err) {
+    return res.status(400).json({ status: 'error', message: err.message });
+  }
+});
+
 // POST /api/v1/auth/refresh
 router.post('/refresh', async (req, res) => {
   try {
-    const { refreshToken } = req.body || {};
+    const refreshToken = getRefreshCookie(req) || req.body?.refreshToken;
     if (!refreshToken) return res.status(400).json({ status: 'error', message: 'Missing refresh token' });
     const tokens = await authService.refresh(refreshToken);
+    setRefreshCookie(res, tokens.refreshToken);
     return res.json({ status: 'ok', accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
   } catch (err) {
     return res.status(401).json({ status: 'error', message: err.message });
@@ -229,10 +265,13 @@ router.post('/refresh', async (req, res) => {
 });
 
 // POST /api/v1/auth/logout
-router.post('/logout', async (req, res) => {
+router.post('/logout', authMiddleware, async (req, res) => {
   try {
-    const { userId, refreshToken } = req.body || {};
+    const userId = req.user?.userId;
+    const refreshToken = getRefreshCookie(req) || req.body?.refreshToken;
+    if (!userId || !refreshToken) return res.status(400).json({ status: 'error', message: 'Authenticated session is required' });
     await authService.logout(userId, refreshToken);
+    res.clearCookie('globyedu_refresh_token', sessionCookieOptions());
     return res.json({ status: 'ok' });
   } catch (err) {
     return res.status(400).json({ status: 'error', message: err.message });
@@ -277,6 +316,7 @@ router.post('/change-password', authMiddleware, async (req, res) => {
       return res.status(403).json({ status: 'error', message: 'Access denied.' });
     }
     const session = await authService.changePassword(userId, oldPassword, newPassword);
+    setRefreshCookie(res, session.refreshToken);
     await recordAuditEvent({ req, actorId: userId, actorRole: req.user?.roles?.[0], tenantId: req.user?.tenantId, action: 'auth.password_changed', resourceType: 'user', resourceId: userId });
     return res.json({ status: 'ok', accessToken: session.accessToken, refreshToken: session.refreshToken, passwordNeedsReset: false });
   } catch (err) {

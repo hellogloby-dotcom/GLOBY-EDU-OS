@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { verifyAccessToken } = require('../utils/token');
 const firebaseAdmin = require('../../../firebase.admin');
+const firebaseData = require('../../../firebase.data');
 const prisma = require('../../../config/prisma.client');
 
 function loadSchoolData() {
@@ -63,6 +64,22 @@ function enforcePasswordChange(req, res, user) {
 async function resolveFirebaseUser(decodedToken) {
   const email = String(decodedToken.email || '').trim().toLowerCase();
   if (!email) return null;
+
+  if (firebaseData.isFirebaseDataConfigured()) {
+    const snapshot = await firebaseData.getFirestore().collection('users').where('email', '==', email).limit(1).get();
+    if (snapshot.empty) return null;
+    const user = snapshot.docs[0].data();
+    if (user.status !== 'active') return null;
+    const userId = snapshot.docs[0].id;
+    const roles = Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean);
+    return {
+      userId: userId,
+      tenantId: user.tenantId || user.schoolId,
+      roles,
+      platformAdmin: roles.includes('super_admin'),
+      passwordNeedsReset: user.passwordNeedsReset === true,
+    };
+  }
 
   if (prisma && !prisma.__stub) {
     const user = await prisma.user.findUnique({ where: { email } });

@@ -4,6 +4,10 @@ dist/
 build/
 .env
 .env.local
+!.env.example
+**/.env
+**/.env.local
+!**/.env.example
 
 # Logs
 logs/

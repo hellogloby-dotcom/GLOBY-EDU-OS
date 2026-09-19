@@ -3,6 +3,7 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const { ensureDemoSchool } = require('../fallback.school');
 const schoolService = require('../school.service');
+const { generateSchoolSubdomain, resolveTenantFromHostname } = require('../tenant-hostname');
 
 const schoolsFile = path.join(__dirname, '../../../data/schools.json');
 const originalData = fs.existsSync(schoolsFile) ? fs.readFileSync(schoolsFile, 'utf8') : '';
@@ -113,13 +114,13 @@ test('entity onboarding generates usable teacher and student credentials without
   const persistedStudent = reloaded.users.find((user) => user.email === student.email);
 
   expect(teacher.teacherId).toMatch(/^T-/);
-  expect(teacher.temporaryPassword).toMatch(/^TempPass!/);
   expect(teacher.passwordHash).toBeUndefined();
-  expect(bcrypt.compareSync(teacher.temporaryPassword, persistedTeacher.passwordHash)).toBe(true);
+  expect(teacher.passwordNeedsReset).toBe(true);
+  expect(persistedTeacher.passwordHash).toMatch(/^\$2[aby]\$/);
   expect(student.studentId).toMatch(/^STD-/);
-  expect(student.temporaryPassword).toMatch(/^TempPass!/);
   expect(student.passwordHash).toBeUndefined();
-  expect(bcrypt.compareSync(student.temporaryPassword, persistedStudent.passwordHash)).toBe(true);
+  expect(student.passwordNeedsReset).toBe(true);
+  expect(persistedStudent.passwordHash).toMatch(/^\$2[aby]\$/);
   expect(reloaded.students.find((entry) => entry.studentId === student.studentId).profilePhoto).toContain('data:image/png');
 });
 
@@ -229,6 +230,30 @@ test('new schools support class, teacher, and student onboarding without manual 
   expect(student.studentId).toBeTruthy();
   expect(reloaded.students.find((item) => item.studentId === student.studentId).classId).toBe(createdClass.classId);
   expect(reloaded.teachers.find((item) => item.teacherId === teacher.teacherId).assignedClasses).toContain(createdClass.classId);
+});
+
+test('createSchool assigns a normalized, collision-safe subdomain and persists it', async () => {
+  fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
+
+  const created = await schoolService.createSchool({ name: 'Globy School' });
+
+  expect(created.subdomain).toBe('globy-school');
+  expect(generateSchoolSubdomain('Globy School', [])).toBe('globy-school');
+  expect(generateSchoolSubdomain('Admin', [{ subdomain: 'admin' }])).not.toBe('admin');
+  expect(generateSchoolSubdomain('Globy School', [{ subdomain: 'globy-school' }])).toMatch(/^globy-school-\d+$/);
+});
+
+test('hostname resolution resolves the tenant from a valid subdomain and rejects reserved hosts', () => {
+  const schools = [
+    { schoolId: 'school-a', name: 'School A', subdomain: 'school-a' },
+    { schoolId: 'school-b', name: 'School B', subdomain: 'school-b' },
+  ];
+
+  expect(resolveTenantFromHostname('school-a.globyedu.com', schools)?.schoolId).toBe('school-a');
+  expect(resolveTenantFromHostname('school-a.localhost', schools)?.schoolId).toBe('school-a');
+  expect(resolveTenantFromHostname('admin.globyedu.com', schools)).toBeNull();
+  expect(resolveTenantFromHostname('unknown.globyedu.com', schools)).toBeNull();
+  expect(resolveTenantFromHostname('globyedu.com', schools)).toBeNull();
 });
 
 test('new schools receive a 5-day free trial and persist the trial expiry date', async () => {

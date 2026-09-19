@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const config = require('../../config/auth.config');
+const { generateSchoolSubdomain } = require('./tenant-hostname');
 
 const SCHOOLS_FILE = path.join(__dirname, '../../data/schools.json');
 const DEMO_SCHOOL_ID = 'globy-school';
@@ -18,13 +19,21 @@ const DEMO_SCHOOL_PASSWORD = 'GlobySchool@123';
 const DEMO_TEACHER_PASSWORD = 'GlobyTeacher@123';
 const DEMO_STUDENT_PASSWORD = 'GlobyStudent@123';
 
+function assertFallbackStoreAllowed() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JSON fallback storage is disabled in production. Configure PostgreSQL through DATABASE_URL.');
+  }
+}
+
 function ensureSchoolDataFile() {
+  assertFallbackStoreAllowed();
   if (!fs.existsSync(SCHOOLS_FILE)) {
     fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: [] }, null, 2), 'utf-8');
   }
 }
 
 function loadSchoolData() {
+  assertFallbackStoreAllowed();
   const snapshot = globalThis.__workspaceSnapshot;
   if (Array.isArray(snapshot)) {
     return snapshot;
@@ -44,6 +53,7 @@ function loadSchoolData() {
 }
 
 function saveSchoolData(schools) {
+  assertFallbackStoreAllowed();
   const normalized = Array.isArray(schools) ? schools : (schools && Array.isArray(schools.schools) ? schools.schools : []);
   if (globalThis.__workspaceSnapshot !== undefined) {
     globalThis.__workspaceSnapshot = normalized;
@@ -162,6 +172,13 @@ function normalizeWorkspaceMessage(school, payload = {}) {
     metadata: payload.metadata || null,
     recipientType: payload.recipientType || payload.recipient || payload.to || 'all',
     audience: payload.audience || payload.recipientType || payload.recipient || 'all',
+    senderId: payload.senderId || null,
+    senderRole: payload.senderRole || null,
+    senderName: payload.senderName || payload.from || null,
+    recipientId: payload.recipientId || null,
+    recipientRole: payload.recipientRole || null,
+    readAt: payload.readAt || null,
+    readBy: Array.isArray(payload.readBy) ? payload.readBy : [],
   };
   if (payload.status) message.status = payload.status;
   if (payload.schoolId) message.schoolId = payload.schoolId;
@@ -348,8 +365,9 @@ function searchSchoolEntities(school, query, scopes = []) {
 
 function createTeacherRecord(school, payload) {
   if (!Array.isArray(school.users)) school.users = [];
-  const identity = String(payload.username || payload.email || '').trim().toLowerCase();
-  const requestedTeacherId = String(payload.teacherId || '').trim().toLowerCase();
+  const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safePayload } = payload || {};
+  const identity = String(safePayload.username || safePayload.email || '').trim().toLowerCase();
+  const requestedTeacherId = String(safePayload.teacherId || '').trim().toLowerCase();
   const existing = school.users.find((user) => (
     user.role === 'teacher' && (
       String(user.username || '').toLowerCase() === identity ||
@@ -362,30 +380,30 @@ function createTeacherRecord(school, payload) {
   }
   
   // Auto-generate Teacher ID if not provided
-  const teacherId = payload.teacherId || createTeacherIdentifier(school, payload.fullName || payload.name || 'teacher');
+  const teacherId = safePayload.teacherId || createTeacherIdentifier(school, safePayload.fullName || safePayload.name || 'teacher');
   
   const teacher = {
-    username: payload.username || payload.email || teacherId,
+    username: safePayload.username || safePayload.email || teacherId,
     role: 'teacher',
-    grade: payload.grade || 'N/A',
-    fullName: payload.fullName || payload.name || 'Teacher',
-    status: payload.status || 'active',
-    emailVerified: payload.emailVerified !== false,
-    developmentOnly: payload.developmentOnly || false,
+    grade: safePayload.grade || 'N/A',
+    fullName: safePayload.fullName || safePayload.name || 'Teacher',
+    status: safePayload.status || 'active',
+    emailVerified: safePayload.emailVerified !== false,
+    developmentOnly: safePayload.developmentOnly || false,
     platformAdmin: false,
     teacherId,
-    email: payload.email || null,
-    phone: payload.phone || null,
-    department: payload.department || null,
-    className: payload.className || null,
-    assignedClasses: payload.assignedClasses || [],
-    assignedSubjects: payload.assignedSubjects || [],
-    passwordHash: payload.passwordHash || null,
-    permissions: payload.permissions || ['classes.manage', 'students.view'],
-    ...payload,
+    email: safePayload.email || null,
+    phone: safePayload.phone || null,
+    department: safePayload.department || null,
+    className: safePayload.className || null,
+    assignedClasses: safePayload.assignedClasses || [],
+    assignedSubjects: safePayload.assignedSubjects || [],
+    permissions: safePayload.permissions || ['classes.manage', 'students.view'],
+    ...safePayload,
     teacherId,
-    username: payload.username || payload.email || teacherId,
-    passwordHash: payload.passwordHash || null,
+    username: safePayload.username || safePayload.email || teacherId,
+    passwordHash: passwordHash || null,
+    passwordNeedsReset: passwordNeedsReset !== false,
   };
   
   school.users.push(teacher);
@@ -396,19 +414,22 @@ function createTeacherRecord(school, payload) {
 
 function createStudentRecord(school, payload) {
   if (!Array.isArray(school.students)) school.students = [];
-  const studentId = payload.studentId || createStudentIdentifier(school, payload.fullName || payload.username || 'student');
-  const identity = String(payload.email || payload.username || '').trim().toLowerCase();
+  const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safePayload } = payload || {};
+  const studentId = safePayload.studentId || createStudentIdentifier(school, safePayload.fullName || safePayload.username || 'student');
+  const identity = String(safePayload.email || safePayload.username || '').trim().toLowerCase();
   const duplicate = school.students.find((student) => (
     (identity && String(student.email || student.username || '').toLowerCase() === identity) ||
     String(student.studentId || '').toLowerCase() === String(studentId).toLowerCase() ||
-    (payload.admissionNumber && String(student.admissionNumber || '').toLowerCase() === String(payload.admissionNumber).toLowerCase())
+    (safePayload.admissionNumber && String(student.admissionNumber || '').toLowerCase() === String(safePayload.admissionNumber).toLowerCase())
   ));
   if (duplicate) throw new Error('Student with that email, student ID, or admission number already exists');
   const newStudent = {
-    ...payload,
+    ...safePayload,
     studentId,
-    status: payload.status || 'active',
-    createdAt: payload.createdAt || new Date().toISOString(),
+    status: safePayload.status || 'active',
+    createdAt: safePayload.createdAt || new Date().toISOString(),
+    passwordHash: passwordHash || null,
+    passwordNeedsReset: passwordNeedsReset !== false,
   };
   school.students.push(newStudent);
   return newStudent;
@@ -466,6 +487,7 @@ function buildDemoSchool() {
   return {
     id: LEGACY_DEMO_SCHOOL_ID,
     schoolId: DEMO_SCHOOL_ID,
+    subdomain: generateSchoolSubdomain(DEMO_SCHOOL_NAME, []),
     name: DEMO_SCHOOL_NAME,
     email: DEMO_SCHOOL_EMAIL,
     description: 'Development-only seed tenant for local testing.',
@@ -613,15 +635,16 @@ function ensureDemoSchool() {
 
     school.id = demo.id;
     school.schoolId = demo.schoolId;
+    school.subdomain = generateSchoolSubdomain(demo.name, schools);
     school.name = demo.name;
     school.email = demo.email;
     school.description = demo.description;
     school.country = demo.country;
     school.region = demo.region;
     school.subscriptionPlan = school.subscriptionPlan || demo.subscriptionPlan;
-    school.subscriptionStatus = school.subscriptionStatus || demo.subscriptionStatus;
-    school.trialStatus = school.trialStatus || demo.trialStatus;
-    school.schoolStatus = school.schoolStatus || demo.schoolStatus;
+    school.subscriptionStatus = demo.subscriptionStatus;
+    school.trialStatus = demo.trialStatus;
+    school.schoolStatus = demo.schoolStatus;
     school.developmentOnly = school.developmentOnly ?? demo.developmentOnly;
     school.settings = school.settings || demo.settings;
     school.classes = Array.isArray(school.classes) ? school.classes : demo.classes;
@@ -635,9 +658,20 @@ function ensureDemoSchool() {
         changed = true;
         continue;
       }
+
+      if (String(existing.role || '').toLowerCase() === 'student') {
+        delete existing.passwordHash;
+      }
+
       const sameUser = existing.username === demoUser.username && existing.role === demoUser.role && existing.passwordHash === demoUser.passwordHash && existing.studentPasswordHash === demoUser.studentPasswordHash && existing.passwordNeedsReset === demoUser.passwordNeedsReset;
       if (!sameUser) {
         Object.assign(existing, demoUser);
+        if (String(existing.role || '').toLowerCase() === 'student') {
+          if (demoUser.studentPasswordHash) {
+            existing.studentPasswordHash = demoUser.studentPasswordHash;
+          }
+          delete existing.passwordHash;
+        }
         changed = true;
       }
     }

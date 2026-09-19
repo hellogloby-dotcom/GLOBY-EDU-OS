@@ -4,7 +4,8 @@
 // separate from the landing site and to preserve the existing marketing architecture.
 
 import { appendAuditLog, encryptSecret, getAdminState, maskAuditValue, recordNotification, saveAdminState, setSessionActivity } from './admin-state.js';
-import { activateAdminSchool, deleteAdminSchool } from '../api/school.js';
+import { activateAdminSchool, deleteAdminSchool, fetchMessageRecipients, createWorkspaceMessage } from '../api/school.js';
+import { updatePricingPlan } from '../api/pricing.js';
 
 const WEBSITE_CMS_STORAGE_KEY = 'globyedu_websiteCms';
 const SUPER_ADMIN_ONLY_SECTIONS = new Set(['pricing', 'payments', 'features', 'website-cms', 'ai-settings', 'analytics', 'reports', 'messages', 'announcements', 'support', 'plugins', 'audit-logs', 'system-settings', 'settings', 'backups', 'security', 'subscriptions']);
@@ -31,7 +32,7 @@ const ADMIN_NAV_ITEMS = [
   { id: 'security', label: 'Security', icon: 'shield-check' },
 ];
 
-export function AdminPage(activeSection = 'overview', userFullName = 'Benjamin', summary = {}, schools = []) {
+export function AdminPage(activeSection = 'overview', userFullName = 'Benjamin', summary = {}, schools = [], pricingPlans = [], auditLogs = []) {
   return `
     <div class="space-y-6">
       <div class="rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-xl">
@@ -41,7 +42,7 @@ export function AdminPage(activeSection = 'overview', userFullName = 'Benjamin',
       </div>
       <main class="space-y-6">
         ${renderBreadcrumb(activeSection)}
-        ${renderSectionContent(activeSection, userFullName, summary, schools)}
+        ${renderSectionContent(activeSection, userFullName, summary, schools, pricingPlans, auditLogs)}
       </main>
     </div>
   `;
@@ -118,47 +119,21 @@ function savePlatformSettingsState(values = {}) {
 }
 
 function getPlatformDashboardMetrics(summary = {}) {
-  const state = getAdminState();
-  const schools = getSchoolDirectoryFromState();
-  const totalSchools = Number(summary.totalSchools ?? schools.length ?? 0);
-  const activeSchools = schools.filter((school) => {
-    const status = String(school.subscriptionStatus || school.status || school.schoolStatus || '').toLowerCase();
-    return status === 'active' || status === 'trial' || status === 'paid';
-  }).length;
-  const suspendedSchools = schools.filter((school) => {
-    const status = String(school.subscriptionStatus || school.status || school.schoolStatus || '').toLowerCase();
-    return status === 'suspended' || status === 'inactive';
-  }).length;
-  const trialSchools = schools.filter((school) => {
-    const status = String(school.subscriptionStatus || school.status || school.schoolStatus || '').toLowerCase();
-    return status === 'trial';
-  }).length;
-  const totalStudents = schools.reduce((sum, school) => sum + Number(school.totalStudents || school.studentCount || school.students || 0), 0);
-  const totalTeachers = schools.reduce((sum, school) => sum + Number(school.totalTeachers || school.teacherCount || 0), 0);
-  const totalStaff = schools.reduce((sum, school) => sum + Number(school.totalStaff || school.staffCount || 0), 0);
-  const activeSubscriptions = schools.filter((school) => {
-    const status = String(school.subscriptionStatus || school.status || '').toLowerCase();
-    return ['active', 'trial', 'paid'].includes(status);
-  }).length;
-  const latestActivity = (state.auditLogs || []).slice(0, 4);
+  const schools = Array.isArray(summary.schools) ? summary.schools : [];
+  const latestActivity = Array.isArray(summary.latestActivity) ? summary.latestActivity : [];
   const recentSchools = schools.slice(0, 4);
 
   return {
-    totalSchools,
-    activeSchools,
-    suspendedSchools,
-    trialSchools,
-    totalStudents,
-    totalTeachers,
-    totalStaff,
-    activeSubscriptions,
+    totalSchools: Number(summary.totalSchools || 0),
+    activeSchools: Number(summary.activeSchools || 0),
+    suspendedSchools: Number(summary.suspendedSchools || 0),
+    trialSchools: Number(summary.trialSchools || 0),
+    totalStudents: Number(summary.totalStudents || 0),
+    totalTeachers: Number(summary.totalTeachers || 0),
+    activeSubscriptions: Number(summary.activeSubscriptions || 0),
     latestActivity,
     recentSchools,
-    revenue: summary.revenue || `$${(totalSchools * 92 + totalStudents * 5).toLocaleString()}`,
-    platformHealth: summary.platformHealth || 'Healthy',
-    healthScore: summary.healthScore ?? 94,
-    aiUsage: summary.aiUsage || `${Math.max(12, totalSchools * 4)} AI sessions`,
-    aiUsageScore: summary.aiUsageScore ?? 88,
+    revenue: summary.revenue || null,
   };
 }
 
@@ -239,7 +214,7 @@ function renderSchoolRecipientOptions(selected = [], loadedSchools = []) {
   return `<option value="all-schools">All Schools</option>${schoolOptions}`;
 }
 
-function renderSectionContent(activeSection, userFullName, summary = {}, schools = []) {
+function renderSectionContent(activeSection, userFullName, summary = {}, schools = [], pricingPlans = [], auditLogs = []) {
   const normalizedSection = String(activeSection || 'overview').toLowerCase();
   if (isSectionRestricted(normalizedSection) && getCurrentAdminRole() !== 'super_admin') {
     return renderRestrictedAccessNotice(normalizedSection);
@@ -250,7 +225,7 @@ function renderSectionContent(activeSection, userFullName, summary = {}, schools
   if (normalizedSection === 'ai-settings') return renderAISettings();
   if (normalizedSection === 'features') return renderFeatureManager();
   if (normalizedSection === 'payments') return renderPayments();
-  if (normalizedSection === 'pricing') return renderPricingManagement();
+  if (normalizedSection === 'pricing') return renderPricingManagement(pricingPlans);
   if (normalizedSection === 'subscriptions') return renderSubscriptions(summary, schools);
   if (normalizedSection === 'analytics') return renderAnalytics(summary, schools);
   if (normalizedSection === 'users') return renderUsers(schools);
@@ -259,7 +234,7 @@ function renderSectionContent(activeSection, userFullName, summary = {}, schools
   if (normalizedSection === 'announcements') return renderAnnouncements();
   if (normalizedSection === 'support') return renderSupport(schools);
   if (normalizedSection === 'plugins') return renderPlugins();
-  if (normalizedSection === 'audit-logs') return renderAuditLogs();
+  if (normalizedSection === 'audit-logs') return renderAuditLogs(auditLogs);
   if (normalizedSection === 'system-settings') return renderSystemSettings();
   if (normalizedSection === 'settings') return renderPlatformSettings();
   if (normalizedSection === 'backups') return renderBackups();
@@ -293,7 +268,7 @@ function renderDashboardOverview(userFullName, summary = {}) {
 
   return `
     <section class="space-y-6">
-      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Welcome back</p>
@@ -317,7 +292,6 @@ function renderDashboardOverview(userFullName, summary = {}) {
       <div class="grid gap-6 xl:grid-cols-4">
         ${renderStatCard('Total Students', metrics.totalStudents.toLocaleString(), 'All enrolled students across tenants.', 'bg-white text-slate-900')}
         ${renderStatCard('Total Teachers', metrics.totalTeachers.toLocaleString(), 'Active teaching staff across tenants.', 'bg-white text-slate-900')}
-        ${renderStatCard('Total Staff', metrics.totalStaff.toLocaleString(), 'Non-teaching staff across the platform.', 'bg-white text-slate-900')}
         ${renderStatCard('Active Subscriptions', metrics.activeSubscriptions.toLocaleString(), 'Current active subscription base.', 'bg-white text-slate-900')}
       </div>
 
@@ -325,13 +299,12 @@ function renderDashboardOverview(userFullName, summary = {}) {
         <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div class="mb-6 flex items-center justify-between">
             <div>
-              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Platform health</p>
-              <h3 class="mt-2 text-2xl font-semibold text-slate-900">${metrics.platformHealth}</h3>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Platform status</p>
+                <h3 class="mt-2 text-2xl font-semibold text-slate-900">${metrics.totalSchools ? 'Operational' : 'No school data'}</h3>
             </div>
-            <span class="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">${metrics.healthScore}%</span>
+            <span class="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">${metrics.totalSchools ? 'Live data' : 'Empty'}</span>
           </div>
-          <p class="text-sm text-slate-600">Service uptime, response time, and error rates are within expected thresholds.</p>
-          ${renderProgressBar('Health score', metrics.healthScore)}
+          <p class="text-sm text-slate-600">Status distribution from the platform tenant records.</p>
           <div class="mt-6 space-y-4">
             ${schoolStatusDistribution.map((item) => `
               <div>
@@ -350,16 +323,15 @@ function renderDashboardOverview(userFullName, summary = {}) {
         <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div class="mb-6 flex items-center justify-between">
             <div>
-              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">AI usage</p>
-              <h3 class="mt-2 text-2xl font-semibold text-slate-900">${metrics.aiUsage}</h3>
+              <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Platform revenue</p>
+              <h3 class="mt-2 text-2xl font-semibold text-slate-900">${metrics.revenue || 'Not available'}</h3>
             </div>
-            <span class="rounded-full bg-sky-50 px-3 py-1 text-sm font-semibold text-sky-700">Live</span>
+            <span class="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Verified data only</span>
           </div>
-          <p class="text-sm text-slate-600">AI model usage across tenants and total request throughput.</p>
-          ${renderProgressBar('AI usage health', metrics.aiUsageScore)}
+          <p class="text-sm text-slate-600">No reliable platform subscription-revenue ledger is configured yet.</p>
           <div class="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
             <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Revenue</p>
-            <p class="mt-2 text-2xl font-semibold text-slate-900">${metrics.revenue}</p>
+            <p class="mt-2 text-2xl font-semibold text-slate-900">${metrics.revenue || 'Not available'}</p>
           </div>
         </div>
       </div>
@@ -572,7 +544,8 @@ function renderSchoolRow(school) {
   const schoolId = school.schoolId || '—';
   const subscription = school.subscriptionPlan || 'trial';
   const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
-  const users = school.userCount || (school.users && school.users.length) || '—';
+  const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
+  const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
   
   // Render status-appropriate action button
   let statusButton = '';
@@ -583,17 +556,17 @@ function renderSchoolRow(school) {
   }
 
   return `
-    <tr data-school-id="${schoolId}" class="border-t border-slate-200 hover:bg-slate-50 transition">
+    <tr data-school-id="${schoolId}" data-school-status="${status}" class="border-t border-slate-200 hover:bg-slate-50 transition">
       <td class="px-5 py-4 font-semibold text-slate-900">${name}</td>
       <td class="px-5 py-4 font-mono text-xs text-slate-600">${schoolId}</td>
       <td class="px-5 py-4 capitalize text-slate-600">${subscription}</td>
       <td class="px-5 py-4">${renderStatusBadge(status)}</td>
-      <td class="px-5 py-4 text-slate-600">${users}</td>
+      <td class="px-5 py-4 text-slate-600">${studentCount} students / ${teacherCount} teachers</td>
       <td class="px-5 py-4 flex flex-wrap gap-2">
         <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="view" data-school-id="${schoolId}" title="View details">👁</button>
         <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="edit" data-school-id="${schoolId}" title="Edit school">✏</button>
         ${statusButton}
-        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100" data-action="delete" data-school-id="${schoolId}" title="Delete school">🗑</button>
+        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100" data-action="delete" data-school-id="${schoolId}" title="Suspend school">🗑</button>
       </td>
     </tr>
   `;
@@ -742,10 +715,11 @@ function renderSchoolDetailsModal(school) {
   const schoolId = school.schoolId || '—';
   const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
   const plan = school.subscriptionPlan || 'trial';
-  const users = school.userCount || '—';
+  const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
+  const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
   const headName = school.headName || '—';
-  const headEmail = school.headEmail ? maskSensitiveValue(school.headEmail) : '—';
-  const createdAt = school.createdAt || new Date().toISOString();
+  const headEmail = school.headEmail || school.email || '—';
+  const createdAt = school.createdAt || null;
   const expiresAt = school.expiresAt || '—';
   
   return `
@@ -768,17 +742,25 @@ function renderSchoolDetailsModal(school) {
           <p class="mt-2 font-semibold text-slate-900 capitalize">${plan}</p>
         </div>
         <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Subdomain</p>
+          <p class="mt-2 font-semibold text-slate-900">${school.subdomain || '—'}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-500">School email</p>
+          <p class="mt-2 text-sm text-slate-900">${school.email || headEmail}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Head of School</p>
           <p class="mt-2 font-semibold text-slate-900">${headName}</p>
           <p class="mt-1 text-xs text-slate-600">${headEmail}</p>
         </div>
         <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Active Users</p>
-          <p class="mt-2 font-semibold text-slate-900">${users}</p>
+          <p class="mt-2 font-semibold text-slate-900">${studentCount} students / ${teacherCount} teachers</p>
         </div>
         <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Created</p>
-          <p class="mt-2 text-sm text-slate-900">${new Date(createdAt).toLocaleDateString()}</p>
+          <p class="mt-2 text-sm text-slate-900">${createdAt ? new Date(createdAt).toLocaleDateString() : '—'}</p>
         </div>
         <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Subscription Expires</p>
@@ -1182,7 +1164,7 @@ export function attachAdminSectionHandlers(section) {
     
     // AI Provider form handlers
     document.querySelectorAll('[data-ai-provider-form]').forEach((form) => {
-      form.addEventListener('submit', (event) => {
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const state = getAdminState();
         const providerId = form.getAttribute('data-ai-provider-form');
@@ -1425,82 +1407,27 @@ export function attachAdminSectionHandlers(section) {
 
   if (normalizedSection === 'pricing') {
     document.querySelectorAll('[data-pricing-plan-form]').forEach((form) => {
-      form.addEventListener('submit', (event) => {
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const state = getAdminState();
         const planId = form.getAttribute('data-pricing-plan-form');
-        const plan = state.pricingPlans.find((entry) => entry.id === planId);
-        if (!plan) return;
-
-        plan.enabled = form.querySelector('input[name="enabled"]').checked;
-        plan.recommendedBadge = form.querySelector('input[name="recommendedBadge"]').checked;
-        plan.name = form.querySelector('input[name="name"]').value.trim();
-        plan.monthlyPrice = form.querySelector('input[name="monthlyPrice"]').value.trim();
-        plan.yearlyPrice = form.querySelector('input[name="yearlyPrice"]').value.trim();
-        plan.currency = form.querySelector('input[name="currency"]').value.trim();
-        plan.billingCycle = form.querySelector('select[name="billingCycle"]').value;
-        plan.freeTrialDays = Number(form.querySelector('input[name="freeTrialDays"]').value || 0);
-        plan.displayOrder = Number(form.querySelector('input[name="displayOrder"]').value || 0);
-        plan.supportLevel = form.querySelector('input[name="supportLevel"]').value.trim();
-        plan.shortDescription = form.querySelector('textarea[name="shortDescription"]').value.trim();
-
-        plan.features = plan.features || {};
-        ['studentManagement','teacherManagement','attendance','finance','messaging','reports','aiAssistant','library'].forEach((field) => {
-          plan.features[field] = Boolean(form.querySelector(`input[name="feature-${field}"]`)?.checked);
+        const result = await updatePricingPlan(planId, {
+          name: form.querySelector('input[name="name"]').value.trim(),
+          studentLimit: Number(form.querySelector('input[name="studentLimit"]').value || 0),
+          monthlyAmount: Number(form.querySelector('input[name="monthlyAmount"]').value || 0),
+          yearlyAmount: Number(form.querySelector('input[name="yearlyAmount"]').value || 0),
+          currency: form.querySelector('input[name="currency"]').value.trim(),
+          active: form.querySelector('input[name="active"]').checked,
+          displayOrder: Number(form.querySelector('input[name="displayOrder"]').value || 0),
         });
-
-        saveAdminState(state);
-        appendAuditLog('Updated pricing plan', plan.name);
         const status = form.querySelector('[data-pricing-status]');
         if (status) {
-          status.textContent = 'Pricing plan saved.';
+          status.textContent = result.ok ? 'Pricing plan saved.' : (result.data?.message || 'Unable to save pricing plan.');
           status.classList.remove('hidden');
           setTimeout(() => status.classList.add('hidden'), 3000);
         }
+        if (result.ok) window.location.hash = '#/admin/pricing';
       });
     });
-
-    const addButton = document.getElementById('add-pricing-plan');
-    if (addButton) {
-      addButton.addEventListener('click', () => {
-        const state = getAdminState();
-        const id = `plan-${Date.now()}`;
-        const plan = {
-          id,
-          name: 'New plan',
-          shortDescription: 'Describe this new plan.',
-          monthlyPrice: '0',
-          yearlyPrice: '0',
-          currency: 'USD',
-          billingCycle: 'monthly',
-          freeTrialDays: 14,
-          maxStudents: 100,
-          maxTeachers: 10,
-          maxStaff: 5,
-          maxStorageGB: 10,
-          aiCredits: 250,
-          supportLevel: 'Email support',
-          popularBadge: false,
-          recommendedBadge: false,
-          enabled: false,
-          status: 'draft',
-          displayOrder: state.pricingPlans.length + 1,
-          features: {
-            studentManagement: true,
-            teacherManagement: true,
-            attendance: true,
-            finance: false,
-            messaging: false,
-            reports: false,
-            aiAssistant: false,
-            library: false,
-          },
-        };
-        state.pricingPlans = [...state.pricingPlans, plan];
-        saveAdminState(state);
-        location.reload();
-      });
-    }
   }
 
   if (normalizedSection === 'features') {
@@ -1626,50 +1553,39 @@ export function attachAdminSectionHandlers(section) {
   if (normalizedSection === 'messages') {
     const form = document.getElementById('message-composer');
     if (form) {
-      form.addEventListener('submit', (event) => {
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const state = getAdminState();
         const data = new FormData(form);
         const recipientType = data.get('recipientType')?.toString() || 'one-school';
         const selector = form.querySelector('select[name="schoolSelector"]');
         const selectedSchools = Array.from((selector || form.querySelector('select[name="schoolIds"]') || form).querySelectorAll('option:checked')).map((option) => option.value).filter(Boolean).filter((value) => value !== 'all-schools');
         const schoolIds = recipientType === 'all-schools' ? getSchoolDirectoryFromState().map((school) => String(school.schoolId || school.id || school.name || '')).filter(Boolean) : selectedSchools;
-        const message = {
-          id: `message-${Date.now()}`,
-          sender: 'Super Admin',
-          recipientType,
-          recipientSchoolIds: schoolIds,
-          schoolIds,
-          recipients: schoolIds.length ? schoolIds.join(', ') : 'No recipient selected',
-          subject: data.get('subject')?.toString().trim() || 'Untitled message',
-          body: data.get('body')?.toString().trim() || '',
-          priority: data.get('priority')?.toString() || 'Normal',
-          createdAt: new Date().toISOString(),
-          read: false,
-          status: 'unread',
-          readBy: [],
-        };
-        state.messages.unshift(message);
-        const notification = {
-          id: `notification-message-${Date.now()}`,
-          title: 'Super Admin message sent',
-          message: `${message.subject} — ${message.priority} priority`,
-          type: 'message',
-          read: false,
-          createdAt: message.createdAt,
-          targetSchoolIds: schoolIds,
-          sender: 'Super Admin',
-          priority: message.priority.toLowerCase(),
-          status: 'active',
-        };
-        recordNotification(notification);
-        saveAdminState(state);
-        appendAuditLog('Sent platform message', `To ${schoolIds.length ? schoolIds.join(', ') : 'no recipient'}: ${message.subject}`, { targetSchoolIds: schoolIds, priority: message.priority, recipientType });
+        const subject = data.get('subject')?.toString().trim() || 'Untitled message';
+        const body = data.get('body')?.toString().trim() || '';
+        const token = localStorage.getItem('globyedu_accessToken');
+        const sends = await Promise.all(schoolIds.map(async (schoolId) => {
+          const recipientsResult = await fetchMessageRecipients(token, schoolId);
+          const authority = recipientsResult.ok && Array.isArray(recipientsResult.data?.recipients)
+            ? recipientsResult.data.recipients.find((recipient) => ['school_authority', 'school_head'].includes(String(recipient.role || '').toLowerCase()))
+            : null;
+          if (!authority) return false;
+          const result = await createWorkspaceMessage(token, schoolId, {
+            recipientId: authority.id,
+            subject,
+            body,
+            metadata: { priority: data.get('priority')?.toString() || 'Normal', platformMessage: true },
+          });
+          return result.ok && result.data?.status === 'ok';
+        }));
+        const deliveredCount = sends.filter(Boolean).length;
         const status = form.querySelector('[data-message-status]');
         if (status) {
-          status.textContent = 'Message delivered and recorded.';
+          status.textContent = deliveredCount === schoolIds.length
+            ? 'Message delivered and recorded.'
+            : `Message delivered to ${deliveredCount} of ${schoolIds.length} selected schools.`;
           status.classList.remove('hidden');
         }
+        appendAuditLog('Sent platform message', `To ${schoolIds.length ? schoolIds.join(', ') : 'no recipient'}: ${subject}`, { targetSchoolIds: schoolIds, recipientType });
         form.reset();
       });
     }
@@ -1980,6 +1896,29 @@ export function attachAdminSectionHandlers(section) {
     const token = getAccessToken ? getAccessToken() : localStorage.getItem('globyedu_accessToken');
     attachSchoolManagementHandlers(token);
   }
+
+  if (normalizedSection === 'analytics') {
+    document.querySelectorAll('[data-analytics-days]').forEach((button) => {
+      button.addEventListener('click', () => { location.hash = `#/admin/analytics?days=${button.getAttribute('data-analytics-days')}`; });
+    });
+  }
+
+  if (normalizedSection === 'audit-logs') {
+    const filters = ['role', 'school', 'action', 'success'].map((name) => document.getElementById(`audit-${name}-filter`));
+    const entries = Array.from(document.querySelectorAll('.audit-log-entry'));
+    const applyAuditFilters = () => {
+      const [roleFilter, schoolFilter, actionFilter, successFilter] = filters.map((input) => String(input?.value || '').trim().toLowerCase());
+      entries.forEach((entry) => {
+        const matches = (!roleFilter || entry.dataset.auditRole.toLowerCase() === roleFilter)
+          && (!schoolFilter || entry.dataset.auditSchool.toLowerCase().includes(schoolFilter))
+          && (!actionFilter || entry.dataset.auditAction.toLowerCase().includes(actionFilter))
+          && (!successFilter || entry.dataset.auditSuccess === successFilter);
+        entry.classList.toggle('hidden', !matches);
+      });
+    };
+    filters.forEach((input) => input?.addEventListener('input', applyAuditFilters));
+    filters.forEach((input) => input?.addEventListener('change', applyAuditFilters));
+  }
 }
 
 // Helper function to fetch schools from API
@@ -2075,7 +2014,8 @@ function attachSchoolManagementHandlers(token) {
 
       if (action === 'view') {
         // Fetch school details and show details modal
-        const school = await fetchSchoolDetails(token, schoolId);
+        const schoolResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school : null;
         if (school && detailsModal) {
           document.getElementById('school-details-content').innerHTML = renderSchoolDetailsModal(school);
           detailsModal.classList.remove('hidden');
@@ -2117,8 +2057,8 @@ function attachSchoolManagementHandlers(token) {
           await activateSchool(token, schoolId, messageDiv);
         }
       } else if (action === 'delete') {
-        // Delete school
-        if (confirm('Are you sure? This action cannot be undone. All school data will be permanently deleted.')) {
+        // The API performs a reversible soft suspension rather than physical deletion.
+        if (confirm('Suspend this school? Its data will be retained and the school can be activated again later.')) {
           await deleteSchool(token, schoolId, messageDiv);
         }
       } else if (action === 'close-modal') {
@@ -2411,7 +2351,7 @@ async function activateSchool(token, schoolId, messageDiv) {
   }
 }
 
-// Delete school
+// Soft-suspend school
 async function deleteSchool(token, schoolId, messageDiv) {
   try {
     const response = await fetch(`/api/v1/schools/${schoolId}`, {
@@ -2422,11 +2362,11 @@ async function deleteSchool(token, schoolId, messageDiv) {
       }
     });
 
-    if (!response.ok) throw new Error('Failed to delete school');
+    if (!response.ok) throw new Error('Failed to suspend school');
 
-    appendAuditLog('Deleted school', schoolId);
+    appendAuditLog('Suspended school', schoolId);
     if (messageDiv) {
-      messageDiv.textContent = '✓ School deleted successfully';
+      messageDiv.textContent = '✓ School suspended successfully. Its data was retained.';
       messageDiv.classList.remove('hidden');
     }
 
@@ -2549,7 +2489,8 @@ function renderAnalytics(summary = {}, schools = []) {
       <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Analytics</p>
         <h2 class="mt-2 text-2xl font-semibold text-slate-900">Live operational analytics</h2>
-        <p class="mt-3 text-slate-600">Review adoption, usage trends, and engagement with dynamic dashboard cards.</p>
+        <p class="mt-3 text-slate-600">Review growth and subscription activity from real tenant records.</p>
+        <div class="mt-4 flex flex-wrap gap-2">${[7, 30, 90, 365].map((days) => `<button type="button" data-analytics-days="${days}" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">${days === 365 ? '1 year' : `${days} days`}</button>`).join('')}</div>
         <div class="mt-6 grid gap-4 md:grid-cols-3 xl:grid-cols-4">
           ${renderMiniStat('Total Students', totalStudents.toLocaleString(), '📈')}
           ${renderMiniStat('Total Teachers', totalTeachers.toLocaleString(), '👨‍🏫')}
@@ -2560,17 +2501,29 @@ function renderAnalytics(summary = {}, schools = []) {
           ${renderMiniStat('Active Subscriptions', activeSubscriptions.toLocaleString(), '💳')}
         </div>
       </div>
+      <div class="grid gap-6 lg:grid-cols-3">
+        ${renderAnalyticsSeries('School growth', summary.analytics?.schoolGrowth)}
+        ${renderAnalyticsSeries('Student growth', summary.analytics?.studentGrowth)}
+        ${renderAnalyticsSeries('Teacher growth', summary.analytics?.teacherGrowth)}
+      </div>
       <div class="rounded-[2rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
-        ${renderChartPlaceholder('analytics-chart')}
+        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Subscription activity</p>
+        <div class="mt-4 grid gap-3 sm:grid-cols-4">${(summary.analytics?.subscriptionActivity || []).map((item) => renderMiniStat(item.status, item.count.toLocaleString(), '•')).join('')}</div>
       </div>
     </section>
   `;
 }
 
+function renderAnalyticsSeries(label, series = []) {
+  const values = Array.isArray(series) ? series : [];
+  const max = Math.max(1, ...values.map((item) => Number(item.count || 0)));
+  return `<div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><p class="text-sm uppercase tracking-[0.3em] text-slate-500">${label}</p>${values.length ? `<div class="mt-5 flex h-40 items-end gap-2">${values.map((item) => `<div class="flex min-w-0 flex-1 flex-col items-center gap-2"><div class="w-full rounded-t-lg bg-sky-500" style="height:${Math.max(6, (Number(item.count || 0) / max) * 100)}%" title="${item.date}: ${item.count}"></div><span class="truncate text-[10px] text-slate-500">${item.date.slice(5)}</span></div>`).join('')}</div>` : '<p class="mt-5 text-sm text-slate-500">No dated records in this period.</p>'}</div>`;
+}
+
 function renderReports(summary = {}, schools = []) {
   const totalSchools = summary.totalSchools || 0;
   const totalStudents = summary.totalStudents || 0;
-  const revenue = summary.revenue || '$0';
+  const revenue = summary.revenue || 'Not available';
   const schoolReports = schools.flatMap((school) => (Array.isArray(school.reports) ? school.reports.map((report) => ({ ...report, schoolName: school.name || school.schoolName || school.schoolId })) : []));
   return `
     <section class="space-y-6">
@@ -2588,7 +2541,7 @@ function renderReports(summary = {}, schools = []) {
           </div>
           <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
             <p class="font-semibold text-slate-900">Platform Revenue</p>
-            <p class="mt-2 text-sm text-slate-600">Estimated revenue: ${revenue}.</p>
+            <p class="mt-2 text-sm text-slate-600">${revenue === 'Not available' ? 'No reliable platform revenue ledger is configured.' : `Recorded revenue: ${revenue}.`}</p>
           </div>
         </div>
         <div class="mt-6 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
@@ -3087,22 +3040,22 @@ function restoreLatestBackup() {
   return { success: true, backupId: backup.id, restored: nextState };
 }
 
-function renderAuditLogs() {
+function renderAuditLogs(auditLogs = []) {
   const state = getAdminState();
-  const logs = (state.auditLogs || []).map((entry) => {
-    const details = entry.details || 'No additional details provided.';
+  const logs = (auditLogs.length ? auditLogs : state.auditLogs || []).map((entry) => {
+    const details = entry.details || entry.metadata?.detail || `${entry.resourceType || 'Platform'} ${entry.resourceId || ''}`.trim() || 'No additional details provided.';
     const metadata = entry.metadata || {};
     const metadataHtml = metadata && Object.keys(metadata).length
       ? `<div class="mt-3 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">${Object.entries(metadata).map(([key, value]) => `<div><span class="font-medium">${key}:</span> ${typeof value === 'string' ? maskAuditValue(value) : JSON.stringify(value)}</div>`).join('')}</div>`
       : '';
     return `
-      <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+      <div class="audit-log-entry rounded-[1.5rem] border border-slate-200 bg-white p-4" data-audit-role="${entry.actorRole || metadata.actorRole || ''}" data-audit-action="${entry.action || ''}" data-audit-success="${entry.success === false ? 'false' : 'true'}" data-audit-school="${entry.tenantId || metadata.tenantId || ''}">
         <div class="flex items-center justify-between gap-2">
-          <p class="font-semibold text-slate-900">${entry.action}</p>
-          <span class="text-sm text-slate-500">${new Date(entry.timestamp).toLocaleString()}</span>
+          <p class="font-semibold text-slate-900">${entry.action || 'Platform action'}</p>
+          <span class="text-sm text-slate-500">${entry.createdAt || entry.timestamp ? new Date(entry.createdAt || entry.timestamp).toLocaleString() : '—'}</span>
         </div>
         <p class="mt-2 text-sm text-slate-600">${details}</p>
-        <div class="mt-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">Actor: ${metadata.actor || entry.actor || 'System'} • Role: ${metadata.actorRole || entry.actorRole || 'system'} • Result: ${metadata.resultStatus || entry.resultStatus || 'success'}</div>
+        <div class="mt-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">Actor: ${metadata.actor || entry.actorId || entry.actor || 'System'} • Role: ${metadata.actorRole || entry.actorRole || 'system'} • School: ${entry.tenantId || metadata.tenantId || 'platform'} • Result: ${entry.success === false ? 'failure' : (metadata.resultStatus || entry.resultStatus || 'success')}</div>
         ${metadataHtml}
       </div>
     `;
@@ -3111,8 +3064,9 @@ function renderAuditLogs() {
   return `
     <section class="space-y-6">
       <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Audit Logs</p>
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Audit Logs</p>
         <h2 class="mt-2 text-2xl font-semibold text-slate-900">Review recent platform actions</h2>
+        <div class="mt-4 grid gap-3 sm:grid-cols-4"><select id="audit-role-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"><option value="">All roles</option><option>super_admin</option><option>school_authority</option><option>teacher</option><option>student</option></select><input id="audit-school-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" placeholder="School ID filter" /><input id="audit-action-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" placeholder="Action filter" /><select id="audit-success-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"><option value="">All results</option><option value="true">Success</option><option value="false">Failure</option></select></div>
         <div class="mt-6 grid gap-4">${logs || '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-600">No audit activity yet.</div>'}</div>
       </div>
     </section>
@@ -3312,11 +3266,10 @@ function renderPayments() {
   `;
 }
 
-function renderPricingManagement() {
-  const state = getAdminState();
-  const plans = Array.isArray(state.pricingPlans) ? state.pricingPlans.slice().sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)) : [];
-  const activePlans = plans.filter((plan) => plan.enabled).length;
-  const recommended = plans.find((plan) => plan.recommendedBadge) || plans[0] || null;
+function renderPricingManagement(pricingPlans = []) {
+  const plans = Array.isArray(pricingPlans) ? pricingPlans.slice().sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)) : [];
+  const activePlans = plans.filter((plan) => plan.active).length;
+  const recommended = plans[0] || null;
 
   const planForms = plans.length
     ? plans.map((plan) => renderPricingPlanForm(plan)).join('')
@@ -3335,7 +3288,6 @@ function renderPricingManagement() {
             <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage pricing plans</h2>
             <p class="mt-3 text-slate-600">Define plans, pricing, and feature bundles that are used on the public pricing page.</p>
           </div>
-          <button id="add-pricing-plan" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Add plan</button>
         </div>
         <div class="mt-6 grid gap-4 sm:grid-cols-2">
           <div class="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
@@ -3358,9 +3310,8 @@ function renderPricingManagement() {
 }
 
 function renderPricingPlanForm(plan) {
-  const features = plan.features || {};
   return `
-    <form class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm" data-pricing-plan-form="${plan.id}">
+    <form class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm" data-pricing-plan-form="${plan.id}" data-pricing-plan='${JSON.stringify(plan).replace(/'/g, '&#39;')}'>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="text-lg font-semibold text-slate-900">${plan.name}</p>
@@ -3368,10 +3319,7 @@ function renderPricingPlanForm(plan) {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <label class="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" name="enabled" ${plan.enabled ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Enabled
-          </label>
-          <label class="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" name="recommendedBadge" ${plan.recommendedBadge ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Recommended
+            <input type="checkbox" name="active" ${plan.active ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Active
           </label>
         </div>
       </div>
@@ -3380,46 +3328,26 @@ function renderPricingPlanForm(plan) {
         <label class="text-sm text-slate-700">Plan name
           <input name="name" value="${plan.name || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
         </label>
+        <label class="text-sm text-slate-700">Student limit
+          <input type="number" min="1" name="studentLimit" value="${plan.studentLimit || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
         <label class="text-sm text-slate-700">Monthly price
-          <input name="monthlyPrice" value="${plan.monthlyPrice || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          <input type="number" min="0" name="monthlyAmount" value="${plan.monthlyAmount || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
         </label>
         <label class="text-sm text-slate-700">Yearly price
-          <input name="yearlyPrice" value="${plan.yearlyPrice || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          <input type="number" min="0" name="yearlyAmount" value="${plan.yearlyAmount || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
         </label>
         <label class="text-sm text-slate-700">Currency
           <input name="currency" value="${plan.currency || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
         </label>
-        <label class="text-sm text-slate-700">Billing cycle
-          <select name="billingCycle" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-            <option value="monthly" ${plan.billingCycle === 'monthly' ? 'selected' : ''}>Monthly</option>
-            <option value="yearly" ${plan.billingCycle === 'yearly' ? 'selected' : ''}>Yearly</option>
-          </select>
-        </label>
-        <label class="text-sm text-slate-700">Free trial days
-          <input type="number" min="0" name="freeTrialDays" value="${plan.freeTrialDays || 0}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-        </label>
         <label class="text-sm text-slate-700">Display order
           <input type="number" min="0" name="displayOrder" value="${plan.displayOrder || 0}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-        </label>
-        <label class="text-sm text-slate-700">Support level
-          <input name="supportLevel" value="${plan.supportLevel || ''}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
         </label>
       </div>
 
       <label class="mt-4 block text-sm text-slate-700">Short description
         <textarea name="shortDescription" rows="3" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">${plan.shortDescription || ''}</textarea>
       </label>
-
-      <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        ${renderPricingFeatureToggle('Student Management', 'studentManagement', features.studentManagement)}
-        ${renderPricingFeatureToggle('Teacher Management', 'teacherManagement', features.teacherManagement)}
-        ${renderPricingFeatureToggle('Attendance', 'attendance', features.attendance)}
-        ${renderPricingFeatureToggle('Finance', 'finance', features.finance)}
-        ${renderPricingFeatureToggle('Messaging', 'messaging', features.messaging)}
-        ${renderPricingFeatureToggle('Reports', 'reports', features.reports)}
-        ${renderPricingFeatureToggle('School Assistant', 'aiAssistant', features.aiAssistant)}
-        ${renderPricingFeatureToggle('Library', 'library', features.library)}
-      </div>
 
       <div class="mt-4 flex flex-wrap items-center gap-3">
         <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save plan</button>

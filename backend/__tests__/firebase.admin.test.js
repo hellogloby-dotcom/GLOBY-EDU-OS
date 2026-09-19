@@ -17,7 +17,16 @@ describe('firebase admin ADC configuration', () => {
   beforeEach(() => {
     delete process.env.FIREBASE_CLIENT_EMAIL;
     delete process.env.FIREBASE_PRIVATE_KEY;
+    delete process.env.DATA_STORE_MODE;
     process.env.FIREBASE_PROJECT_ID = 'demo-project';
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    delete process.env.FIREBASE_PROJECT_ID;
+    delete process.env.DATA_STORE_MODE;
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+    delete process.env.FIREBASE_PRIVATE_KEY;
     jest.clearAllMocks();
   });
 

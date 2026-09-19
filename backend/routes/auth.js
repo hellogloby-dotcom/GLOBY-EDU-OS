@@ -154,12 +154,21 @@ ensureDevelopmentAccounts().catch((error) => {
 });
 
 async function verifyPassword(storedUser, candidatePassword) {
-  if (storedUser.passwordHash) {
-    return bcrypt.compare(candidatePassword, storedUser.passwordHash);
+  if (!storedUser || !candidatePassword) return false;
+
+  const candidates = [];
+  if (storedUser.studentPasswordHash) candidates.push(storedUser.studentPasswordHash);
+  if (storedUser.passwordHash) candidates.push(storedUser.passwordHash);
+
+  for (const hash of candidates) {
+    try {
+      const matched = await bcrypt.compare(candidatePassword, hash);
+      if (matched) return true;
+    } catch (error) {
+      // Ignore invalid hash entries and continue checking any remaining candidates.
+    }
   }
-  if (storedUser.studentPasswordHash) {
-    return bcrypt.compare(candidatePassword, storedUser.studentPasswordHash);
-  }
+
   return false;
 }
 

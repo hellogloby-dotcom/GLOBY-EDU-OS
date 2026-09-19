@@ -59,6 +59,10 @@ async function firebaseSignInWithGoogle() {
   return signInWithPopup(auth, provider);
 }
 
+async function firebaseLinkGoogle() {
+  return firebaseSignInWithGoogle();
+}
+
 async function firebaseCreateUserWithEmail(email, password) {
   const { auth, createUserWithEmailAndPassword } = await loadFirebaseModules();
   return createUserWithEmailAndPassword(auth, email, password);
@@ -96,6 +100,7 @@ export {
   isFirebaseConfigured,
   firebaseSignInWithEmail,
   firebaseSignInWithGoogle,
+  firebaseLinkGoogle,
   firebaseSendPasswordResetEmail,
   firebaseApplyActionCode,
   firebaseConfirmPasswordReset,

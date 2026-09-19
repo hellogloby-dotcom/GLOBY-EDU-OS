@@ -1,0 +1,4 @@
+PAYSTACK_PUBLIC_KEY=pk_test_xxxxx
+PAYSTACK_SECRET_KEY=sk_test_xxxxx
+PAYSTACK_WEBHOOK_SECRET=whsec_xxxxx
+PAYSTACK_CALLBACK_URL=https://your-domain.com/paystack/callback

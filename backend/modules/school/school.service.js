@@ -5,6 +5,9 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const prisma = require('../../config/prisma.client');
 const config = require('../../config/auth.config');
+const firebaseCore = require('../../firebase.core');
+const { listPricingPlans } = require('../pricing/pricing.service');
+const { generateSchoolSubdomain } = require('./tenant-hostname');
 const {
   loadSchoolData,
   saveSchoolData,
@@ -267,7 +270,7 @@ function resolveSchoolLifecycleStatus(school = {}) {
     return normalized;
   }
 
-  if (hasExpiredTrial) {
+  if (hasExpiredTrial && normalized.developmentOnly !== true) {
     normalized.schoolStatus = 'suspended';
     normalized.subscriptionStatus = 'expired';
     normalized.trialStatus = normalized.trialStatus || 'Expired';
@@ -419,6 +422,10 @@ function mapUserEntity(user, roleName) {
 }
 
 async function createSchool(data) {
+  if (firebaseCore.isFirebaseCoreMode()) {
+    return createSchoolFirebase(data);
+  }
+
   if (prisma && prisma.__stub) {
     return createSchoolFallback(data);
   }
@@ -428,6 +435,7 @@ async function createSchool(data) {
   }
 
   const schoolId = data.schoolId || `school-${createSchoolId(data.name)}`;
+  const subdomain = data.subdomain || generateSchoolSubdomain(data.name, await prisma.tenant.findMany({ select: { subdomain: true } }).catch(() => []));
   const now = new Date();
   const headEmail = (data.headEmail || `head@${schoolId}.globyedu.com`).toLowerCase();
   const headPassword = data.headPassword || `Head@${Math.random().toString(36).slice(2, 8)}`;
@@ -436,6 +444,7 @@ async function createSchool(data) {
 
   const payload = {
     schoolId,
+    subdomain,
     name: data.name,
     country: data.country || null,
     timezone: data.timezone || null,
@@ -511,6 +520,62 @@ async function createSchool(data) {
   return { ...tenant, headAccount };
 }
 
+async function createSchoolFirebase(data) {
+  if (!data || !data.name) throw new Error('School name is required');
+
+  const schoolId = data.schoolId || `school-${createSchoolId(data.name)}`;
+  const school = await firebaseCore.getTenant(schoolId);
+  if (school) throw new Error('A school with that ID already exists');
+
+  const now = new Date().toISOString();
+  const trialEndsAt = data.trialEndsAt || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+  const subdomain = data.subdomain || generateSchoolSubdomain(data.name, []);
+  const headEmail = String(data.headEmail || `head@${schoolId}.globyedu.com`).trim().toLowerCase();
+  const headPassword = data.headPassword || `Head@${Math.random().toString(36).slice(2, 8)}`;
+  const headFullName = data.headFullName || 'School Head';
+  const tenant = await firebaseCore.saveTenant(schoolId, {
+    id: schoolId,
+    name: data.name,
+    subdomain,
+    email: data.email || headEmail,
+    headName: headFullName,
+    headEmail,
+    description: data.description || `Tenant school created by ${data.name}`,
+    country: data.country || null,
+    region: data.region || null,
+    city: data.city || null,
+    address: data.address || null,
+    phone: data.phone || null,
+    branding: data.branding || null,
+    subscriptionPlan: data.subscriptionPlan || '5-Day Trial',
+    subscriptionStatus: data.subscriptionStatus || 'trial',
+    trialEndsAt,
+    expiresAt: data.expiresAt || trialEndsAt,
+    schoolStatus: data.schoolStatus || 'active',
+    status: data.schoolStatus || 'active',
+    createdAt: now,
+  }, false);
+
+  const passwordHash = await bcrypt.hash(headPassword, config.bcrypt.saltRounds);
+  await firebaseCore.saveById('users', `${schoolId}:${headEmail}`, {
+    schoolId,
+    tenantId: schoolId,
+    username: headEmail,
+    email: headEmail,
+    fullName: headFullName,
+    role: 'school_head',
+    status: 'active',
+    passwordHash,
+    passwordNeedsReset: !data.headPassword,
+    createdAt: now,
+  }, false);
+  await firebaseCore.saveById('roles', `${schoolId}:school_head`, { schoolId, name: 'school_head', permissions: ['school.manage', 'classes.manage', 'users.manage'] }, true);
+  await firebaseCore.saveById('classes', `${schoolId}:class-01`, { schoolId, classId: 'class-01', name: 'Form 1', grade: data.defaultClassGrade || 'Grade 10', status: 'active', students: [] }, false);
+  await firebaseCore.saveById('enrollments', `${schoolId}:${headEmail}`, { schoolId, userId: `${schoolId}:${headEmail}`, role: 'school_head', status: 'active', createdAt: now }, false);
+
+  return { ...tenant, headAccount: { username: headEmail, password: headPassword } };
+}
+
 async function createSchoolFallback(data) {
   if (!data || !data.name) {
     throw new Error('School name is required');
@@ -518,10 +583,11 @@ async function createSchoolFallback(data) {
 
   const schools = loadSchoolData();
   const schoolId = data.schoolId || createSchoolId(data.name, schools);
+  const subdomain = data.subdomain || generateSchoolSubdomain(data.name, schools);
   const lowerName = data.name.trim().toLowerCase();
   const existing = schools.find(
     (school) =>
-      school.schoolId === schoolId || school.name.toLowerCase() === lowerName
+      school.schoolId === schoolId || school.name.toLowerCase() === lowerName || school.subdomain === subdomain
   );
   if (existing) {
     throw new Error('A school with that name or ID already exists');
@@ -536,6 +602,7 @@ async function createSchoolFallback(data) {
   const newSchool = {
     id: schoolId,
     schoolId,
+    subdomain,
     name: data.name,
     headName: headFullName,
     headEmail,
@@ -614,6 +681,11 @@ async function getSchoolById(id) {
 }
 
 async function getSchoolBySchoolId(schoolId) {
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const school = await firebaseCore.getSchoolAggregate(schoolId);
+    return school ? resolveSchoolLifecycleStatus(school) : null;
+  }
+
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = schools.find((entry) => entry.schoolId === schoolId);
@@ -672,6 +744,16 @@ function sanitizeTeacherRecord(record = {}) {
 function sanitizeStudentRecord(record = {}) {
   const { passwordHash, studentPasswordHash, password, ...safeRecord } = record;
   return safeRecord;
+}
+
+function sanitizeSchoolResponse(school = {}) {
+  const { users, teachers, students, ...safeSchool } = school;
+  return {
+    ...safeSchool,
+    users: Array.isArray(users) ? users.map(sanitizeTeacherRecord) : [],
+    teachers: Array.isArray(teachers) ? teachers.map(sanitizeTeacherRecord) : [],
+    students: Array.isArray(students) ? students.map(sanitizeStudentRecord) : [],
+  };
 }
 
 function getStudentSchoolView(school, user = {}) {
@@ -776,14 +858,92 @@ function getStudentSchoolView(school, user = {}) {
     examResults,
     announcements,
     messages,
-    payments: [],
+    payments,
     fees: payments,
     financeCategories: [],
     invoices: [],
-    receipts: [],
+    receipts: (Array.isArray(school.receipts) ? school.receipts : []).filter((receipt) => payments.some((payment) => payment.receiptNumber === receipt.receiptNumber || payment.id === receipt.paymentId)),
     refunds: [],
     reports: [],
   };
+}
+
+function nextFinanceReference(items, prefix) {
+  const year = new Date().getFullYear();
+  const pattern = new RegExp(`^${prefix}-${year}-(\\d{6})$`);
+  const next = (Array.isArray(items) ? items : []).reduce((highest, item) => {
+    const match = String(item?.receiptNumber || item?.id || '').match(pattern);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0) + 1;
+  return `${prefix}-${year}-${String(next).padStart(6, '0')}`;
+}
+
+async function createFeePayment(schoolId, input = {}, actor = {}) {
+  if (!['school_head', 'school_authority', 'super_admin'].some((role) => (actor.roles || []).includes(role))) {
+    throw new Error('You do not have permission to record fee payments.');
+  }
+  const school = await getSchoolBySchoolId(schoolId);
+  if (!school) throw new Error('School not found');
+  const requestedStudentId = String(input.studentId || '').trim().toLowerCase();
+  const student = (Array.isArray(school.students) ? school.students : []).find((entry) => [entry.studentId, entry.id, entry.email].some((value) => String(value || '').trim().toLowerCase() === requestedStudentId));
+  if (!student) throw new Error('A valid student from this school is required.');
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment amount must be greater than zero.');
+  const paymentDate = input.paymentDate ? new Date(input.paymentDate) : new Date();
+  if (Number.isNaN(paymentDate.getTime())) throw new Error('Payment date is invalid.');
+  const status = String(input.status || 'received').trim().toLowerCase();
+  if (!new Set(['received', 'paid', 'complete', 'completed']).has(status)) throw new Error('Only successful payments can generate a receipt.');
+
+  const payments = Array.isArray(school.payments) ? school.payments : [];
+  const receipts = Array.isArray(school.receipts) ? school.receipts : [];
+  const receiptNumber = nextFinanceReference(receipts, 'RCPT');
+  const paymentId = nextFinanceReference(payments, 'PMT');
+  const academicYear = input.academicYear || school.academicYear || school.settings?.academicYear || null;
+  const term = input.term || school.currentTerm || school.settings?.term || null;
+  const payment = {
+    id: paymentId,
+    schoolId,
+    studentId: student.studentId || student.id || student.email,
+    studentName: student.fullName || student.name || student.email,
+    classId: student.classId || null,
+    className: student.className || student.gradeLevel || student.grade || null,
+    feeType: input.feeType || input.category || null,
+    amount,
+    paymentDate: paymentDate.toISOString(),
+    paidAt: paymentDate.toISOString(),
+    method: input.method || input.paymentMethod || null,
+    reference: input.reference || null,
+    academicYear,
+    term,
+    status,
+    receiptNumber,
+    note: input.note || '',
+    recordedBy: actor.userId || null,
+    createdAt: new Date().toISOString(),
+  };
+  const receipt = {
+    receiptNumber,
+    paymentId,
+    schoolId,
+    studentId: payment.studentId,
+    student: payment.studentName,
+    studentName: payment.studentName,
+    className: payment.className,
+    feeType: payment.feeType,
+    amount,
+    currency: school.currency || school.branding?.currency || school.settings?.currency || 'USD',
+    paymentMethod: payment.method,
+    paymentDate: payment.paymentDate,
+    paidAt: payment.paidAt,
+    academicYear,
+    term,
+    reference: payment.reference,
+    status,
+    authorizedBy: actor.userId || null,
+    createdAt: payment.createdAt,
+  };
+  const updated = await updateSchool(school.id, { payments: [...payments, payment], receipts: [...receipts, receipt] });
+  return { payment, receipt, school: sanitizeSchoolResponse(updated) };
 }
 
 function getTeacherSchoolView(school, user = {}) {
@@ -916,6 +1076,17 @@ async function updateSchool(id, updates) {
         ...(motto !== undefined ? { motto } : {}),
       }
     : undefined;
+
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const school = await firebaseCore.getTenant(id);
+    if (!school) throw new Error('School not found');
+    const updated = await firebaseCore.saveTenant(id, {
+      ...tenantUpdates,
+      ...(branding ? { branding } : {}),
+      schoolId: id,
+    });
+    return resolveSchoolLifecycleStatus({ ...school, ...updated });
+  }
 
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
@@ -1062,9 +1233,12 @@ async function activateSchool(id) {
     const updated = {
       ...school,
       schoolStatus: 'active',
+      status: 'active',
       subscriptionStatus: school.subscriptionStatus === 'expired' || school.subscriptionStatus === 'suspended' ? 'trial' : school.subscriptionStatus || 'active',
       trialStatus: school.subscriptionStatus === 'expired' ? '5-Day Trial' : school.trialStatus || 'Active',
-      trialEndsAt: school.trialEndsAt || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      trialEndsAt: school.trialEndsAt && new Date(school.trialEndsAt).getTime() > Date.now()
+        ? school.trialEndsAt
+        : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       id: school.id || school.schoolId,
     };
     schools[index] = updated;
@@ -1080,7 +1254,7 @@ async function activateSchool(id) {
 
 async function listSchools(search) {
   if (prisma && prisma.__stub) {
-    const schools = loadSchoolData().map((school) => resolveSchoolLifecycleStatus(school));
+    const schools = loadSchoolData().map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
     if (!search) return schools;
     const searchLower = search.toLowerCase();
     return schools.filter(
@@ -1094,7 +1268,7 @@ async function listSchools(search) {
   if (search) {
     const searchLower = search.toLowerCase();
     const tenants = await prisma.tenant.findMany();
-    return tenants.map((tenant) => resolveSchoolLifecycleStatus(tenant)).filter(
+    return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant))).filter(
       (tenant) =>
         (tenant.name || '').toLowerCase().includes(searchLower) ||
         (tenant.schoolId || '').toLowerCase().includes(searchLower) ||
@@ -1102,36 +1276,63 @@ async function listSchools(search) {
     );
   }
 
-  return (await prisma.tenant.findMany()).map((tenant) => resolveSchoolLifecycleStatus(tenant));
+  return (await prisma.tenant.findMany()).map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
 }
 
-async function getPlatformSummary() {
+function countSchoolUsers(school, role) {
+  if (Array.isArray(school.students) && role === 'student') return school.students.filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived').length;
+  if (Array.isArray(school.teachers) && role === 'teacher') return school.teachers.filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived').length;
+  return (Array.isArray(school.users) ? school.users : []).filter((user) => {
+    const matchesRole = String(user.role || '').toLowerCase() === role || (Array.isArray(user.roles) && user.roles.some((entry) => String(entry.role?.name || entry.name || '').toLowerCase() === role));
+    return matchesRole && String(user.status || 'active').toLowerCase() !== 'archived';
+  }).length;
+}
+
+function buildGrowthSeries(items, days, dateField = 'createdAt') {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const buckets = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const date = new Date(item?.[dateField] || item?.created_at || '');
+    if (Number.isNaN(date.getTime()) || date.getTime() < cutoff) return;
+    const key = date.toISOString().slice(0, 10);
+    buckets.set(key, (buckets.get(key) || 0) + 1);
+  });
+  return Array.from(buckets.entries()).sort(([left], [right]) => left.localeCompare(right)).map(([date, count]) => ({ date, count }));
+}
+
+function buildPlatformAnalytics(schools, days) {
+  const schoolEntities = schools.map((school) => ({ ...school, createdAt: school.createdAt }));
+  const students = schools.flatMap((school) => Array.isArray(school.students) ? school.students : (school.users || []).filter((user) => String(user.role || '').toLowerCase() === 'student' || user.roles?.some((entry) => String(entry.role?.name || entry.name || '').toLowerCase() === 'student')));
+  const teachers = schools.flatMap((school) => Array.isArray(school.teachers) ? school.teachers : (school.users || []).filter((user) => String(user.role || '').toLowerCase() === 'teacher' || user.roles?.some((entry) => String(entry.role?.name || entry.name || '').toLowerCase() === 'teacher')));
+  return {
+    days,
+    schoolGrowth: buildGrowthSeries(schoolEntities, days),
+    studentGrowth: buildGrowthSeries(students, days),
+    teacherGrowth: buildGrowthSeries(teachers, days),
+    subscriptionActivity: ['trial', 'active', 'suspended', 'expired'].map((status) => ({
+      status,
+      count: schools.filter((school) => String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase() === status).length,
+    })),
+    revenue: null,
+    revenueCurrency: null,
+  };
+}
+
+async function getPlatformSummary({ days = 365 } = {}) {
+  const analyticsDays = [7, 30, 90, 365].includes(Number(days)) ? Number(days) : 365;
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData().map((school) => resolveSchoolLifecycleStatus(school));
     const totalSchools = schools.length;
-    const activeSchools = schools.filter(
-      (school) =>
-        (school.subscriptionStatus || school.schoolStatus || '').toLowerCase() === 'active'
-    ).length;
+    const activeSchools = schools.filter((school) => ['active', 'paid'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
     const trialSchools = schools.filter(
       (school) =>
         (school.subscriptionStatus || '').toLowerCase() === 'trial' ||
         (school.schoolStatus || '').toLowerCase() === 'trial'
     ).length;
-    const expiredSchools = schools.filter(
-      (school) =>
-        (school.subscriptionStatus || school.schoolStatus || '').toLowerCase() === 'expired'
-    ).length;
-    const totalStudents = schools.reduce(
-      (sum, school) =>
-        sum + ((school.users || []).filter((user) => user.role === 'student').length || 0),
-      0
-    );
-    const totalTeachers = schools.reduce(
-      (sum, school) =>
-        sum + ((school.users || []).filter((user) => user.role === 'teacher').length || 0),
-      0
-    );
+    const expiredSchools = schools.filter((school) => ['expired', 'inactive', 'blocked'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
+    const suspendedSchools = schools.filter((school) => ['suspended', 'inactive', 'blocked'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
+    const totalStudents = schools.reduce((sum, school) => sum + countSchoolUsers(school, 'student'), 0);
+    const totalTeachers = schools.reduce((sum, school) => sum + countSchoolUsers(school, 'teacher'), 0);
     const schoolSummaries = schools.map((school) => ({
       schoolId: school.schoolId,
       name: school.name,
@@ -1139,6 +1340,9 @@ async function getPlatformSummary() {
       subscriptionStatus: school.subscriptionStatus,
       schoolStatus: school.schoolStatus,
       userCount: (school.users || []).length,
+      studentCount: countSchoolUsers(school, 'student'),
+      teacherCount: countSchoolUsers(school, 'teacher'),
+      createdAt: school.createdAt || null,
       reports: Array.isArray(school.reports) ? school.reports : [],
     }));
 
@@ -1149,26 +1353,21 @@ async function getPlatformSummary() {
       expiredSchools,
       totalStudents,
       totalTeachers,
-      revenue: '$0',
-      platformHealth: 'Healthy',
-      aiUsage: 'Stable',
-      healthScore: 96,
-      aiUsageScore: 84,
+      suspendedSchools,
+      activeSubscriptions: schools.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || '').toLowerCase())).length,
+      revenue: null,
       schools: schoolSummaries,
+      analytics: buildPlatformAnalytics(schools, analyticsDays),
     };
   }
 
   const tenants = (await prisma.tenant.findMany({ include: { users: true } })).map((tenant) => resolveSchoolLifecycleStatus(tenant));
   const totalSchools = tenants.length;
-  const activeSchools = tenants.filter(
-    (tenant) => (tenant.subscriptionStatus || tenant.status || '').toLowerCase() === 'active'
-  ).length;
+  const activeSchools = tenants.filter((tenant) => ['active', 'paid'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
   const trialSchools = tenants.filter(
     (tenant) => (tenant.subscriptionStatus || tenant.status || '').toLowerCase() === 'trial'
   ).length;
-  const expiredSchools = tenants.filter(
-    (tenant) => (tenant.subscriptionStatus || tenant.status || '').toLowerCase() === 'expired'
-  ).length;
+  const expiredSchools = tenants.filter((tenant) => ['expired', 'inactive', 'blocked'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
   const totalStudents = tenants.reduce(
     (sum, tenant) =>
       sum + ((tenant.users || []).filter((user) => user.roles?.some((role) => role.role?.name === 'student')).length || 0),
@@ -1186,6 +1385,9 @@ async function getPlatformSummary() {
     subscriptionStatus: tenant.subscriptionStatus,
     schoolStatus: tenant.status,
     userCount: (tenant.users || []).length,
+    studentCount: countSchoolUsers(tenant, 'student'),
+    teacherCount: countSchoolUsers(tenant, 'teacher'),
+    createdAt: tenant.createdAt || null,
   }));
 
   return {
@@ -1195,12 +1397,11 @@ async function getPlatformSummary() {
     expiredSchools,
     totalStudents,
     totalTeachers,
-    revenue: '$0',
-    platformHealth: 'Healthy',
-    aiUsage: 'Stable',
-    healthScore: 96,
-    aiUsageScore: 84,
+    suspendedSchools: tenants.filter((tenant) => ['suspended', 'inactive', 'blocked'].includes(String(tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length,
+    activeSubscriptions: tenants.filter((tenant) => ['active', 'paid'].includes(String(tenant.subscriptionStatus || '').toLowerCase())).length,
+    revenue: null,
     schools: schoolSummaries,
+    analytics: buildPlatformAnalytics(tenants, analyticsDays),
   };
 }
 
@@ -1229,15 +1430,38 @@ function formatCurrencyValue(amount, currency = 'USD') {
 
 function calculateAttendanceMetrics(records = []) {
   const list = Array.isArray(records) ? records : [];
+  const normalizeDateKey = (value) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      const asString = String(value).slice(0, 10);
+      return asString.length === 10 ? asString : null;
+    }
+    return new Date(parsed.getTime() - (parsed.getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+  };
+
+  const validDates = list
+    .map((entry) => normalizeDateKey(entry.date || entry.createdAt || entry.recordedAt || entry.submittedAt || entry.updatedAt))
+    .filter(Boolean)
+    .sort();
+
+  const todayKey = new Date(Date.now() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 10);
+  const selectedDateKey = validDates.includes(todayKey) ? todayKey : (validDates[validDates.length - 1] || todayKey);
+  const selectedEntries = list.filter((entry) => {
+    const candidate = entry.date || entry.createdAt || entry.recordedAt || entry.submittedAt || entry.updatedAt;
+    return normalizeDateKey(candidate) === selectedDateKey;
+  });
+
   const counts = { present: 0, absent: 0, late: 0, excused: 0 };
-  list.forEach((entry) => {
+  selectedEntries.forEach((entry) => {
     const normalizedStatus = String(entry.status || '').trim().toLowerCase();
     if (normalizedStatus === 'present') counts.present += 1;
     else if (normalizedStatus === 'absent') counts.absent += 1;
     else if (normalizedStatus === 'late') counts.late += 1;
     else if (normalizedStatus === 'excused') counts.excused += 1;
   });
-  const total = list.length;
+
+  const total = selectedEntries.length;
   const presentRatio = total ? Math.round((counts.present / total) * 100) : 0;
   return {
     total,
@@ -1245,8 +1469,9 @@ function calculateAttendanceMetrics(records = []) {
     presentRatio,
     attendanceToday: total ? `${presentRatio}%` : 'No attendance recorded yet',
     trendData: list.slice(-7).map((entry) => {
-      const date = entry.date || entry.createdAt || entry.recordedAt || new Date().toISOString();
-      const label = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const date = entry.date || entry.createdAt || entry.recordedAt || entry.submittedAt || entry.updatedAt || new Date().toISOString();
+      const parsed = new Date(date);
+      const label = Number.isNaN(parsed.getTime()) ? 'Today' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       const status = String(entry.status || '').trim().toLowerCase();
       const percentage = total ? Math.round(((status === 'present' ? 1 : 0) / 1) * 100) : 0;
       return { date: label, percentage: percentage || (status === 'absent' ? 0 : 100) };
@@ -1446,6 +1671,19 @@ async function getEntities(schoolId, entityType, query = {}) {
   const page = Number(query.page) || 1;
   const pageSize = Number(query.pageSize) || 20;
 
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const school = await firebaseCore.getSchoolAggregate(schoolId);
+    if (!school) throw new Error('School not found');
+    const items = school[field] || [];
+    const filtered = buildSearchFilter(items, query.search, query.status);
+    const safeItems = field === 'teachers'
+      ? filtered.map(sanitizeTeacherRecord)
+      : field === 'students'
+        ? filtered.map(sanitizeStudentRecord)
+        : filtered;
+    return paginate(safeItems, page, pageSize);
+  }
+
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
@@ -1453,7 +1691,12 @@ async function getEntities(schoolId, entityType, query = {}) {
     ensureSchoolEntities(school);
     const items = school[field] || [];
     const filtered = buildSearchFilter(items, query.search, query.status);
-    return paginate(filtered, page, pageSize);
+    const safeItems = field === 'teachers'
+      ? filtered.map(sanitizeTeacherRecord)
+      : field === 'students'
+        ? filtered.map(sanitizeStudentRecord)
+        : filtered;
+    return paginate(safeItems, page, pageSize);
   }
 
   const tenant = await loadTenantWithRelations(schoolId);
@@ -1553,6 +1796,7 @@ async function createRoleLinkedUser(tenantId, roleName, payload) {
     lastName: payload.lastName || name.lastName,
     phone: payload.phone || null,
     passwordHash,
+    passwordNeedsReset: !payload.password,
     status: payload.status || 'active',
     isVerified: payload.emailVerified !== false,
     tenantId,
@@ -1599,13 +1843,63 @@ async function createRoleLinkedUser(tenantId, roleName, payload) {
     : await prisma.user.create({ data: userData });
 
   await attachUserRole(user.id, roleName);
-  return { ...mapUserEntity(user, roleName), temporaryPassword: password };
+  return mapUserEntity(user, roleName);
 }
 
-async function createEntity(schoolId, entityType, payload) {
+async function createEntity(schoolId, entityType, payload, actor = {}) {
   const field = normalizeEntityType(entityType);
   if (!field) {
     throw new Error('Unsupported entity type');
+  }
+
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const school = await firebaseCore.getSchoolAggregate(schoolId);
+    if (!school) throw new Error('School not found');
+    ensureSchoolEntities(school);
+    const roles = getUserRoleList(actor);
+    if (roles.includes('teacher') && field !== 'students') throw new Error('Teachers can only manage students here');
+    if (field === 'students' && payload.classId) {
+      const classRecord = school.classes.find((item) => String(item.classId || item.id) === String(payload.classId));
+      if (!classRecord) throw new Error('Class does not belong to this school');
+      if (roles.includes('teacher') && !resolveTeacherAuthorization(school, actor, payload.classId)) throw new Error('Teacher is not authorized for this class');
+    }
+
+    const temporaryPassword = payload.password || `TempPass!${Math.random().toString(36).slice(2, 8)}`;
+    const passwordHash = await bcrypt.hash(temporaryPassword, config.bcrypt.saltRounds);
+    let created;
+    if (field === 'teachers') {
+      created = createTeacherRecord(school, { ...payload, passwordHash, passwordNeedsReset: !payload.password });
+    } else if (field === 'students') {
+      created = createStudentRecord(school, { ...payload, passwordHash, passwordNeedsReset: !payload.password });
+    } else if (field === 'classes') {
+      created = { ...payload, classId: payload.classId || `class-${Date.now()}`, schoolId, status: payload.status || 'active' };
+    } else {
+      created = createSchoolEntity(school, field, payload);
+    }
+
+    const collection = field === 'teachers' ? 'teachers' : field === 'students' ? 'students' : field;
+    const identifier = created.teacherId || created.studentId || created.classId || created.id || `${field}-${Date.now()}`;
+    const safeCreated = field === 'teachers' ? sanitizeTeacherRecord(created) : field === 'students' ? sanitizeStudentRecord(created) : created;
+    await firebaseCore.saveById(collection, `${schoolId}:${identifier}`, { ...safeCreated, schoolId }, false);
+    if (field === 'teachers' || field === 'students') {
+      await firebaseCore.saveById('users', `${schoolId}:${created.email || created.username || identifier}`, {
+        schoolId,
+        tenantId: schoolId,
+        username: created.username || created.email || identifier,
+        email: created.email || null,
+        fullName: created.fullName || payload.fullName || payload.name || 'User',
+        role: field === 'teachers' ? 'teacher' : 'student',
+        teacherId: created.teacherId || null,
+        studentId: created.studentId || null,
+        classId: created.classId || null,
+        className: created.className || null,
+        passwordHash,
+        passwordNeedsReset: !payload.password,
+        status: created.status || 'active',
+      }, false);
+      await firebaseCore.saveById('roles', `${schoolId}:${field === 'teachers' ? 'teacher' : 'student'}`, { schoolId, name: field === 'teachers' ? 'teacher' : 'student' }, true);
+    }
+    return safeCreated;
   }
 
   if (prisma && prisma.__stub) {
@@ -1613,6 +1907,8 @@ async function createEntity(schoolId, entityType, payload) {
     const school = findSchoolBySchoolId(schools, schoolId);
     if (!school) throw new Error('School not found');
     ensureSchoolEntities(school);
+    const roles = getUserRoleList(actor);
+    if (roles.includes('teacher') && field !== 'students') throw new Error('Teachers can only manage students here');
     if (field === 'classes' && payload.teacherId) {
       const teacher = school.teachers.find((item) => String(item.teacherId || item.username || item.email) === String(payload.teacherId));
       if (!teacher) throw new Error('Teacher does not belong to this school');
@@ -1620,6 +1916,11 @@ async function createEntity(schoolId, entityType, payload) {
     if (field === 'students' && payload.classId) {
       const classRecord = school.classes.find((item) => String(item.classId || item.id) === String(payload.classId));
       if (!classRecord) throw new Error('Class does not belong to this school');
+      if (roles.includes('teacher') && !resolveTeacherAuthorization(school, actor, payload.classId)) {
+        throw new Error('Teacher is not authorized for this class');
+      }
+    } else if (roles.includes('teacher')) {
+      throw new Error('Class is required for teacher student creation');
     }
     let created;
     if (field === 'teachers') {
@@ -1628,13 +1929,13 @@ async function createEntity(schoolId, entityType, payload) {
       const teacherPayload = {
         ...teacherInput,
         passwordHash: await bcrypt.hash(temporaryPassword, config.bcrypt.saltRounds),
+        passwordNeedsReset: !payload.password,
         assignedClasses: normalizeTeacherAssignedClasses(payload.assignedClasses || (payload.metadata && payload.metadata.assignedClasses)),
       };
       created = createTeacherRecord(school, teacherPayload);
-      const safeTeacher = sanitizeTeacherRecord(created);
-      safeTeacher.temporaryPassword = temporaryPassword;
-      created = safeTeacher;
+      created = sanitizeTeacherRecord(created);
     } else if (field === 'students') {
+      await enforceStudentLimit(school, schoolId);
       if (payload.classId) {
         const classRecord = school.classes.find((item) => String(item.classId || item.id) === String(payload.classId));
         if (!classRecord) throw new Error('Class does not belong to this school');
@@ -1643,6 +1944,7 @@ async function createEntity(schoolId, entityType, payload) {
       created = createStudentRecord(school, {
         ...payload,
         passwordHash: await bcrypt.hash(temporaryPassword, config.bcrypt.saltRounds),
+        passwordNeedsReset: !payload.password,
       });
       if (!Array.isArray(school.users)) school.users = [];
       const username = payload.username || payload.email || created.studentId;
@@ -1660,10 +1962,10 @@ async function createEntity(schoolId, entityType, payload) {
         emailVerified: payload.emailVerified !== false,
         platformAdmin: false,
         passwordHash: created.passwordHash,
+        passwordNeedsReset: created.passwordNeedsReset === true,
         permissions: ['student.view'],
       });
       const safeStudent = sanitizeStudentRecord(created);
-      safeStudent.temporaryPassword = temporaryPassword;
       created = safeStudent;
     } else if (field === 'academicYears') {
       created = createSchoolEntity(school, field, {
@@ -1694,6 +1996,7 @@ async function createEntity(schoolId, entityType, payload) {
     return createRoleLinkedUser(tenant.id, 'teacher', payload);
   }
   if (field === 'students') {
+    await enforceStudentLimit(tenant, schoolId);
     return createRoleLinkedUser(tenant.id, 'student', payload);
   }
 
@@ -1710,7 +2013,20 @@ async function createEntity(schoolId, entityType, payload) {
   return prisma[model].create({ data });
 }
 
-async function updateEntity(schoolId, entityType, entityId, updates) {
+async function enforceStudentLimit(school, schoolId) {
+  const planSlug = String(school.subscriptionPlan || '').toLowerCase().replace(/(?:\s+plan|-plan)$/, '').trim();
+  if (!planSlug || planSlug.includes('trial') || planSlug.includes('unlimited')) return;
+  const plan = (await listPricingPlans({ activeOnly: true })).find((entry) => entry.slug === planSlug);
+  if (!plan) return;
+  const activeStudentCount = prisma && !prisma.__stub
+    ? await prisma.user.count({ where: { tenantId: school.id || schoolId, studentId: { not: null }, status: 'active' } })
+    : (Array.isArray(school.students) ? school.students : []).filter((student) => String(student.status || 'active').toLowerCase() !== 'archived').length;
+  if (activeStudentCount >= plan.studentLimit) {
+    throw new Error(`${plan.name} plan allows up to ${plan.studentLimit} active students. Upgrade the school plan before adding another student.`);
+  }
+}
+
+async function updateEntity(schoolId, entityType, entityId, updates, actor = {}) {
   const field = normalizeEntityType(entityType);
   if (!field) {
     throw new Error('Unsupported entity type');
@@ -1721,6 +2037,21 @@ async function updateEntity(schoolId, entityType, entityId, updates) {
     const school = findSchoolBySchoolId(schools, schoolId);
     if (!school) throw new Error('School not found');
     ensureSchoolEntities(school);
+    const roles = getUserRoleList(actor);
+    if (roles.includes('teacher') && field !== 'students') throw new Error('Teachers can only manage students here');
+    if (roles.includes('teacher') && field === 'students') {
+      const currentStudent = school.students.find((item) => [item.studentId, item.id, item.email].filter(Boolean).some((value) => String(value).toLowerCase() === String(entityId).toLowerCase()));
+      if (!currentStudent) throw new Error('Entity not found');
+      const currentClass = currentStudent.classId || currentStudent.className || currentStudent.grade;
+      const nextClass = updates.classId || updates.className || currentClass;
+      if (!resolveTeacherAuthorization(school, actor, nextClass)) throw new Error('Teacher is not authorized for this class');
+      delete updates.studentId;
+      delete updates.id;
+      delete updates.schoolId;
+      delete updates.passwordHash;
+      delete updates.studentPasswordHash;
+      delete updates.passwordNeedsReset;
+    }
     if (field === 'classes' && updates.teacherId) {
       const teacher = school.teachers.find((item) => String(item.teacherId || item.username || item.email) === String(updates.teacherId));
       if (!teacher) throw new Error('Teacher does not belong to this school');
@@ -1729,26 +2060,27 @@ async function updateEntity(schoolId, entityType, entityId, updates) {
       const classRecord = school.classes.find((item) => String(item.classId || item.id) === String(updates.classId));
       if (!classRecord) throw new Error('Class does not belong to this school');
     }
+    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = updates || {};
     const validatedUpdates = field === 'teachers'
       ? {
-          ...updates,
+          ...safeUpdates,
           nationalId: undefined,
           nationalIdNumber: undefined,
           signature: undefined,
-          assignedClasses: updates.assignedClasses || (updates.metadata && updates.metadata.assignedClasses)
-            ? normalizeTeacherAssignedClasses(updates.assignedClasses || (updates.metadata && updates.metadata.assignedClasses))
+          assignedClasses: safeUpdates.assignedClasses || (safeUpdates.metadata && safeUpdates.metadata.assignedClasses)
+            ? normalizeTeacherAssignedClasses(safeUpdates.assignedClasses || (safeUpdates.metadata && safeUpdates.metadata.assignedClasses))
             : undefined,
-          metadata: updates.metadata
+          metadata: safeUpdates.metadata
             ? {
-                ...updates.metadata,
+                ...safeUpdates.metadata,
                 nationalId: undefined,
                 nationalIdNumber: undefined,
                 signature: undefined,
-                ...(updates.metadata.assignedClasses ? { assignedClasses: normalizeTeacherAssignedClasses(updates.metadata.assignedClasses) } : {}),
+                ...(safeUpdates.metadata.assignedClasses ? { assignedClasses: normalizeTeacherAssignedClasses(safeUpdates.metadata.assignedClasses) } : {}),
               }
-            : updates.metadata,
+            : safeUpdates.metadata,
         }
-      : updates;
+      : safeUpdates;
     const updated = updateSchoolEntity(school, field, entityId, validatedUpdates);
     if (!updated) throw new Error('Entity not found');
     if (field === 'teachers') {
@@ -1774,7 +2106,8 @@ async function updateEntity(schoolId, entityType, entityId, updates) {
     if (!user || user.tenantId !== tenant.id) {
       throw new Error('Entity not found');
     }
-    const updatesWithEmail = { ...updates };
+    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = updates || {};
+    const updatesWithEmail = { ...safeUpdates };
     if (field === 'teachers') {
       delete updatesWithEmail.nationalId;
       delete updatesWithEmail.nationalIdNumber;
@@ -1875,6 +2208,8 @@ async function deleteEntity(schoolId, entityType, entityId) {
     ensureSchoolEntities(school);
     const deleted = deleteSchoolEntity(school, field, entityId);
     if (!deleted) throw new Error('Entity not found');
+    if (field === 'teachers') return sanitizeTeacherRecord(deleted);
+    if (field === 'students') return sanitizeStudentRecord(deleted);
     if (['departments','streams','subjects','academicYears','terms','semesters','classes'].includes(field)) {
       deleted.status = 'archived';
     }
@@ -1912,16 +2247,108 @@ async function deleteEntity(schoolId, entityType, entityId) {
   return prisma[model].delete({ where: { id: entityId } });
 }
 
-async function createWorkspaceMessage(schoolId, payload = {}) {
+function normalizeMessagingIdentifier(value) {
+  return String(value || '').split(':').pop().trim().toLowerCase();
+}
+
+function getMessagingActor(school, actor = {}) {
+  const identifier = normalizeMessagingIdentifier(actor.userId || actor.username || actor.email);
+  const users = Array.isArray(school.users) ? school.users : [];
+  const entities = [
+    ...users,
+    ...(Array.isArray(school.teachers) ? school.teachers : []),
+    ...(Array.isArray(school.students) ? school.students : []),
+  ];
+  return entities.find((entry) => [entry.username, entry.email, entry.teacherId, entry.studentId, entry.userId, entry.id]
+    .some((value) => normalizeMessagingIdentifier(value) === identifier)) || null;
+}
+
+function getMessagingRoles(actor = {}, record = {}) {
+  const roles = Array.isArray(actor.roles) ? actor.roles : [record.role || ''];
+  return roles.map((role) => String(role || '').trim().toLowerCase()).filter(Boolean);
+}
+
+function getMessagingRecipientOptions(school, actor = {}) {
+  const actorRecord = getMessagingActor(school, actor);
+  const roles = getMessagingRoles(actor, actorRecord || {});
+  const actorId = normalizeMessagingIdentifier(actor.userId || actor.username || actor.email || actorRecord?.username);
+  const users = (Array.isArray(school.users) ? school.users : []).filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived');
+  const teacher = actorRecord || {};
+  const student = actorRecord || {};
+  const assignedClasses = normalizeArray(teacher.assignedClasses || teacher.classes || teacher.className || teacher.assignedClass).map((value) => String(value).trim().toLowerCase());
+  const studentClass = String(student.className || student.gradeLevel || student.grade || '').trim().toLowerCase();
+  const isAllowed = (candidate) => {
+    const candidateId = normalizeMessagingIdentifier(candidate.username || candidate.email || candidate.teacherId || candidate.studentId || candidate.id);
+    if (!candidateId || candidateId === actorId) return false;
+    const candidateRole = String(candidate.role || '').trim().toLowerCase();
+    if (roles.includes('super_admin') || roles.includes('school_authority') || roles.includes('school_head')) return ['school_authority', 'school_head', 'teacher', 'student'].includes(candidateRole);
+    if (roles.includes('teacher')) {
+      if (['school_authority', 'school_head'].includes(candidateRole)) return true;
+      if (candidateRole !== 'student') return false;
+      const candidateClass = String(candidate.className || candidate.gradeLevel || candidate.grade || '').trim().toLowerCase();
+      return assignedClasses.includes(candidateClass) || assignedClasses.includes(String(candidate.classId || '').trim().toLowerCase());
+    }
+    if (roles.includes('student')) {
+      if (['school_authority', 'school_head'].includes(candidateRole)) return true;
+      if (candidateRole !== 'teacher') return false;
+      const candidateClasses = normalizeArray(candidate.assignedClasses || candidate.classes || candidate.className || candidate.assignedClass).map((value) => String(value).trim().toLowerCase());
+      return Boolean(studentClass) && candidateClasses.includes(studentClass);
+    }
+    return false;
+  };
+
+  return users.filter(isAllowed).map((candidate) => ({
+    id: candidate.username || candidate.email || candidate.teacherId || candidate.studentId || candidate.id,
+    name: candidate.fullName || candidate.name || candidate.username || candidate.email || 'User',
+    role: candidate.role || 'user',
+  }));
+}
+
+function assertMessagingRecipient(school, actor, recipientId) {
+  const normalizedRecipientId = normalizeMessagingIdentifier(recipientId);
+  const recipientOptions = getMessagingRecipientOptions(school, actor);
+  const recipient = recipientOptions.find((entry) => normalizeMessagingIdentifier(entry.id) === normalizedRecipientId);
+  if (!recipient) throw new Error('Recipient is not authorized for messaging');
+  return recipient;
+}
+
+async function createWorkspaceMessage(schoolId, payload = {}, actor = {}) {
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
     if (!school) throw new Error('School not found');
     ensureSchoolEntities(school);
-    const message = normalizeWorkspaceMessage(school, payload);
-    school.messages.unshift(message);
+    const roles = getMessagingRoles(actor);
+    if (roles.length && !isTenantMatch(actor, schoolId)) throw new Error('School access denied');
+    const recipientIds = Array.isArray(payload.recipientIds) ? payload.recipientIds : [payload.recipientId || payload.recipient].filter(Boolean);
+    if (roles.length && !recipientIds.length) throw new Error('A recipient is required');
+    const actorRecord = getMessagingActor(school, actor);
+    const senderId = normalizeMessagingIdentifier(actor.userId || actor.username || actor.email || actorRecord?.username);
+    const senderName = actorRecord?.fullName || actorRecord?.name || actorRecord?.username || 'User';
+    const messages = roles.length
+      ? recipientIds.map((recipientId) => {
+        const recipient = assertMessagingRecipient(school, actor, recipientId);
+        return normalizeWorkspaceMessage(school, {
+          ...payload,
+          id: undefined,
+          folder: 'inbox',
+          from: senderName,
+          to: recipient.name,
+          recipient: recipient.id,
+          recipientId: normalizeMessagingIdentifier(recipient.id),
+          recipientRole: recipient.role,
+          senderId,
+          senderRole: roles[0],
+          senderName,
+          unread: true,
+          readAt: null,
+          readBy: [],
+        });
+      })
+      : [normalizeWorkspaceMessage(school, payload)];
+    school.messages.unshift(...messages);
     saveSchoolData(schools);
-    return message;
+    return messages[0];
   }
 
   throw new Error('Workspace messaging is only available in fallback mode');
@@ -2208,7 +2635,7 @@ async function updateLesson(schoolId, lessonId, updates = {}, actor = {}) {
   return lesson;
 }
 
-async function updateWorkspaceMessage(schoolId, messageId, updates = {}) {
+async function updateWorkspaceMessage(schoolId, messageId, updates = {}, actor = {}) {
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
@@ -2216,7 +2643,12 @@ async function updateWorkspaceMessage(schoolId, messageId, updates = {}) {
     ensureSchoolEntities(school);
     const index = (school.messages || []).findIndex((item) => item.id === messageId);
     if (index === -1) throw new Error('Message not found');
-    const updated = { ...(school.messages[index] || {}), ...updates, id: messageId };
+    const current = school.messages[index] || {};
+    const actorId = normalizeMessagingIdentifier(actor.userId || actor.username || actor.email);
+    const roles = getMessagingRoles(actor);
+    if (roles.length && current.recipientId && normalizeMessagingIdentifier(current.recipientId) !== actorId) throw new Error('Message access denied');
+    const allowedUpdates = roles.length ? { unread: updates.unread === false ? false : current.unread, readAt: updates.unread === false ? new Date().toISOString() : current.readAt } : updates;
+    const updated = { ...current, ...allowedUpdates, id: messageId };
     school.messages[index] = updated;
     saveSchoolData(schools);
     return updated;
@@ -2225,7 +2657,7 @@ async function updateWorkspaceMessage(schoolId, messageId, updates = {}) {
   throw new Error('Workspace messaging is only available in fallback mode');
 }
 
-async function deleteWorkspaceMessage(schoolId, messageId) {
+async function deleteWorkspaceMessage(schoolId, messageId, actor = {}) {
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
@@ -2233,6 +2665,10 @@ async function deleteWorkspaceMessage(schoolId, messageId) {
     ensureSchoolEntities(school);
     const index = (school.messages || []).findIndex((item) => item.id === messageId);
     if (index === -1) throw new Error('Message not found');
+    const actorId = normalizeMessagingIdentifier(actor.userId || actor.username || actor.email);
+    const roles = getMessagingRoles(actor);
+    const current = school.messages[index] || {};
+    if (roles.length && current.recipientId && ![current.recipientId, current.senderId].map(normalizeMessagingIdentifier).includes(actorId)) throw new Error('Message access denied');
     const [removed] = school.messages.splice(index, 1);
     saveSchoolData(schools);
     return removed;
@@ -2241,16 +2677,34 @@ async function deleteWorkspaceMessage(schoolId, messageId) {
   throw new Error('Workspace messaging is only available in fallback mode');
 }
 
-async function listWorkspaceMessages(schoolId, query = {}) {
+async function listWorkspaceMessages(schoolId, query = {}, actor = {}) {
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
     if (!school) throw new Error('School not found');
     ensureSchoolEntities(school);
     const folder = query.folder || '';
-    let items = Array.isArray(school.messages) ? school.messages : [];
+    const actorId = normalizeMessagingIdentifier(actor.userId || actor.username || actor.email);
+    const roles = getMessagingRoles(actor);
+    const actorRecord = getMessagingActor(school, actor) || {};
+    const actorRole = String(actorRecord.role || roles[0] || '').toLowerCase();
+    const legacyInboxVisible = (item) => {
+      const target = String(item.recipientType || item.audience || item.recipient || 'all').trim().toLowerCase();
+      return ['all', 'everyone', actorRole, `${actorRole}s`].includes(target);
+    };
+    let items = Array.isArray(school.messages) ? school.messages.filter((item) => !roles.length
+      || (item.recipientId
+        ? [item.recipientId, item.senderId].map(normalizeMessagingIdentifier).includes(actorId)
+        : legacyInboxVisible(item))) : [];
     if (folder) {
-      items = items.filter((item) => String(item.folder || '').toLowerCase() === String(folder).toLowerCase());
+      const normalizedFolder = String(folder).toLowerCase();
+      items = items.filter((item) => item.recipientId && roles.length
+        ? (normalizedFolder === 'sent' ? normalizeMessagingIdentifier(item.senderId) === actorId : normalizeMessagingIdentifier(item.recipientId) === actorId)
+        : normalizedFolder === 'sent' ? (!roles.length && String(item.folder || '').toLowerCase() === normalizedFolder) : String(item.folder || '').toLowerCase() === normalizedFolder);
+    }
+    if (query.search) {
+      const term = String(query.search).trim().toLowerCase();
+      items = items.filter((item) => `${item.subject || ''} ${item.body || ''} ${item.from || ''} ${item.to || ''}`.toLowerCase().includes(term));
     }
     return { schoolId, items, total: items.length };
   }
@@ -2519,9 +2973,11 @@ module.exports = {
   createSchool,
   getSchoolById,
   getSchoolBySchoolId,
+  sanitizeSchoolResponse,
   resolveSchoolLifecycleStatus,
   getStudentSchoolView,
   getTeacherSchoolView,
+  createFeePayment,
   updateTeacherWorkspace,
   updateSchool,
   updateSchoolCredentials,
@@ -2531,6 +2987,7 @@ module.exports = {
   getPlatformSummary,
   getDashboardSummary,
   createWorkspaceMessage,
+  getMessagingRecipientOptions,
   updateWorkspaceMessage,
   deleteWorkspaceMessage,
   listWorkspaceMessages,

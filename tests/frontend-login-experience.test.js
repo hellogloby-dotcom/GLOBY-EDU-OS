@@ -4,19 +4,19 @@ const fs = require('fs');
 const path = require('path');
 
 describe('login experience', () => {
-  it('renders the required student and teacher login fields while preserving the secure-session option', () => {
+  it('renders the required school authority, teacher, and student login fields while preserving the secure-session option', () => {
     const loginSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'login.js'), 'utf8');
 
     expect(loginSource).toContain('School Authority');
     expect(loginSource).toContain('Teacher');
     expect(loginSource).toContain('Student');
     expect(loginSource).toContain('id="super-admin-portal"');
-    expect(loginSource).toContain('Student name');
-    expect(loginSource).toContain('Teacher name');
-    expect(loginSource).not.toContain('Student ID');
-    expect(loginSource).not.toContain('Teacher ID');
-    expect(loginSource).toContain('aria-label="School or account email"');
-    expect(loginSource).toContain('School Name');
+    expect(loginSource).toContain('School ID');
+    expect(loginSource).toContain('Teacher ID');
+    expect(loginSource).toContain('Student ID');
+    expect(loginSource).not.toContain('Student name');
+    expect(loginSource).not.toContain('Teacher name');
+    expect(loginSource).not.toContain('School Name');
     expect(loginSource).toContain('Keep me signed in on this device.');
     expect(loginSource).toContain('Google Sign In');
   });

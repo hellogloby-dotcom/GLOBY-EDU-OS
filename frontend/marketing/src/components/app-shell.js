@@ -63,10 +63,10 @@ export function AppShell({
           <div class="mt-8 flex-1 space-y-2 overflow-y-auto">${navMarkup}</div>
 
           <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Platform status</p>
-            <div class="mt-3 flex items-center gap-2 text-sm text-emerald-400">
-              <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
-              All systems operational
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Workspace</p>
+            <div class="mt-3 flex items-center gap-2 text-sm text-slate-300">
+              <span class="h-2.5 w-2.5 rounded-full bg-sky-400"></span>
+              Ready to continue
             </div>
           </div>
         </aside>

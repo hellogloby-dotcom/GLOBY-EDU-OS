@@ -14,17 +14,19 @@ import { ForgotPage } from './pages/forgot.js';
 import { ResetPasswordPage } from './pages/reset-password.js';
 import { ChangePasswordPage } from './pages/change-password.js';
 import { VerifyEmailPage } from './pages/verify-email.js';
+import { LegalPage } from './pages/legal.js';
 import { AdminPage, attachAdminSectionHandlers, attachWebsiteCMSHandlers } from './pages/admin.js';
 import { getAdminState } from './pages/admin-state.js';
 import { PlatformAdminPage } from './pages/platform-admin.js';
 import { SchoolDashboardPage, SchoolAuthorityDashboard, TeacherDashboard, StudentDashboard } from './pages/school-dashboard.js';
-import { fetchSchoolSummary, fetchSchoolDetails, updateSchoolDetails, searchSchoolData, fetchSchoolEntities, createSchoolEntity, updateSchoolEntity, deleteSchoolEntity, fetchAdminDashboardSummary, fetchAdminSchoolList, createAdminSchool, updateAdminSchool, deleteAdminSchool, activateAdminSchool, fetchWorkspaceMessages, createWorkspaceMessage, updateWorkspaceMessage, deleteWorkspaceMessage, fetchSupportTickets, createSupportTicket, updateSupportTicket, deleteSupportTicket } from './api/school.js';
-import { studentLogin, teacherLogin, schoolAuthorityLogin, schoolLogin as apiLogin, firebaseLogin as apiFirebaseLogin, platformAdminLogin, forgotPassword as apiForgot, register as apiRegister, confirmFirebasePasswordReset, changePassword as apiChangePassword } from './api/auth.js';
-import { isFirebaseConfigured, firebaseSignInWithGoogle, firebaseSendPasswordResetEmail, firebaseApplyActionCode, firebaseConfirmPasswordReset as firebaseConfirmPasswordResetClient } from './firebase/firebase-client.js';
+import { fetchSchoolSummary, fetchSchoolDetails, updateSchoolDetails, createFeePayment, searchSchoolData, fetchSchoolEntities, createSchoolEntity, updateSchoolEntity, deleteSchoolEntity, fetchAdminDashboardSummary, fetchPlatformAuditLogs, fetchAdminSchoolList, createAdminSchool, updateAdminSchool, deleteAdminSchool, activateAdminSchool, fetchWorkspaceMessages, fetchMessageRecipients, createWorkspaceMessage, updateWorkspaceMessage, deleteWorkspaceMessage, fetchSupportTickets, createSupportTicket, updateSupportTicket, deleteSupportTicket, fetchAssignments, fetchLessons, createAssignment, createLesson, submitAssignment } from './api/school.js';
+import { studentLogin, teacherLogin, schoolAuthorityLogin, schoolLogin as apiLogin, firebaseLogin as apiFirebaseLogin, linkFirebaseIdentity, platformAdminLogin, forgotPassword as apiForgot, register as apiRegister, confirmFirebasePasswordReset, changePassword as apiChangePassword } from './api/auth.js';
+import { isFirebaseConfigured, firebaseSignInWithGoogle, firebaseLinkGoogle, firebaseSendPasswordResetEmail, firebaseApplyActionCode, firebaseConfirmPasswordReset as firebaseConfirmPasswordResetClient } from './firebase/firebase-client.js';
 import { buildChangedFieldsPayload, buildSchoolCollectionPayload, buildSchoolEntityPayload, buildAttendanceRoster, replaceAttendanceSession } from './utils/school-dashboard-actions.js?v=20260718';
 import { showGlobalPwaNotice } from './utils/pwa-notifications.js';
+import { fetchPublicPricing, fetchAdminPricing, initializeSubscriptionCheckout, verifySubscriptionPayment } from './api/pricing.js';
 import { setPwaUpdateAvailable, getPwaUpdateAvailable, clearPwaUpdateAvailable } from './utils/pwa-utils.js';
-import { testimonialImage1, testimonialImage2, testimonialImage3, screenshotAnalyticsImage, screenshotAttendanceImage, screenshotMessagingImage } from './assets/asset-paths.js';
+import { testimonialImage1, testimonialImage2, testimonialImage3, screenshotAuthorityImage, screenshotTeacherImage, screenshotStudentImage, screenshotAuthorityPlaceholder, screenshotTeacherPlaceholder, screenshotStudentPlaceholder } from './assets/asset-paths.js';
 
 const root = document.getElementById('marketing-root');
 const LANDING_ROUTES = ['home', 'features', 'solutions', 'pricing', 'about', 'contact'];
@@ -50,7 +52,7 @@ function renderSuspendedSchoolPage() {
 
   appRoot.innerHTML = `
     <main class="mx-auto max-w-3xl px-6 py-20">
-      <div class="rounded-[2rem] border border-amber-200 bg-amber-50 p-8 text-center shadow-xl shadow-amber-100/60">
+      <div class="rounded-4xl border border-amber-200 bg-amber-50 p-8 text-center shadow-xl shadow-amber-100/60">
         <p class="text-sm uppercase tracking-[0.3em] text-amber-700">Access restricted</p>
         <h1 class="mt-6 text-4xl font-semibold text-slate-900">This school account has been suspended</h1>
         <p class="mt-4 text-lg text-slate-700">Your school authority, teacher, or student access has been restricted until the issue is resolved.</p>
@@ -477,8 +479,10 @@ function markActiveSession() {
   recordWorkspaceActivity('Session started', 'The authenticated workspace was restored for this browser.', 'session');
 }
 
-function renderLanding(activeSection = 'home') {
+async function renderLanding(activeSection = 'home') {
   const cms = getWebsiteCMSSettings();
+  const pricingResult = await fetchPublicPricing();
+  const pricingPlans = pricingResult.ok && pricingResult.data?.status === 'ok' ? pricingResult.data.pricingPlans || [] : [];
   root.innerHTML = `
           ${Nav(cms)}
     <main class="relative overflow-hidden">
@@ -492,7 +496,7 @@ function renderLanding(activeSection = 'home') {
           ${renderScreenshots()}
           ${renderPlatformStats()}
           ${renderTestimonials()}
-          ${renderPricing()}
+          ${renderPricing(pricingPlans)}
           ${renderFAQ(cms)}
           ${renderContact(cms)}
           ${renderInstallAppSection()}
@@ -526,7 +530,11 @@ function renderLanding(activeSection = 'home') {
 function attachLandingActions(activeSection) {
   document.querySelectorAll('[data-action="get-started"]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      location.hash = '#/register';
+      const planSlug = btn.getAttribute('data-plan-slug');
+      const role = getUserRole();
+      location.hash = (role === 'school_authority' || role === 'school_head')
+        ? `#/checkout?plan=${encodeURIComponent(planSlug || '')}`
+        : '#/register';
     });
   });
 
@@ -583,6 +591,51 @@ function refreshLandingFromCMS() {
   const { path } = parseHash();
   if (!path || path === 'home' || LANDING_ROUTES.includes(path)) {
     renderLanding(path || 'home');
+  }
+}
+
+async function renderCheckoutPage(planSlug = '', billingPeriod = 'monthly', reference = '') {
+  const role = getUserRole();
+  if (!getAccessToken() || !['school_authority', 'school_head', 'super_admin'].includes(role)) {
+    location.hash = '#/login';
+    return;
+  }
+  const pricingResult = await fetchPublicPricing();
+  const plans = pricingResult.ok ? pricingResult.data?.pricingPlans || [] : [];
+  const plan = plans.find((entry) => entry.slug === planSlug) || plans[0];
+  if (!plan) {
+    root.innerHTML = `${Nav()}<main class="mx-auto max-w-3xl px-6 py-20"><p class="text-slate-600">No active subscription plans are available.</p></main>${Footer()}`;
+    return;
+  }
+  root.innerHTML = `${Nav()}<main class="mx-auto max-w-3xl px-6 py-12 sm:py-20"><div class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm">
+    <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-700">Subscription checkout</p>
+    <h1 class="mt-3 text-3xl font-semibold text-slate-950">Review your school subscription</h1>
+    <div class="mt-8 grid gap-4 sm:grid-cols-2">
+      <label class="text-sm text-slate-700">Plan<select id="checkout-plan" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3">${plans.map((entry) => `<option value="${entry.slug}" ${entry.slug === plan.slug ? 'selected' : ''}>${entry.name}</option>`).join('')}</select></label>
+      <label class="text-sm text-slate-700">Billing period<select id="checkout-period" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3"><option value="monthly" ${billingPeriod === 'monthly' ? 'selected' : ''}>Monthly</option><option value="yearly" ${billingPeriod === 'yearly' ? 'selected' : ''}>Yearly</option></select></label>
+    </div>
+    <dl class="mt-8 grid gap-3 border-y border-slate-200 py-6 text-sm sm:grid-cols-2"><div><dt class="text-slate-500">School</dt><dd class="font-semibold text-slate-900">${localStorage.getItem('globyedu_schoolName') || localStorage.getItem('globyedu_schoolId') || ''}</dd></div><div><dt class="text-slate-500">Student limit</dt><dd class="font-semibold text-slate-900">${Number(plan.studentLimit).toLocaleString()}</dd></div><div><dt class="text-slate-500">Amount</dt><dd id="checkout-amount" class="font-semibold text-slate-900">${plan.currency} ${Number(billingPeriod === 'yearly' ? plan.yearlyAmount : plan.monthlyAmount).toLocaleString()}</dd></div><div><dt class="text-slate-500">Payment provider</dt><dd class="font-semibold text-slate-900">Paystack</dd></div></dl>
+    <p class="text-sm leading-6 text-slate-600">Review the <a class="font-semibold text-sky-700" href="#/legal/payments">Payment & Refund Policy</a>, <a class="font-semibold text-sky-700" href="#/legal/terms">Terms of Service</a>, and <a class="font-semibold text-sky-700" href="#/legal/privacy">Privacy Policy</a>.</p>
+    <label class="mt-6 flex items-start gap-3 text-sm text-slate-700"><input id="checkout-terms" type="checkbox" class="mt-1" /> <span>I have reviewed and accept the linked policies.</span></label>
+    <div id="checkout-message" class="mt-4 min-h-6 text-sm"></div><button id="checkout-submit" class="mt-6 rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white">Continue to Paystack</button>
+  </div></main>${Footer()}`;
+
+  const planSelect = document.getElementById('checkout-plan');
+  const periodSelect = document.getElementById('checkout-period');
+  const amountElement = document.getElementById('checkout-amount');
+  const updateAmount = () => { const selected = plans.find((entry) => entry.slug === planSelect.value) || plan; amountElement.textContent = `${selected.currency} ${Number(periodSelect.value === 'yearly' ? selected.yearlyAmount : selected.monthlyAmount).toLocaleString()}`; };
+  planSelect.addEventListener('change', updateAmount);
+  periodSelect.addEventListener('change', updateAmount);
+  document.getElementById('checkout-submit').addEventListener('click', async () => {
+    const message = document.getElementById('checkout-message');
+    if (!document.getElementById('checkout-terms').checked) { message.textContent = 'Please accept the linked policies before continuing.'; return; }
+    const result = await initializeSubscriptionCheckout({ planSlug: planSelect.value, billingPeriod: periodSelect.value, email: localStorage.getItem('globyedu_userEmail'), callbackUrl: `${location.origin}/#/checkout?plan=${encodeURIComponent(planSelect.value)}&period=${encodeURIComponent(periodSelect.value)}`, acceptance: { terms: true, privacy: true, paymentRefund: true, version: '2026-09-18' } });
+    if (!result.ok) { message.textContent = result.data?.message || 'Unable to initialize payment.'; return; }
+    location.assign(result.data.checkout.authorizationUrl);
+  });
+  if (reference) {
+    const result = await verifySubscriptionPayment(reference);
+    document.getElementById('checkout-message').textContent = result.ok ? 'Payment verified and subscription activated.' : (result.data?.message || 'Payment verification failed.');
   }
 }
 
@@ -796,25 +849,25 @@ function renderScreenshots() {
       <div class="grid gap-10 lg:grid-cols-[0.95fr_0.9fr] lg:items-end">
         <div class="max-w-2xl">
           <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">Platform overview</p>
-          <h2 class="mt-4 text-3xl font-semibold text-slate-900">Beautiful dashboards for every team.</h2>
-          <p class="mt-4 text-slate-600">Get everything from attendance snapshots to finance summaries with at-a-glance visual reports and unified school operations.</p>
+          <h2 class="mt-4 text-3xl font-semibold text-slate-900">One connected workspace for every school role.</h2>
+          <p class="mt-4 text-slate-600">Give school leaders, teachers, and students focused dashboards for the work they do every day, all powered by one connected school operating system.</p>
         </div>
-        <div class="rounded-full bg-slate-900/5 px-6 py-4 text-sm text-slate-600">Premium, responsive previews ready for future imagery.</div>
+        <div class="rounded-full bg-slate-900/5 px-6 py-4 text-sm text-slate-600">Clear role-based views, from school-wide operations to daily learning.</div>
       </div>
       <div class="mt-10 grid gap-6 lg:grid-cols-3">
-        ${renderScreenshotCard('Analytics', 'Insightful charts for leaders.', screenshotAnalyticsImage)}
-        ${renderScreenshotCard('Attendance', 'Rapid attendance tracking and review.', screenshotAttendanceImage)}
-        ${renderScreenshotCard('Messaging', 'Communicate with staff, students and parents.', screenshotMessagingImage)}
+        ${renderScreenshotCard('School Authority', 'See the full school picture and manage students, staff, classes, finance, and reporting from one command center.', screenshotAuthorityImage, screenshotAuthorityPlaceholder)}
+        ${renderScreenshotCard('Teacher Dashboard', 'Plan lessons, manage classes, record attendance, track assignments, and keep learners moving forward.', screenshotTeacherImage, screenshotTeacherPlaceholder)}
+        ${renderScreenshotCard('Student Dashboard', 'Stay on top of classes, learning materials, assignments, attendance, results, and school updates.', screenshotStudentImage, screenshotStudentPlaceholder)}
       </div>
     </section>
   `;
 }
 
-function renderScreenshotCard(title, description, image) {
+function renderScreenshotCard(title, description, image, fallbackImage) {
   return `
     <div class="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg">
-      <div class="relative overflow-hidden bg-slate-950 ${['Analytics', 'Messaging'].includes(title) ? `${title.toLowerCase()}-screenshot-media` : ''}">
-        <img src="${image}" alt="${title}" loading="lazy" decoding="async" class="h-44 w-full object-cover opacity-90 ${['Analytics', 'Messaging'].includes(title) ? `${title.toLowerCase()}-screenshot-image` : ''}" />
+      <div class="relative dashboard-preview-media overflow-hidden bg-slate-950">
+        <img src="${image}" onerror="this.onerror=null;this.src='${fallbackImage}'" alt="${title} dashboard preview" loading="lazy" decoding="async" class="h-full w-full object-cover opacity-90" />
         <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-slate-950/90 to-transparent px-4 py-3 text-white">
           <p class="text-sm font-semibold uppercase tracking-[0.25em]">${title}</p>
         </div>
@@ -881,9 +934,8 @@ function renderTestimonial(image, message = '', author = '', score = 5) {
   `;
 }
 
-function renderPricing() {
-  const state = getAdminState();
-  const plans = Array.isArray(state.pricingPlans) ? state.pricingPlans.filter((plan) => plan.enabled) : [];
+function renderPricing(pricingPlans = []) {
+  const plans = Array.isArray(pricingPlans) ? pricingPlans.filter((plan) => plan.active) : [];
   const planCards = plans.length > 0 ? plans.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map((plan) => renderPricingCard(plan)).join('') : `
       <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm">
         <p class="text-sm font-semibold uppercase tracking-[0.3em] text-slate-600">Pricing</p>
@@ -897,12 +949,13 @@ function renderPricing() {
       <div class="grid gap-8 lg:grid-cols-3">
         ${planCards}
       </div>
+      <p class="mt-6 text-sm text-slate-600">Before subscribing, review the ${'<a href="#/legal/terms" class="font-semibold text-sky-700">Terms of Service</a>'}, ${'<a href="#/legal/privacy" class="font-semibold text-sky-700">Privacy Policy</a>'}, and ${'<a href="#/legal/payments" class="font-semibold text-sky-700">Payment & Refund Policy</a>'}.</p>
     </section>
   `;
 }
 
 function renderPricingCard(plan) {
-  const priceLabel = plan.monthlyPrice === '0' ? 'Free trial' : plan.monthlyPrice.startsWith('$') ? plan.monthlyPrice : `${plan.currency || 'USD'} ${plan.monthlyPrice}/${plan.billingCycle || 'mo'}`;
+  const priceLabel = `${plan.currency || 'GHS'} ${Number(plan.monthlyAmount || 0).toLocaleString()}/month`;
   const features = [];
   if (plan.features) {
     Object.entries(plan.features).forEach(([key, enabled]) => {
@@ -922,11 +975,11 @@ function renderPricingCard(plan) {
         ${plan.recommendedBadge ? `<span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">Recommended</span>` : ''}
       </div>
       <p class="mt-6 text-4xl font-semibold text-slate-900">${priceLabel}</p>
-      <p class="mt-2 text-sm text-slate-500">${plan.freeTrialDays ? `${plan.freeTrialDays}-day free trial` : 'No trial offered'}</p>
+      <p class="mt-2 text-sm text-slate-500">Up to ${Number(plan.studentLimit || 0).toLocaleString()} students • ${plan.currency || 'GHS'} ${Number(plan.yearlyAmount || 0).toLocaleString()}/year</p>
       <ul class="mt-6 space-y-3 text-sm text-slate-600">
         ${features.slice(0, 6).map((item) => `<li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>${item}</li>`).join('')}
       </ul>
-      <button data-action="get-started" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
+      <button data-action="get-started" data-plan-slug="${plan.slug}" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
     </div>
   `;
 }
@@ -1093,6 +1146,8 @@ function getAppNavItems(role) {
       { id: 'overview', label: 'Dashboard', path: '#/role/teacher', icon: '◉' },
       { id: 'classes', label: 'Classes', path: '#/role/teacher/classes', icon: '🏫' },
       { id: 'students', label: 'Students', path: '#/role/teacher/students', icon: '👥' },
+      { id: 'assignments', label: 'Assignments', path: '#/role/teacher/assignments', icon: '📝' },
+      { id: 'lessons', label: 'Learning Materials', path: '#/role/teacher/lessons', icon: '📚' },
       { id: 'attendance', label: 'Attendance', path: '#/role/teacher/attendance', icon: '✓' },
       { id: 'exams', label: 'Exams / Marks', path: '#/role/teacher/exams', icon: '📝' },
       { id: 'notifications', label: 'Notifications', path: '#/role/teacher/notifications', icon: '🔔' },
@@ -1110,9 +1165,13 @@ function getAppNavItems(role) {
       { id: 'overview', label: 'Dashboard', path: '#/role/student', icon: '◉' },
       { id: 'classes', label: 'Classes', path: '#/role/student/classes', icon: '🏫' },
       { id: 'assignments', label: 'Assignments', path: '#/role/student/assignments', icon: '📝' },
+      { id: 'lessons', label: 'Learning Materials', path: '#/role/student/lessons', icon: '📚' },
+      { id: 'attendance', label: 'Attendance', path: '#/role/student/attendance', icon: '✓' },
       { id: 'results', label: 'Results', path: '#/role/student/results', icon: '📈' },
       { id: 'notifications', label: 'Notifications', path: '#/role/student/notifications', icon: '🔔' },
+      { id: 'announcements', label: 'Announcements', path: '#/role/student/announcements', icon: '📣' },
       { id: 'messages', label: 'Messages', path: '#/role/student/messages', icon: '💬' },
+      { id: 'profile', label: 'Profile', path: '#/role/student/profile', icon: '⌂' },
       { id: 'support', label: 'Support', path: '#/role/student/support', icon: '🛟' },
       { id: 'settings', label: 'Settings', path: '#/role/student/settings', icon: '⚙️' },
     ];
@@ -1189,7 +1248,7 @@ function getAuthenticatedModuleContent(section, role, userName) {
               <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Account & Login</p>
               <h3 class="mt-2 text-xl font-semibold text-slate-900">Google sign-in and secure account access</h3>
             </div>
-            <button type="button" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Connect Google</button>
+            <button type="button" id="student-connect-google" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Connect Google</button>
           </div>
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div class="rounded-2xl border border-slate-200 bg-white p-4">
@@ -1234,6 +1293,31 @@ function getAuthenticatedModuleContent(section, role, userName) {
 function attachAuthenticatedShellHandlers(role, section) {
   const sidebar = document.getElementById('app-sidebar');
   const backdrop = document.getElementById('app-sidebar-backdrop');
+
+  if (role === 'student') {
+    document.querySelectorAll('[data-student-assignment-id]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const schoolId = localStorage.getItem('globyedu_schoolId');
+        const token = getAccessToken();
+        const assignmentId = button.getAttribute('data-student-assignment-id');
+        if (!schoolId || !token || !assignmentId) return;
+        const formData = await showAdminForm('Submit assignment', [
+          { name: 'text', label: 'Your submission', type: 'textarea', required: true },
+        ]);
+        if (!formData) return;
+        const result = await submitAssignment(token, schoolId, assignmentId, {
+          studentId: localStorage.getItem('globyedu_studentId') || '',
+          text: formData.text,
+        });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to submit assignment.');
+          return;
+        }
+        alert('Assignment submitted successfully.');
+        renderRolePage('student', 'assignments');
+      });
+    });
+  }
 
   const setSidebarOpen = (open) => {
     if (!sidebar) return;
@@ -1386,16 +1470,20 @@ function renderVerifyEmailPage(status = 'pending', message = 'Verifying your ema
   root.innerHTML = `${Nav()}${VerifyEmailPage(status, message)}${Footer()}`;
 }
 
-async function renderAdminPage(section = 'overview', navigationId = routeGeneration) {
+async function renderAdminPage(section = 'overview', navigationId = routeGeneration, days = 365) {
   const userFullName = localStorage.getItem('globyedu_userFullName') || 'Benjamin';
   let summary = {};
   let schools = [];
+  let pricingPlans = [];
+  let auditLogs = [];
   const token = getAccessToken();
 
   if (token) {
-    const [summaryResult, schoolListResult] = await Promise.all([
-      fetchAdminDashboardSummary(token),
+    const [summaryResult, schoolListResult, pricingResult, auditResult] = await Promise.all([
+      fetchAdminDashboardSummary(token, days),
       fetchAdminSchoolList(token),
+      fetchAdminPricing(),
+      fetchPlatformAuditLogs(token, { limit: section === 'audit-logs' ? 100 : 4 }),
     ]);
 
     if (summaryResult.ok && summaryResult.data?.status === 'ok') {
@@ -1407,14 +1495,20 @@ async function renderAdminPage(section = 'overview', navigationId = routeGenerat
     } else {
       localStorage.removeItem('globyedu_schoolDirectory');
     }
+    if (pricingResult.ok && pricingResult.data?.status === 'ok') pricingPlans = pricingResult.data.pricingPlans || [];
+    if (auditResult.ok && auditResult.data?.status === 'ok') {
+      auditLogs = auditResult.data.auditLogs || [];
+      summary.latestActivity = auditLogs.slice(0, 4);
+    }
   }
 
   if (navigationId !== routeGeneration) return;
 
-  renderAuthenticatedAppShell(section, 'super_admin', AdminPage(section, userFullName, summary, schools));
+  renderAuthenticatedAppShell(section, 'super_admin', AdminPage(section, userFullName, summary, schools, pricingPlans, auditLogs));
   attachAdminHandlers();
   attachWebsiteCMSHandlers();
   attachAdminSectionHandlers(section);
+  attachAdminPageActions(section, summary, schools);
 }
 
 function renderRegisterSuccess() {
@@ -1449,6 +1543,8 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
   if (navigationId !== routeGeneration) return;
 
   let dashboardContent = '';
+  let assignments = [];
+  let lessons = [];
   let schoolData = { schoolName, schoolId, announcements: [], messages: [], students: [], teachers: [], classes: [] };
   const token = getAccessToken();
   if (token && schoolId) {
@@ -1469,10 +1565,17 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
         students: Array.isArray(school.students) ? school.students : [],
         teachers: Array.isArray(school.teachers) ? school.teachers : [],
         classes: Array.isArray(school.classes) ? school.classes : [],
+        attendanceRecords: Array.isArray(school.attendanceRecords) ? school.attendanceRecords : [],
         examRecords: Array.isArray(school.examRecords) ? school.examRecords : [],
         examResults: Array.isArray(school.examResults) ? school.examResults : [],
       };
     }
+    const academicQuery = role === 'student'
+      ? { studentId: localStorage.getItem('globyedu_studentId') || '' }
+      : { teacherId: localStorage.getItem('globyedu_userEmail') || userName };
+    const [assignmentResult, lessonResult] = await Promise.all([fetchAssignments(token, schoolId, academicQuery), fetchLessons(token, schoolId, academicQuery)]);
+    assignments = assignmentResult.ok && assignmentResult.data?.status === 'ok' ? assignmentResult.data.items || [] : [];
+    lessons = lessonResult.ok && lessonResult.data?.status === 'ok' ? lessonResult.data.items || [] : [];
   }
   
   if (role === 'teacher') {
@@ -1486,6 +1589,8 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
       teacherProfile: schoolData.teachers[0] || null,
       examRecords: schoolData.examRecords || [],
       examResults: schoolData.examResults || [],
+      assignments,
+      lessons,
     };
     dashboardContent = TeacherDashboard(section, teacherData);
   } else if (role === 'student') {
@@ -1514,6 +1619,8 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
       messages: schoolData.messages || [],
       payments: schoolData.payments || [],
       subjects: Array.from(new Set((schoolData.classes || []).flatMap((entry) => [entry.subject || entry.subjectName || entry.name || entry.className]).filter(Boolean))),
+      assignments,
+      lessons,
     };
     dashboardContent = StudentDashboard(section, studentData);
   } else {
@@ -2050,17 +2157,19 @@ function attachWorkspaceModuleHandlers() {
     let messages = [];
 
     if (schoolId && token) {
-      const result = await fetchWorkspaceMessages(token, schoolId, { folder });
+      const result = await fetchWorkspaceMessages(token, schoolId, { folder, search: query });
       if (result.ok && Array.isArray(result.data?.messages)) {
         messages = result.data.messages;
       } else {
-        messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, []);
+        messageList.innerHTML = '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">Unable to load messages right now.</div>';
+        return;
       }
     } else {
-      messages = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, []);
+      messageList.innerHTML = '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">Sign in to load messages.</div>';
+      return;
     }
 
-    const filtered = messages.filter((entry) => (!query || `${entry.subject || ''} ${entry.body || ''} ${entry.from || ''}`.toLowerCase().includes(query.toLowerCase())));
+    const filtered = messages;
     messageList.innerHTML = filtered.length
       ? filtered.map((entry) => `
           <div class="rounded-2xl border border-slate-200 bg-white p-4">
@@ -2069,9 +2178,11 @@ function attachWorkspaceModuleHandlers() {
                 <p class="font-semibold text-slate-900">${escapeHtml(entry.subject)}</p>
                 <p class="mt-1 text-sm text-slate-600">${escapeHtml(entry.body)}</p>
               </div>
-              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700">${escapeHtml(entry.from)}</span>
+              <span class="rounded-full ${entry.unread && folder !== 'sent' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-700'} px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em]">${entry.unread && folder !== 'sent' ? 'Unread' : 'Read'}</span>
             </div>
+            <p class="mt-2 text-xs text-slate-500">${escapeHtml(folder === 'sent' ? `To ${entry.to || 'Recipient'}` : `From ${entry.from || 'Sender'}`)} • ${entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}</p>
             <div class="mt-4 flex flex-wrap gap-3">
+              ${entry.unread && folder !== 'sent' ? `<button type="button" data-message-action="read" data-message-id="${entry.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Mark read</button>` : ''}
               <button type="button" data-message-action="reply" data-message-id="${entry.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Reply</button>
               <button type="button" data-message-action="forward" data-message-id="${entry.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Forward</button>
               <button type="button" data-message-action="delete" data-message-id="${entry.id}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">Delete</button>
@@ -2127,27 +2238,26 @@ function attachWorkspaceModuleHandlers() {
 
   document.querySelectorAll('[data-workspace-message-compose]').forEach((button) => {
     button.addEventListener('click', async () => {
-      const isTeacher = getUserRole() === 'teacher';
-      const audienceOptions = isTeacher
-        ? [{ value: 'teachers', label: 'Teachers' }, { value: 'all', label: 'Everyone' }]
-        : [{ value: 'students', label: 'Students' }, { value: 'teachers', label: 'Teachers' }, { value: 'parents', label: 'Parents' }, { value: 'all', label: 'Everyone' }];
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      const recipientsResult = schoolId && token ? await fetchMessageRecipients(token, schoolId) : null;
+      const recipients = recipientsResult?.ok && Array.isArray(recipientsResult.data?.recipients) ? recipientsResult.data.recipients : [];
+      const recipientOptions = recipients.map((recipient) => ({ value: recipient.id, label: `${recipient.name} (${recipient.role})` }));
+      if (!recipientOptions.length) {
+        alert(recipientsResult?.data?.message || 'No authorized messaging recipients are available.');
+        return;
+      }
       const formData = await showAdminForm('Compose message', [
-        { name: 'recipient', label: 'Audience', type: 'select', options: audienceOptions, required: true },
+        { name: 'recipientId', label: 'Recipient', type: 'select', options: recipientOptions, required: true },
         { name: 'subject', label: 'Subject', required: true },
         { name: 'body', label: 'Message', type: 'textarea', required: true },
       ]);
       if (!formData) return;
-      const schoolId = localStorage.getItem('globyedu_schoolId');
-      const token = getAccessToken();
       if (!schoolId || !token) return;
       const result = await createWorkspaceMessage(token, schoolId, {
-        folder: 'sent',
-        from: isTeacher ? (localStorage.getItem('globyedu_userFullName') || 'Teacher') : 'School Authority',
-        to: formData.recipient,
-        recipientType: formData.recipient,
+        recipientId: formData.recipientId,
         subject: formData.subject,
         body: formData.body,
-        unread: false,
         attachments: [],
       });
       if (!result.ok || result.data?.status !== 'ok') {
@@ -2204,6 +2314,15 @@ function attachWorkspaceModuleHandlers() {
           writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.messages, messages.filter((item) => item.id !== id));
         }
         recordWorkspaceActivity('Message deleted', 'A workspace message was removed.', 'message');
+      } else if (messageButton.getAttribute('data-message-action') === 'read') {
+        if (schoolId && token) {
+          const result = await updateWorkspaceMessage(token, schoolId, id, { unread: false });
+          if (!result.ok) {
+            alert(result.data?.message || 'Unable to mark message as read.');
+            return;
+          }
+        }
+        recordWorkspaceActivity('Message read', 'A workspace message was marked as read.', 'message');
       } else {
         if (schoolId && token) {
           const target = await fetchWorkspaceMessages(token, schoolId, { folder: 'inbox' }).then((result) => (result.ok && Array.isArray(result.data?.messages) ? result.data.messages.find((entry) => entry.id === id) : null));
@@ -2223,7 +2342,7 @@ function attachWorkspaceModuleHandlers() {
           }
         }
       }
-      refreshMessages();
+      refreshMessages(activeMessageFolder);
     }
 
     const supportButton = event.target.closest('[data-support-action]');
@@ -2682,7 +2801,7 @@ function attachSchoolHandlers() {
           return;
         }
         const createdStudent = result.data?.entity || {};
-        alert(`Student created successfully.\nAdmission Number: ${createdStudent.admissionNumber || 'Generated by the school data layer'}\nTemporary password: ${createdStudent.temporaryPassword || 'Use the password reset flow to set credentials.'}`);
+        alert(`Student created successfully.\nAdmission Number: ${createdStudent.admissionNumber || 'Generated by the school data layer'}\nThe student must use the password reset flow before first login.`);
         renderSchoolDashboardPage('students', ++routeGeneration);
         return;
       }
@@ -2786,7 +2905,7 @@ function attachSchoolHandlers() {
           return;
         }
         const createdTeacher = result.data?.entity || {};
-        alert(`Teacher created successfully.\nTemporary password: ${createdTeacher.temporaryPassword || 'Use the password reset flow to set credentials.'}`);
+        alert('Teacher created successfully. The teacher must use the password reset flow before first login.');
         renderSchoolDashboardPage('teachers');
         return;
       }
@@ -3150,7 +3269,8 @@ function attachSchoolHandlers() {
       const school = result.ok && result.data?.status === 'ok' ? result.data.school || {} : {};
       const students = Array.isArray(school.students) ? school.students : [];
       const records = Array.isArray(school.attendanceRecords) ? school.attendanceRecords : [];
-      const rosterEntries = buildAttendanceRoster(students, records, date, className);
+      const classRecord = (Array.isArray(school.classes) ? school.classes : []).find((entry) => [entry.classId, entry.id, entry.name, entry.className, entry.grade].filter(Boolean).some((value) => String(value).trim().toLowerCase() === String(className).trim().toLowerCase()));
+      const rosterEntries = buildAttendanceRoster(students, records, date, className, classRecord);
       const statusOptions = ['present', 'absent', 'late', 'excused'];
       feedback.textContent = rosterEntries.length ? `${rosterEntries.length} student${rosterEntries.length === 1 ? '' : 's'} loaded for ${className} on ${date}.` : 'No active students belong to this class.';
       roster.innerHTML = rosterEntries.length ? `
@@ -3238,6 +3358,7 @@ function attachSchoolHandlers() {
           parentPhone: formData.parentPhone || null,
           parentEmail: formData.parentEmail || null,
           medical: formData.medical || null,
+          profilePhoto: formData.profilePhoto || studentRecord.profilePhoto || null,
           status: studentRecord.status || 'active',
         });
         const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
@@ -3731,21 +3852,25 @@ function attachSchoolHandlers() {
       }
 
       if (action === 'record-payment') {
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const currentSchool = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const studentOptions = (Array.isArray(currentSchool.students) ? currentSchool.students : [])
+          .filter((student) => String(student.status || 'active').toLowerCase() !== 'archived')
+          .map((student) => ({ label: `${student.fullName || student.name || student.email} (${student.studentId || student.id || student.email})`, value: student.studentId || student.id || student.email }))
+          .filter((option) => option.value);
         const formData = await showAdminForm('Record payment', [
           { name: 'amount', label: 'Amount', required: true },
-          { name: 'student', label: 'Student', required: true },
+          { name: 'studentId', label: 'Student', type: 'select', options: studentOptions, required: true },
+          { name: 'feeType', label: 'Fee type/category' },
+          { name: 'paymentDate', label: 'Payment date', type: 'date', required: true },
           { name: 'method', label: 'Payment method', placeholder: 'Cash / Bank / Paystack / MTN MoMo' },
           { name: 'reference', label: 'Reference number' },
-          { name: 'status', label: 'Status', placeholder: 'received' },
+          { name: 'academicYear', label: 'Academic year', value: currentSchool.academicYear || '' },
+          { name: 'term', label: 'Term', value: currentSchool.currentTerm || '' },
           { name: 'note', label: 'Note', type: 'textarea' },
         ]);
         if (!formData) return;
-        const currentResult = await fetchSchoolDetails(token, schoolId);
-        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
-        const payment = { ...buildSchoolCollectionPayload('payments', formData), id: `payment-${Date.now()}`, createdAt: new Date().toISOString() };
-        const receipts = Array.isArray(school.receipts) ? school.receipts : [];
-        const receipt = { receiptNumber: `RCPT-${Date.now()}`, student: payment.student, amount: Number(payment.amount || 0), currency: school.currency || school.branding?.currency || school.settings?.currency || 'USD', paymentMethod: payment.method, reference: payment.reference, paidAt: payment.createdAt, status: payment.status };
-        const result = await updateSchoolDetails(token, schoolId, { payments: [...(Array.isArray(school.payments) ? school.payments : []), payment], receipts: [...receipts, receipt] });
+        const result = await createFeePayment(token, schoolId, { ...formData, status: 'received' });
         if (!result.ok || result.data?.status !== 'ok') {
           alert(result.data?.message || 'Unable to record payment and receipt.');
           return;
@@ -3802,10 +3927,38 @@ function attachSchoolHandlers() {
           return;
         }
         const currency = receipt.currency || school.currency || school.branding?.currency || school.settings?.currency || 'USD';
-        printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(receipt.receiptNumber || 'Receipt')}</title><style>body{font-family:Arial,sans-serif;max-width:720px;margin:40px auto;padding:24px;color:#172033}h1{margin-bottom:4px}dl{display:grid;grid-template-columns:180px 1fr;gap:12px;border-top:1px solid #ddd;padding-top:20px}dt{font-weight:bold}dd{margin:0}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(school.name || 'School receipt')}</h1><p>Official payment receipt</p><dl><dt>Receipt number</dt><dd>${escapeHtml(receipt.receiptNumber || '')}</dd><dt>Student/customer</dt><dd>${escapeHtml(receipt.student || '')}</dd><dt>Amount</dt><dd>${escapeHtml(`${currency} ${Number(receipt.amount || 0).toFixed(2)}`)}</dd><dt>Payment method</dt><dd>${escapeHtml(receipt.paymentMethod || '')}</dd><dt>Reference</dt><dd>${escapeHtml(receipt.reference || '')}</dd><dt>Paid at</dt><dd>${escapeHtml(receipt.paidAt || '')}</dd><dt>Status</dt><dd>${escapeHtml(receipt.status || '')}</dd></dl><button onclick="window.print()">Print</button></body></html>`);
+        const logo = school.logo || school.branding?.logo || '';
+        const details = [
+          ['Receipt number', receipt.receiptNumber], ['Student', receipt.studentName || receipt.student], ['Student ID', receipt.studentId],
+          ['Class', receipt.className], ['Description', receipt.feeType], ['Amount paid', `${currency} ${Number(receipt.amount || 0).toFixed(2)}`],
+          ['Payment method', receipt.paymentMethod], ['Payment date', receipt.paymentDate || receipt.paidAt], ['Academic year', receipt.academicYear],
+          ['Term', receipt.term], ['Reference', receipt.reference], ['Status', receipt.status], ['Authorized officer', receipt.authorizedBy],
+        ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '');
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(receipt.receiptNumber || 'Receipt')}</title><style>@page{size:A4;margin:18mm}body{font-family:Arial,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#172033}header{display:flex;gap:18px;align-items:center;border-bottom:2px solid #0f766e;padding-bottom:18px}header img{width:72px;height:72px;object-fit:contain}h1{margin:0 0 4px}p{margin:4px 0;color:#52606d}dl{display:grid;grid-template-columns:190px 1fr;gap:12px;border-top:1px solid #d8dee4;margin-top:28px;padding-top:18px}dt{font-weight:bold}dd{margin:0}button{margin-top:30px;padding:10px 18px}@media print{button{display:none}}</style></head><body><header>${logo ? `<img src="${escapeHtml(logo)}" alt="School logo">` : ''}<div><h1>${escapeHtml(school.name || 'School receipt')}</h1><p>${escapeHtml(school.address || school.phone || school.email || '')}</p><p>Official payment receipt</p></div></header><dl>${details.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl><button onclick="window.print()">Print</button></body></html>`;
+        printWindow.document.write(html);
         printWindow.document.close();
         printWindow.focus();
         printWindow.print();
+        return;
+      }
+
+      if (action === 'download-receipt') {
+        const currentResult = await fetchSchoolDetails(token, schoolId);
+        const school = currentResult.ok && currentResult.data?.status === 'ok' ? currentResult.data.school || {} : {};
+        const receiptId = button.getAttribute('data-receipt-id') || '';
+        const receipt = (Array.isArray(school.receipts) ? school.receipts : []).find((entry) => entry.receiptNumber === receiptId);
+        if (!receipt) {
+          alert('Receipt is no longer available. Refresh the finance page and try again.');
+          return;
+        }
+        const currency = receipt.currency || school.currency || school.branding?.currency || school.settings?.currency || 'USD';
+        const rows = [['Receipt number', receipt.receiptNumber], ['Student', receipt.studentName || receipt.student], ['Student ID', receipt.studentId], ['Class', receipt.className], ['Description', receipt.feeType], ['Amount paid', `${currency} ${Number(receipt.amount || 0).toFixed(2)}`], ['Payment method', receipt.paymentMethod], ['Payment date', receipt.paymentDate || receipt.paidAt], ['Academic year', receipt.academicYear], ['Term', receipt.term], ['Reference', receipt.reference], ['Status', receipt.status]].filter(([, value]) => value);
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(receipt.receiptNumber || 'Receipt')}</title><style>@page{size:A4;margin:18mm}body{font-family:Arial,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#172033}h1{border-bottom:2px solid #0f766e;padding-bottom:16px}dl{display:grid;grid-template-columns:190px 1fr;gap:12px}dt{font-weight:bold}dd{margin:0}</style></head><body><h1>${escapeHtml(school.name || 'School receipt')}</h1><p>${escapeHtml(school.address || school.phone || school.email || '')}</p><dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl></body></html>`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+        link.download = `${receipt.receiptNumber || 'payment-receipt'}.html`;
+        link.click();
+        URL.revokeObjectURL(link.href);
         return;
       }
 
@@ -4416,6 +4569,73 @@ function initializeTeacherWorkspaceHandlers() {
       const token = getAccessToken();
       if (!schoolId || !token) return;
 
+      if (action === 'create-assignment' || action === 'create-lesson') {
+        const schoolResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school || {} : {};
+        const classOptions = (Array.isArray(school.classes) ? school.classes : []).map((entry) => ({
+          label: entry.name || entry.className || entry.classId || 'Class',
+          value: entry.classId || entry.id || entry.name || '',
+        })).filter((entry) => entry.value);
+        const formData = await showAdminForm(action === 'create-assignment' ? 'Create assignment' : 'Create learning material', [
+          { name: 'title', label: 'Title', required: true },
+          { name: 'classId', label: 'Authorized class', type: 'select', options: classOptions, required: true },
+          { name: 'subject', label: 'Subject', required: true },
+          { name: action === 'create-assignment' ? 'instructions' : 'content', label: action === 'create-assignment' ? 'Instructions' : 'Content', type: 'textarea', required: true },
+          ...(action === 'create-assignment' ? [{ name: 'dueDate', label: 'Due date', type: 'datetime-local', required: true }] : []),
+        ]);
+        if (!formData) return;
+        const selectedClass = classOptions.find((entry) => entry.value === formData.classId);
+        const payload = {
+          title: formData.title,
+          classId: formData.classId,
+          className: selectedClass?.label || '',
+          subject: formData.subject,
+          teacherId: localStorage.getItem('globyedu_userEmail') || '',
+          createdBy: localStorage.getItem('globyedu_userEmail') || '',
+          ...(action === 'create-assignment' ? { instructions: formData.instructions, dueDate: formData.dueDate } : { content: formData.content, description: formData.content }),
+        };
+        const result = action === 'create-assignment'
+          ? await createAssignment(token, schoolId, payload)
+          : await createLesson(token, schoolId, payload);
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to save academic content.');
+          return;
+        }
+        alert(action === 'create-assignment' ? 'Assignment created successfully.' : 'Learning material created successfully.');
+        renderRolePage('teacher', action === 'create-assignment' ? 'assignments' : 'lessons');
+        return;
+      }
+
+      if (action === 'create-student') {
+        const schoolResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school || {} : {};
+        const classOptions = (Array.isArray(school.classes) ? school.classes : []).map((entry) => ({
+          label: entry.name || entry.className || entry.classId || 'Class',
+          value: entry.classId || entry.id || entry.name || '',
+        })).filter((entry) => entry.value);
+        const formData = await showAdminForm('Add student', [
+          { name: 'fullName', label: 'Student full name', required: true },
+          { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'classId', label: 'Authorized class', type: 'select', options: classOptions, required: true },
+        ]);
+        if (!formData) return;
+        const selectedClass = classOptions.find((entry) => entry.value === formData.classId);
+        const result = await createSchoolEntity(token, schoolId, 'students', {
+          fullName: formData.fullName,
+          profilePhoto: formData.profilePhoto || null,
+          classId: formData.classId,
+          className: selectedClass?.label || '',
+          status: 'active',
+        });
+        if (!result.ok || result.data?.status !== 'ok') {
+          alert(result.data?.message || 'Unable to create student.');
+          return;
+        }
+        alert('Student created successfully. The generated Student ID is available in the student list.');
+        renderRolePage('teacher', 'students');
+        return;
+      }
+
       if (action === 'enter-marks') {
         const formData = await showAdminForm('Enter marks', [
           { name: 'studentId', label: 'Student reference (optional)' },
@@ -4516,6 +4736,35 @@ function initializeTeacherWorkspaceHandlers() {
     if (profileSaveButton) profileSaveButton.dataset.profilePhoto = dataUrl;
     if (profilePhotoPreview) profilePhotoPreview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Profile preview" class="h-20 w-20 rounded-full object-cover" />`;
   });
+
+  document.querySelectorAll('[data-teacher-student-edit]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const studentId = button.getAttribute('data-teacher-student-edit');
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const token = getAccessToken();
+      const schoolResult = await fetchSchoolDetails(token, schoolId);
+      const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school || {} : {};
+      const student = (school.students || []).find((entry) => String(entry.studentId || entry.id || entry.email) === studentId);
+      if (!student) return;
+      const formData = await showAdminForm('Edit student', [
+        { name: 'fullName', label: 'Student full name', value: student.fullName || '', required: true },
+        { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*', capture: 'environment' },
+        { name: 'className', label: 'Class', value: student.className || '', required: true },
+      ]);
+      if (!formData) return;
+      const result = await updateSchoolEntity(token, schoolId, 'students', studentId, {
+        fullName: formData.fullName,
+        profilePhoto: formData.profilePhoto || student.profilePhoto || null,
+        className: formData.className,
+      });
+      if (!result.ok || result.data?.status !== 'ok') {
+        alert(result.data?.message || 'Unable to edit student.');
+        return;
+      }
+      alert('Student updated successfully.');
+      renderRolePage('teacher', 'students');
+    });
+  });
 }
 
 function parseHash() {
@@ -4537,6 +4786,10 @@ function getPlatformAdminFlag() {
 
 function getAccessToken() {
   return localStorage.getItem('globyedu_accessToken');
+}
+
+function passwordChangeRequired() {
+  return localStorage.getItem('globyedu_passwordNeedsReset') === 'true';
 }
 
 async function registerServiceWorker() {
@@ -4600,6 +4853,10 @@ function isAuthenticated() {
 
 function redirectAuthenticatedUser() {
   if (!isAuthenticated()) return false;
+  if (passwordChangeRequired()) {
+    location.hash = '#/change-password';
+    return true;
+  }
   if (getPlatformAdminFlag()) {
     location.hash = '#/admin/overview';
     return true;
@@ -4623,6 +4880,7 @@ function clearAuthenticationState() {
   localStorage.removeItem('globyedu_platformAdmin');
   localStorage.removeItem('globyedu_userEmail');
   localStorage.removeItem('globyedu_userFullName');
+  localStorage.removeItem('globyedu_passwordNeedsReset');
   localStorage.removeItem('globyedu_schoolId');
   localStorage.removeItem('globyedu_schoolName');
   localStorage.removeItem('globyedu_trialEnds');
@@ -4701,18 +4959,26 @@ function attachLoginHandlers() {
   const selectedRoleDescription = document.getElementById('selected-role-description');
   const selectedRoleBadge = document.getElementById('selected-role-badge');
   const fieldSchoolIdGroup = document.getElementById('field-school-id-group');
-  const fieldSchoolNameGroup = document.getElementById('field-school-name-group');
-  const fieldSchoolIdLabel = document.getElementById('field-school-id-label');
-  const studentDetails = document.getElementById('student-details');
-  const teacherDetails = document.getElementById('teacher-details');
-  const usernameLabel = document.getElementById('field-username-label');
+  const fieldIdentifierLabel = document.getElementById('field-identifier-label');
   const schoolIdInput = document.getElementById('school-id');
-  const schoolNameInput = document.getElementById('school-name');
-  const usernameInput = document.getElementById('student-id') || document.getElementById('login-username');
+  const usernameInput = document.getElementById('login-identifier');
   const loginRoleInput = document.getElementById('login-role');
+  const forgotPasswordLink = document.getElementById('forgot-password-link');
   const superAdminPortalLink = document.getElementById('super-admin-portal');
   const storedSchoolId = localStorage.getItem('globyedu_schoolId') || '';
   const storedSchoolName = localStorage.getItem('globyedu_schoolName') || '';
+
+  function resolveSelectedSchoolId(rawValue = '') {
+    const currentValue = String(rawValue || '').trim();
+    if (currentValue) return currentValue;
+    if (storedSchoolId) return storedSchoolId;
+
+    const host = window.location.hostname || '';
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('local')) {
+      return 'globy-school';
+    }
+    return '';
+  }
 
   function renderLoginError(data, fallbackMessage = 'Unable to sign in. Please check your details.') {
     if (data?.code === 'ACCOUNT_SUSPENDED') {
@@ -4733,45 +4999,37 @@ function attachLoginHandlers() {
       title: 'Platform Super Admin',
       description: 'Sign in with your platform administrator account.',
       badge: 'Platform admin',
-      usernameLabel: 'Email',
-      usernamePlaceholder: 'you@example.com',
+      identifierLabel: 'Email',
+      identifierPlaceholder: 'you@example.com',
       showSchoolId: false,
-      showSchoolName: false,
-      showStudentDetails: false,
-      googleEnabled: true,
+      googleEnabled: false,
     },
     school_authority: {
       title: 'School Authority',
-      description: 'Use your school email and tenant ID to access administrative tools.',
+      description: 'Use your School ID, School Email, and Password to access administrative tools.',
       badge: 'School authority',
-      usernameLabel: 'School Email',
-      usernamePlaceholder: 'head@school.edu',
+      identifierLabel: 'School Email',
+      identifierPlaceholder: 'head@school.edu',
       showSchoolId: true,
-      showSchoolName: true,
-      showStudentDetails: false,
       googleEnabled: true,
     },
     teacher: {
       title: 'Teacher',
-      description: 'Enter your school name, email, and password to manage classes and learners.',
+      description: 'Use your School ID, Teacher ID, and Password to manage classes and learners.',
       badge: 'Teacher',
-      usernameLabel: 'Email',
-      usernamePlaceholder: 'teacher@school.edu',
-      showSchoolId: false,
-      showSchoolName: true,
-      showStudentDetails: false,
-      googleEnabled: false,
+      identifierLabel: 'Teacher ID',
+      identifierPlaceholder: 'T001',
+      showSchoolId: true,
+      googleEnabled: true,
     },
     student: {
       title: 'Student',
-      description: 'Use your school name, email, class, and password to open the learner workspace.',
+      description: 'Use your School ID, Student ID, and Password to open the learner workspace.',
       badge: 'Student',
-      usernameLabel: 'Email',
-      usernamePlaceholder: 'student@school.edu',
-      showSchoolId: false,
-      showSchoolName: true,
-      showStudentDetails: true,
-      googleEnabled: false,
+      identifierLabel: 'Student ID',
+      identifierPlaceholder: 'STU001',
+      showSchoolId: true,
+      googleEnabled: true,
     },
   };
 
@@ -4783,15 +5041,18 @@ function attachLoginHandlers() {
     selectedRoleTitle.textContent = config.title;
     selectedRoleDescription.textContent = config.description;
     selectedRoleBadge.textContent = config.badge;
-    usernameLabel.textContent = config.usernameLabel;
-    if (usernameInput) {
-      usernameInput.placeholder = config.usernamePlaceholder;
+    if (fieldIdentifierLabel) {
+      fieldIdentifierLabel.textContent = config.identifierLabel;
     }
-    fieldSchoolIdGroup.classList.toggle('hidden', !config.showSchoolId);
-    fieldSchoolNameGroup.classList.toggle('hidden', !config.showSchoolName);
-    studentDetails.classList.toggle('hidden', !config.showStudentDetails);
-    if (teacherDetails) {
-      teacherDetails.classList.toggle('hidden', role !== 'teacher');
+    if (usernameInput) {
+      usernameInput.placeholder = config.identifierPlaceholder;
+      usernameInput.setAttribute('aria-label', config.identifierLabel);
+    }
+    if (fieldSchoolIdGroup) {
+      fieldSchoolIdGroup.classList.toggle('hidden', !config.showSchoolId);
+    }
+    if (forgotPasswordLink) {
+      forgotPasswordLink.setAttribute('href', role === 'platform_admin' ? '#/forgot?type=platform_admin' : '#/forgot');
     }
     roleButtons.forEach((button) => {
       const isSelected = button.dataset.loginRole === role;
@@ -4831,6 +5092,8 @@ function attachLoginHandlers() {
   }
 
   updateSelectedRole(loginRoleInput?.value || 'school_authority');
+  const defaultSchoolId = resolveSelectedSchoolId(schoolIdInput?.value || '');
+  if (schoolIdInput && defaultSchoolId) schoolIdInput.value = defaultSchoolId;
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -4840,10 +5103,8 @@ function attachLoginHandlers() {
     const password = document.getElementById('password').value;
     const remember = document.getElementById('remember-me')?.checked;
     const submitButton = form.querySelector('button[type="submit"]');
-    const schoolId = schoolIdInput?.value.trim();
-    const schoolName = schoolNameInput?.value.trim();
-    const studentName = document.getElementById('student-name')?.value.trim();
-    const studentClass = document.getElementById('student-class')?.value.trim();
+    const schoolId = resolveSelectedSchoolId(schoolIdInput?.value || '');
+    if (schoolIdInput && schoolId) schoolIdInput.value = schoolId;
 
     if (submitButton) submitButton.disabled = true;
     if (!role) {
@@ -4852,27 +5113,10 @@ function attachLoginHandlers() {
       return;
     }
 
-    if (role === 'school_authority' && !schoolId) {
+    if (role !== 'platform_admin' && !schoolId) {
       messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">School ID is required for this role.</div>`;
       if (submitButton) submitButton.disabled = false;
       return;
-    }
-
-    if (role === 'student') {
-      if (!schoolName || !studentName || !studentClass) {
-        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">School name, student name, and class are required for student sign in.</div>`;
-        if (submitButton) submitButton.disabled = false;
-        return;
-      }
-    }
-
-    if (role === 'teacher') {
-      const teacherName = document.getElementById('teacher-name')?.value.trim();
-      if (!schoolName || !teacherName) {
-        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">School name and teacher name are required for teacher sign in.</div>`;
-        if (submitButton) submitButton.disabled = false;
-        return;
-      }
     }
 
     if (!username || !password) {
@@ -4888,10 +5132,9 @@ function attachLoginHandlers() {
       } else if (role === 'school_authority') {
         response = await schoolAuthorityLogin(schoolId, username, password);
       } else if (role === 'teacher') {
-        const teacherName = document.getElementById('teacher-name')?.value.trim();
-        response = await teacherLogin(schoolId, username, password, { schoolName, teacherName });
+        response = await teacherLogin(schoolId, username, password);
       } else {
-        response = await studentLogin(schoolId, username, password, { schoolName, studentName, studentClass });
+        response = await studentLogin(schoolId, username, password);
       }
 
       if (!response.ok || response.data?.status !== 'ok') {
@@ -4904,6 +5147,7 @@ function attachLoginHandlers() {
         localStorage.setItem('globyedu_platformAdmin', role === 'platform_admin' ? 'true' : 'false');
         localStorage.setItem('globyedu_userEmail', username);
         localStorage.setItem('globyedu_userFullName', response.data.fullName || username);
+        localStorage.setItem('globyedu_passwordNeedsReset', String(response.data.passwordNeedsReset === true || response.data.response?.passwordNeedsReset === true));
         if (role === 'student') {
           if (response.data.studentId || response.data.response?.studentId) {
             localStorage.setItem('globyedu_studentId', response.data.studentId || response.data.response.studentId);
@@ -4919,11 +5163,9 @@ function attachLoginHandlers() {
             if (resolvedSchoolId) {
               localStorage.setItem('globyedu_schoolId', resolvedSchoolId);
         }
-            const resolvedSchoolName = schoolName || response.data.schoolName || response.data.response?.schoolName || '';
+            const resolvedSchoolName = response.data.schoolName || response.data.response?.schoolName || localStorage.getItem('globyedu_schoolName') || '';
             if (resolvedSchoolName) {
               localStorage.setItem('globyedu_schoolName', resolvedSchoolName);
-        } else {
-          localStorage.setItem('globyedu_schoolName', response.data.schoolName || localStorage.getItem('globyedu_schoolName') || 'Globy School');
         }
         if (remember) {
           localStorage.setItem('globyedu_sessionActive', 'true');
@@ -4961,11 +5203,16 @@ function attachLoginHandlers() {
   if (googleButton) {
     googleButton.addEventListener('click', async () => {
       const role = loginRoleInput.value;
-      if (role !== 'school_authority' && role !== 'platform_admin') {
-        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Google sign-in is available for school authority and platform administration accounts.</div>`;
+      if (!['school_authority', 'teacher', 'student'].includes(role)) {
+        messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Google sign-in is available for school, teacher, and student accounts.</div>`;
         return;
       }
-      if (!schoolIdInput?.value?.trim() && role !== 'platform_admin') {
+
+      const resolvedSchoolId = resolveSelectedSchoolId(schoolIdInput?.value || '');
+      if (schoolIdInput && resolvedSchoolId) {
+        schoolIdInput.value = resolvedSchoolId;
+      }
+      if (!resolvedSchoolId) {
         messageSlot.innerHTML = `<div class="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-amber-800">Please select a school and role before using Google sign in.</div>`;
         return;
       }
@@ -4982,7 +5229,7 @@ function attachLoginHandlers() {
         }
 
         const idToken = await credential.user.getIdToken();
-        const response = await apiFirebaseLogin(idToken, role === 'platform_admin' ? 'globy-school' : schoolIdInput.value.trim(), role === 'platform_admin');
+        const response = await apiFirebaseLogin(idToken, resolvedSchoolId, false, { identifier: usernameInput?.value.trim(), loginType: role });
 
         if (!response.ok || response.data?.status !== 'ok') {
           messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${response.data?.message || 'Unable to sign in with Google.'}</div>`;
@@ -5006,6 +5253,25 @@ function attachLoginHandlers() {
       } catch (error) {
         messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Unable to sign in with Google. Try again later.</div>`;
         console.error('Google sign-in failed:', error);
+      }
+    });
+  }
+
+  const connectGoogleButton = document.getElementById('student-connect-google');
+  if (connectGoogleButton) {
+    connectGoogleButton.addEventListener('click', async () => {
+      const accessToken = getAccessToken();
+      if (!accessToken || !isFirebaseConfigured()) {
+        alert('Firebase is not configured for Google account linking.');
+        return;
+      }
+      try {
+        const credential = await firebaseLinkGoogle();
+        const idToken = await credential.user.getIdToken();
+        const response = await linkFirebaseIdentity(idToken, accessToken);
+        alert(response.ok ? 'Google account linked successfully.' : (response.data?.message || 'Unable to link Google account.'));
+      } catch (error) {
+        alert('Unable to link Google account.');
       }
     });
   }
@@ -5201,6 +5467,7 @@ function attachChangePasswordHandlers() {
     if (result.data.accessToken) {
       localStorage.setItem('globyedu_accessToken', result.data.accessToken);
     }
+    localStorage.removeItem('globyedu_passwordNeedsReset');
     const role = getUserRole();
     location.hash = role === 'super_admin' || getPlatformAdminFlag() ? '#/admin/overview' : role === 'school_authority' ? '#/school/overview' : `#/role/${role || 'student'}`;
   });
@@ -5222,12 +5489,22 @@ async function route() {
     return renderPlatformAdminPage();
   }
   if (current === 'register') return renderRegisterPage();
+  if (current === 'checkout') return renderCheckoutPage(params.get('plan') || '', params.get('period') || 'monthly', params.get('reference') || '');
+  if (current === 'legal' || current.startsWith('legal/')) {
+    const policy = current.split('/')[1] || 'privacy';
+    root.innerHTML = `${LegalPage(policy)}${Footer()}`;
+    return;
+  }
   if (current === 'forgot') return renderForgotPage(params.get('type') || 'school');
   if (current === 'reset-password') return renderResetPasswordPage(params.get('token') || params.get('oobCode') || '', params.get('type') || 'school');
   if (current === 'change-password') {
     if (!requireAuth()) return;
     root.innerHTML = `${Nav()}${ChangePasswordPage()}${Footer()}`;
     attachChangePasswordHandlers();
+    return;
+  }
+  if (isAuthenticated() && passwordChangeRequired()) {
+    location.hash = '#/change-password';
     return;
   }
   if (current === 'verify-email') return handleEmailVerification(params.get('oobCode') || '');
@@ -5242,7 +5519,7 @@ async function route() {
       return;
     }
     const section = current === 'admin' ? 'overview' : current.split('/')[1] || 'overview';
-    return renderAdminPage(section, navigationId);
+    return renderAdminPage(section, navigationId, Number(params.get('days') || 365));
   }
   if (current === 'school' || current.startsWith('school/')) {
     if (!requireAuth()) return;
@@ -5348,20 +5625,29 @@ function attachAdminPageActions(section, summary, schools) {
   if (section !== 'schools') return;
 
   const searchInput = document.getElementById('school-search-input');
+  const statusFilter = document.getElementById('school-status-filter');
+  const applySchoolStatusFilter = () => {
+    const selectedStatus = String(statusFilter?.value || '').toLowerCase();
+    document.querySelectorAll('[data-school-status]').forEach((row) => {
+      const matches = !selectedStatus || row.dataset.schoolStatus === selectedStatus;
+      row.classList.toggle('hidden', !matches);
+    });
+  };
+
   if (searchInput) {
     searchInput.addEventListener('input', debounce(async () => {
       await refreshAdminSchoolList(searchInput.value.trim());
+      applySchoolStatusFilter();
     }, 300));
   }
+  statusFilter?.addEventListener('change', applySchoolStatusFilter);
+  applySchoolStatusFilter();
 
   const createButton = document.getElementById('create-school-button');
   if (createButton) {
     createButton.addEventListener('click', () => handleCreateSchool());
   }
 
-  document.querySelectorAll('.admin-school-action').forEach((button) => {
-    button.addEventListener('click', (event) => handleSchoolAction(event, schools));
-  });
 }
 
 function debounce(fn, delay = 250) {
@@ -5722,13 +6008,31 @@ function attachContactHandlers() {
   const status = document.getElementById('contact-status');
   if (!form || !status) return;
 
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const submitButton = form.querySelector('button[type="submit"]');
+    const name = document.getElementById('contact-name')?.value.trim();
+    const email = document.getElementById('contact-email')?.value.trim();
+    const message = document.getElementById('contact-message')?.value.trim();
+
     status.textContent = 'Sending...';
-    setTimeout(() => {
-      status.textContent = 'Thanks! We will follow up within one business day.';
+    if (submitButton) submitButton.disabled = true;
+
+    try {
+      const response = await fetch('/api/v1/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'Unable to send your message.');
+      status.textContent = data.message || 'Thanks! Our team will follow up within one business day.';
       form.reset();
-    }, 600);
+    } catch (error) {
+      status.textContent = error.message || 'Unable to send your message right now. Please try again.';
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
   });
 }
 

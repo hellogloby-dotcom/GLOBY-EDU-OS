@@ -177,10 +177,23 @@ function buildChangedFieldsPayload(currentData = {}, updatedData = {}) {
   return changes;
 }
 
-function buildAttendanceRoster(students = [], records = [], date = '', className = '') {
+function buildAttendanceRoster(students = [], records = [], date = '', className = '', classRecord = null) {
+  const selectedClassId = String(classRecord?.classId || classRecord?.id || '').trim().toLowerCase();
+  const selectedClassName = String(classRecord?.name || classRecord?.className || className || '').trim().toLowerCase();
+  const selectedGrade = String(classRecord?.grade || '').trim().toLowerCase();
+  const roster = Array.isArray(classRecord?.students) ? classRecord.students.map((entry) => String(entry?.studentId || entry?.id || entry).trim().toLowerCase()) : [];
   return (Array.isArray(students) ? students : [])
     .filter((student) => String(student.status || 'active').toLowerCase() !== 'archived')
-    .filter((student) => String(student.className || student.gradeLevel || student.grade || '').trim() === String(className).trim())
+    .filter((student) => {
+      const studentId = String(student.studentId || student.id || student.email || '').trim().toLowerCase();
+      const studentClassId = String(student.classId || '').trim().toLowerCase();
+      const studentClassName = String(student.className || student.gradeLevel || student.grade || '').trim().toLowerCase();
+      return (selectedClassId && studentClassId === selectedClassId)
+        || (selectedClassName && studentClassName === selectedClassName)
+        || (selectedGrade && studentClassName === selectedGrade)
+        || roster.includes(studentId)
+        || studentClassName === String(className).trim().toLowerCase();
+    })
     .map((student) => {
       const studentId = student.studentId || student.id || student.email || '';
       const existing = (Array.isArray(records) ? records : []).find((record) => String(record.date) === String(date) && String(record.className || '').trim() === String(className).trim() && String(record.studentId || '').trim() === String(studentId).trim());

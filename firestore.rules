@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.role == 'super_admin';
+    }
+
+    function tenantMatch(tenantId) {
+      return isSignedIn() && request.auth.token.tenantId == tenantId;
+    }
+
+    function validSchoolRecord(resourceData) {
+      return resourceData.schoolId is string && resourceData.schoolId.size() > 0;
+    }
+
+    function userCanReadOwnTenant(tenantId) {
+      return isSignedIn() && (
+        request.auth.token.tenantId == tenantId ||
+        request.auth.token.role == 'super_admin'
+      );
+    }
+
+    match /tenants/{tenantId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' || request.auth.token.tenantId == tenantId
+      );
+      allow create: if isSuperAdmin();
+      allow update, delete: if isSuperAdmin() || (tenantMatch(tenantId) && request.auth.token.role in ['school_authority', 'school_head']);
+    }
+
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        resource.data.schoolId == request.auth.token.tenantId ||
+        request.auth.token.uid == userId
+      );
+      allow create: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        request.resource.data.schoolId == request.auth.token.tenantId
+      );
+      allow update, delete: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' || (
+          resource.data.schoolId == request.auth.token.tenantId &&
+          request.auth.token.role in ['school_authority', 'school_head']
+        )
+      );
+    }
+
+    match /roles/{roleId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        resource.data.schoolId == request.auth.token.tenantId
+      );
+      allow create, update, delete: if isSuperAdmin() || (
+        isSignedIn() && request.resource.data.schoolId == request.auth.token.tenantId && request.auth.token.role in ['school_authority', 'school_head']
+      );
+    }
+
+    match /teachers/{teacherId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        resource.data.schoolId == request.auth.token.tenantId ||
+        request.auth.token.uid == teacherId
+      );
+      allow create, update, delete: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' || (
+          request.resource.data.schoolId == request.auth.token.tenantId &&
+          request.auth.token.role in ['school_authority', 'school_head']
+        )
+      );
+    }
+
+    match /students/{studentId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        resource.data.schoolId == request.auth.token.tenantId ||
+        request.auth.token.uid == studentId
+      );
+      allow create, update, delete: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' || (
+          request.resource.data.schoolId == request.auth.token.tenantId &&
+          request.auth.token.role in ['school_authority', 'school_head']
+        )
+      );
+    }
+
+    match /classes/{classId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        resource.data.schoolId == request.auth.token.tenantId
+      );
+      allow create, update, delete: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' || (
+          request.resource.data.schoolId == request.auth.token.tenantId &&
+          request.auth.token.role in ['school_authority', 'school_head', 'teacher']
+        )
+      );
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow get, list: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' ||
+        resource.data.schoolId == request.auth.token.tenantId ||
+        request.auth.token.uid == resource.data.studentId
+      );
+      allow create, update, delete: if isSignedIn() && (
+        request.auth.token.role == 'super_admin' || (
+          request.resource.data.schoolId == request.auth.token.tenantId &&
+          request.auth.token.role in ['school_authority', 'school_head', 'teacher']
+        )
+      );
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /pricingPlans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.schoolId == request.auth.token.tenantId);
+      allow write: if false;
+    }
+
+    match /subscriptions/{schoolId} {
+      allow read: if isSuperAdmin() || tenantMatch(schoolId);
+      allow write: if false;
+    }
+
+    match /refundRequests/{requestId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.schoolId == request.auth.token.tenantId);
+      allow create: if isSignedIn() && request.resource.data.schoolId == request.auth.token.tenantId;
+      allow update, delete: if isSuperAdmin();
+    }
+  }
+}

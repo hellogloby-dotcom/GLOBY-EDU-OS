@@ -121,6 +121,27 @@ describe('workspace messaging and support', () => {
     expect(result.studentCount).toBe(1);
   });
 
+  it('counts only the current day for the attendance summary used by the school dashboard', async () => {
+    const snapshot = JSON.parse(JSON.stringify(loadSchoolData()));
+    const school = (snapshot.find((entry) => entry.schoolId === schoolId) || snapshot[0]) || null;
+    if (!school) throw new Error('School not found');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    school.attendanceRecords = [
+      { date: today, status: 'present', studentName: 'Student 1' },
+      { date: today, status: 'present', studentName: 'Student 2' },
+      { date: yesterday, status: 'absent', studentName: 'Student 3' },
+    ];
+    global.__workspaceSnapshot = snapshot;
+
+    const result = await schoolService.getDashboardSummary(schoolId);
+
+    expect(result.attendanceSummary.counts.present).toBe(2);
+    expect(result.attendanceSummary.counts.absent).toBe(0);
+    expect(result.attendanceSummary.attendanceToday).toBe('100%');
+  });
+
   it('persists class relationships, teacher assignment, and suspension state in the tenant snapshot', async () => {
     const snapshot = JSON.parse(JSON.stringify(loadSchoolData()));
     const school = snapshot.find((entry) => entry.schoolId === schoolId);
@@ -277,6 +298,46 @@ describe('workspace messaging and support', () => {
     expect(reloaded.settings.theme).toBe('light');
   });
 
+  it('authorizes role-based recipients and persists inbox, sent, and read state', async () => {
+    const authority = { userId: `${schoolId}:authority@globyedu.test`, tenantId: schoolId, roles: ['school_authority'] };
+    const teacher = { userId: `${schoolId}:T001`, tenantId: schoolId, roles: ['teacher'] };
+    const student = { userId: `${schoolId}:STU001`, tenantId: schoolId, roles: ['student'] };
+
+    const authorityRecipients = schoolService.getMessagingRecipientOptions(await schoolService.getSchoolBySchoolId(schoolId), authority);
+    expect(authorityRecipients.some((recipient) => recipient.id === 'T001')).toBe(true);
+
+    const sent = await schoolService.createWorkspaceMessage(schoolId, {
+      recipientId: 'T001',
+      subject: 'Staff update',
+      body: 'Please review the timetable.',
+    }, authority);
+    expect(sent.recipientId).toBe('t001');
+    expect((await schoolService.listWorkspaceMessages(schoolId, { folder: 'sent' }, authority)).items).toHaveLength(1);
+    expect((await schoolService.listWorkspaceMessages(schoolId, { folder: 'inbox' }, teacher)).items[0]).toMatchObject({ id: sent.id, unread: true });
+
+    await schoolService.updateWorkspaceMessage(schoolId, sent.id, { unread: false }, teacher);
+    expect((await schoolService.listWorkspaceMessages(schoolId, { folder: 'inbox' }, teacher)).items[0].unread).toBe(false);
+    await expect(schoolService.updateWorkspaceMessage(schoolId, sent.id, { unread: false }, student)).rejects.toThrow('Message access denied');
+  });
+
+  it('allows teacher and student communication only through authorized relationships', async () => {
+    const teacher = { userId: `${schoolId}:T001`, tenantId: schoolId, roles: ['teacher'] };
+    const student = { userId: `${schoolId}:STU001`, tenantId: schoolId, roles: ['student'] };
+
+    const teacherMessage = await schoolService.createWorkspaceMessage(schoolId, { recipientId: 'STU001', subject: 'Classwork', body: 'Your assignment is ready.' }, teacher);
+    expect((await schoolService.listWorkspaceMessages(schoolId, { folder: 'inbox' }, student)).items[0].id).toBe(teacherMessage.id);
+
+    const studentMessage = await schoolService.createWorkspaceMessage(schoolId, { recipientId: 'T001', subject: 'Question', body: 'Could you clarify the exercise?' }, student);
+    expect((await schoolService.listWorkspaceMessages(schoolId, { folder: 'inbox' }, teacher)).items.map((entry) => entry.id)).toContain(studentMessage.id);
+
+    await expect(schoolService.createWorkspaceMessage(schoolId, { recipientId: 'unknown-user', subject: 'Private', body: 'Not allowed.' }, student)).rejects.toThrow('Recipient is not authorized');
+    expect((await schoolService.listWorkspaceMessages(schoolId, { folder: 'inbox' }, authorityActor())).items).toHaveLength(0);
+  });
+
+  function authorityActor() {
+    return { userId: `${schoolId}:authority@globyedu.test`, tenantId: schoolId, roles: ['school_authority'] };
+  }
+
   it('projects only the authenticated student’s own school data and hides teacher/admin records', async () => {
     const snapshot = JSON.parse(JSON.stringify(loadSchoolData()));
     const school = snapshot.find((entry) => entry.schoolId === schoolId);
@@ -329,7 +390,29 @@ describe('workspace messaging and support', () => {
     expect(studentView.examResults[0].studentId).toBe('STU001');
     expect(studentView.announcements.map((entry) => entry.title)).toEqual(['Student notice', 'Everyone notice']);
     expect(studentView.messages.map((entry) => entry.subject)).toEqual(['Student inbox']);
-    expect(studentView.payments).toEqual([]);
+    expect(studentView.payments).toEqual([{ studentId: 'STU001', amount: 100, status: 'paid' }]);
     expect(studentView.student.studentPasswordHash).toBeUndefined();
+  });
+
+  it('records a persistent tenant-scoped payment and receipt for an authorized school user', async () => {
+    const snapshot = JSON.parse(JSON.stringify(loadSchoolData()));
+    const school = snapshot.find((entry) => entry.schoolId === schoolId);
+    if (!school) throw new Error('School not found');
+    school.students = [{ studentId: 'STU-FEE-001', fullName: 'Fee Student', className: 'JHS 1', status: 'active' }];
+    school.payments = [];
+    school.receipts = [];
+    global.__workspaceSnapshot = snapshot;
+
+    const result = await schoolService.createFeePayment(schoolId, {
+      studentId: 'STU-FEE-001', amount: '125.50', feeType: 'Tuition', paymentDate: '2026-09-10',
+      method: 'Bank', academicYear: '2026/2027', term: 'Term 1', reference: 'BANK-001',
+    }, { userId: 'authority-1', roles: ['school_authority'] });
+
+    expect(result.payment).toMatchObject({ schoolId, studentId: 'STU-FEE-001', amount: 125.5, receiptNumber: result.receipt.receiptNumber });
+    expect(result.receipt).toMatchObject({ receiptNumber: expect.stringMatching(/^RCPT-2026-\d{6}$/), paymentId: result.payment.id });
+    const reloaded = await schoolService.getSchoolBySchoolId(schoolId);
+    expect(reloaded.payments[0].receiptNumber).toBe(result.receipt.receiptNumber);
+    expect(schoolService.getStudentSchoolView(reloaded, { userId: `${schoolId}:STU-FEE-001`, roles: ['student'] }).payments).toHaveLength(1);
+    await expect(schoolService.createFeePayment(schoolId, { studentId: 'STU-FEE-001', amount: 10 }, { userId: 'teacher-1', roles: ['teacher'] })).rejects.toThrow('permission');
   });
 });

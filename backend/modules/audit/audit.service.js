@@ -2,10 +2,17 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const prisma = require('../../config/prisma.client');
+const firebaseData = require('../../firebase.data');
 
 const AUDIT_FILE = path.join(__dirname, '../../data/audit-logs.json');
 const SENSITIVE_KEY = /password|hash|token|secret|api[_-]?key|oauth|credential|private/i;
 const SENSITIVE_VALUE = /^\$2[aby]\$|^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+function assertFallbackAuditAllowed() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JSON audit-log fallback is disabled in production. Configure PostgreSQL through DATABASE_URL.');
+  }
+}
 
 function sanitizeValue(value, key = '') {
   if (SENSITIVE_KEY.test(key)) return undefined;
@@ -32,6 +39,7 @@ function getRequestContext(req) {
 }
 
 function loadFallbackLogs() {
+  assertFallbackAuditAllowed();
   if (!fs.existsSync(AUDIT_FILE)) return [];
   try {
     const parsed = JSON.parse(fs.readFileSync(AUDIT_FILE, 'utf8'));
@@ -42,7 +50,17 @@ function loadFallbackLogs() {
 }
 
 function saveFallbackLogs(logs) {
+  assertFallbackAuditAllowed();
   fs.writeFileSync(AUDIT_FILE, JSON.stringify({ logs: logs.slice(-2000) }, null, 2), 'utf8');
+}
+
+function withDbTimeout(promise, timeoutMs = 800) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Audit database timeout')), timeoutMs);
+    }),
+  ]);
 }
 
 async function recordAuditEvent(event = {}) {
@@ -61,8 +79,12 @@ async function recordAuditEvent(event = {}) {
   };
 
   try {
+    if (firebaseData.isFirebaseDataConfigured()) {
+      await firebaseData.getFirestore().collection('auditLogs').doc(record.id).set(record);
+      return record;
+    }
     if (prisma && !prisma.__stub && prisma.auditLog?.create) {
-      await prisma.auditLog.create({
+      await withDbTimeout(prisma.auditLog.create({
         data: {
           id: record.id,
           actorId: record.actorId,
@@ -74,27 +96,66 @@ async function recordAuditEvent(event = {}) {
           success: record.success,
           metadata: record.metadata,
         },
-      });
-    } else {
-      saveFallbackLogs([...loadFallbackLogs(), record]);
+      }));
+      return record;
     }
+
+    saveFallbackLogs([...loadFallbackLogs(), record]);
+    return record;
   } catch (error) {
-    // Audit persistence must not take down the business request.
+    try {
+      saveFallbackLogs([...loadFallbackLogs(), record]);
+    } catch (persistError) {
+      // Audit persistence must not take down the business request.
+    }
+    return record;
   }
-  return record;
 }
 
-async function listAuditEvents({ tenantId, isSuperAdmin = false, limit = 100 } = {}) {
+async function listAuditEvents({ tenantId, isSuperAdmin = false, limit = 100, actorRole, action, success, since } = {}) {
   const take = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const filters = {
+    ...(tenantId ? { tenantId } : {}),
+    ...(actorRole ? { actorRole } : {}),
+    ...(action ? { action } : {}),
+    ...(success !== undefined ? { success: success === true || success === 'true' } : {}),
+    ...(since ? { createdAt: { gte: new Date(since) } } : {}),
+  };
+  if (firebaseData.isFirebaseDataConfigured()) {
+    let query = firebaseData.getFirestore().collection('auditLogs').orderBy('createdAt', 'desc').limit(take);
+    if (!isSuperAdmin && tenantId) query = query.where('tenantId', '==', tenantId);
+    const snapshot = await query.get();
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((entry) => !actorRole || entry.actorRole === actorRole)
+      .filter((entry) => !action || entry.action === action)
+      .filter((entry) => success === undefined || entry.success === (success === true || success === 'true'))
+      .filter((entry) => !since || new Date(entry.createdAt) >= new Date(since));
+  }
   if (prisma && !prisma.__stub && prisma.auditLog?.findMany) {
-    return prisma.auditLog.findMany({
-      where: isSuperAdmin || !tenantId ? (isSuperAdmin ? {} : { tenantId }) : { tenantId },
-      orderBy: { createdAt: 'desc' },
-      take,
-    });
+    try {
+      const rows = await withDbTimeout(prisma.auditLog.findMany({
+        where: isSuperAdmin ? filters : { ...filters, tenantId },
+        orderBy: { createdAt: 'desc' },
+        take,
+      }));
+      return rows;
+    } catch (error) {
+      return loadFallbackLogs()
+        .filter((entry) => isSuperAdmin || entry.tenantId === tenantId)
+        .filter((entry) => !actorRole || entry.actorRole === actorRole)
+        .filter((entry) => !action || entry.action === action)
+        .filter((entry) => success === undefined || entry.success === (success === true || success === 'true'))
+        .filter((entry) => !since || new Date(entry.createdAt) >= new Date(since))
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+        .slice(0, take);
+    }
   }
   return loadFallbackLogs()
     .filter((entry) => isSuperAdmin || entry.tenantId === tenantId)
+    .filter((entry) => !actorRole || entry.actorRole === actorRole)
+    .filter((entry) => !action || entry.action === action)
+    .filter((entry) => success === undefined || entry.success === (success === true || success === 'true'))
+    .filter((entry) => !since || new Date(entry.createdAt) >= new Date(since))
     .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
     .slice(0, take);
 }

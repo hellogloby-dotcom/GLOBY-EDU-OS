@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../modules/auth/middleware/auth.middleware');
+const firebaseData = require('../firebase.data');
 const {
   uploadSchoolFile,
   createSchoolFileSignedUrl,
@@ -39,10 +40,18 @@ router.post('/upload', authMiddleware, express.raw({ type: '*/*', limit: '20mb' 
       return res.status(400).json({ status: 'error', message: 'A non-empty file body and valid filename are required.' });
     }
 
-    await uploadSchoolFile(scopedPath, req.body, {
-      contentType: req.get('content-type') || 'application/octet-stream',
-      upsert: false,
-    });
+    if (firebaseData.isFirebaseDataConfigured()) {
+      const file = firebaseData.getStorageBucket().file(`tenants/${scopedPath}`);
+      await file.save(req.body, { contentType: req.get('content-type') || 'application/octet-stream', resumable: false, validation: 'md5' });
+    } else {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({ status: 'error', message: 'Firebase Storage is required in production. Configure DATA_STORE_MODE=firebase.' });
+      }
+      await uploadSchoolFile(scopedPath, req.body, {
+        contentType: req.get('content-type') || 'application/octet-stream',
+        upsert: false,
+      });
+    }
 
     return res.status(201).json({
       status: 'ok',
@@ -65,7 +74,12 @@ router.get('/*', authMiddleware, async (req, res) => {
       Math.max(Number(req.query.expiresIn) || MAX_SIGNED_URL_SECONDS, 1),
       MAX_SIGNED_URL_SECONDS
     );
-    const signedUrl = await createSchoolFileSignedUrl(scopedPath, expiresIn);
+    if (process.env.NODE_ENV === 'production' && !firebaseData.isFirebaseDataConfigured()) {
+      return res.status(503).json({ status: 'error', message: 'Firebase Storage is required in production. Configure DATA_STORE_MODE=firebase.' });
+    }
+    const signedUrl = firebaseData.isFirebaseDataConfigured()
+      ? (await firebaseData.getStorageBucket().file(`tenants/${scopedPath}`).getSignedUrl({ action: 'read', expires: Date.now() + expiresIn * 1000 }))[0]
+      : await createSchoolFileSignedUrl(scopedPath, expiresIn);
     return res.json({ status: 'ok', url: signedUrl, expiresIn });
   } catch (error) {
     return res.status(500).json({ status: 'error', message: error.message });

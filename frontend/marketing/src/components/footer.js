@@ -66,7 +66,8 @@ export function Footer(cms = {}) {
           <div class="flex gap-4">
             <a href="#/legal/privacy" class="transition hover:text-slate-900">Privacy</a>
             <a href="#/legal/terms" class="transition hover:text-slate-900">Terms</a>
-            <a href="#/legal" class="transition hover:text-slate-900">Legal</a>
+            <a href="#/legal/cookies" class="transition hover:text-slate-900">Cookies</a>
+            <a href="#/legal/payments" class="transition hover:text-slate-900">Payments & refunds</a>
           </div>
         </div>
       </div>

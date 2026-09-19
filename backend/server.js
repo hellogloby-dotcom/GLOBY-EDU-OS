@@ -5,14 +5,15 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const dotenv = require('dotenv');
-const apiRoutes = require('./routes/api');
 
 // Load environment variables from .env file if available.
 dotenv.config();
 
+const apiRoutes = require('./routes/api');
+
 const app = express();
 
-const allowedOrigins = [
+const developmentOrigins = [
   'http://localhost:4000',
   'http://127.0.0.1:4000',
   'http://localhost:4001',
@@ -26,6 +27,13 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ];
+const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
+  allowedOrigins.push(...developmentOrigins);
+}
 
 app.use(cors({
   origin(origin, callback) {
@@ -39,7 +47,12 @@ app.use(cors({
 }));
 
 // Allow the existing image data-url workflow to persist valid 2 MB images.
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({
+  limit: '12mb',
+  verify(req, res, buffer) {
+    if (req.originalUrl === '/api/v1/pricing/webhook') req.rawBody = buffer.toString('utf8');
+  },
+}));
 
 // Basic request logging middleware for development.
 app.use((req, res, next) => {
@@ -98,9 +111,10 @@ app.get('*', (req, res) => {
 });
 
 const DEFAULT_PORT = Number(process.env.PORT) || 4000;
+const HOST = process.env.HOST || '127.0.0.1';
 
-const server = app.listen(DEFAULT_PORT, () => {
-  console.log(`GlobyEdu OS backend is running on http://localhost:${DEFAULT_PORT}`);
+const server = app.listen(DEFAULT_PORT, HOST, () => {
+  console.log(`GlobyEdu OS backend is running on http://${HOST}:${DEFAULT_PORT}`);
 });
 
 server.on('error', (error) => {

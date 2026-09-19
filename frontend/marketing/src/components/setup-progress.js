@@ -51,8 +51,8 @@ export function SetupProgressIndicator(completedSteps = []) {
     <div class="rounded-[2rem] border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-6 shadow-sm">
       <div class="flex items-center justify-between gap-4 mb-6">
         <div>
-          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Setup Progress</p>
-          <h3 class="mt-2 text-xl font-semibold text-slate-900">School Onboarding Workflow</h3>
+          <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Progress</p>
+          <h3 class="mt-2 text-xl font-semibold text-slate-900">School readiness</h3>
         </div>
         <div class="text-right">
           <p class="text-3xl font-bold text-sky-600">${completionPercentage}%</p>
@@ -79,12 +79,12 @@ export function SetupProgressIndicator(completedSteps = []) {
       <div class="mt-6 rounded-xl bg-slate-50 border border-slate-200 p-4">
         ${completionPercentage === 100
           ? `
-            <p class="text-sm font-medium text-emerald-700">🎉 Congratulations!</p>
-            <p class="mt-1 text-sm text-slate-600">Your school is fully set up. You can now manage day-to-day operations.</p>
+            <p class="text-sm font-medium text-emerald-700">🎉 Ready</p>
+            <p class="mt-1 text-sm text-slate-600">Your school is fully set up and ready to manage daily operations.</p>
           `
           : `
-            <p class="text-sm font-medium text-sky-700">📝 Next Step</p>
-            <p class="mt-1 text-sm text-slate-600">Complete the "${steps[completedSteps.length]?.label || 'remaining tasks'}" to continue your setup.</p>
+            <p class="text-sm font-medium text-sky-700">📝 Continue</p>
+            <p class="mt-1 text-sm text-slate-600">Complete the "${steps[completedSteps.length]?.label || 'remaining tasks'}" to keep moving forward.</p>
           `}
       </div>
     </div>
