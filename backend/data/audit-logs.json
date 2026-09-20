@@ -222,6 +222,227 @@
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
       },
       "createdAt": "2026-09-19T19:41:16.465Z"
+    },
+    {
+      "id": "fd20639a-6500-43f0-8486-736b116401e0",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Microsoft Windows 10.0.26200; en-US) PowerShell/7.6.6"
+      },
+      "createdAt": "2026-09-19T19:42:49.244Z"
+    },
+    {
+      "id": "8b1719e1-1165-4dc6-9ee8-a20a0c3e57c2",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T19:44:42.987Z"
+    },
+    {
+      "id": "c7c18eef-4ee7-4c8a-8775-fa2b933e278e",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T19:45:46.873Z"
+    },
+    {
+      "id": "5f2c0061-0c50-426d-bedc-ae30ea2148ac",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Microsoft Windows 10.0.26200; en-US) PowerShell/7.6.6"
+      },
+      "createdAt": "2026-09-19T19:47:31.778Z"
+    },
+    {
+      "id": "3d16e8c3-17c8-4630-b163-0e3519f3e236",
+      "actorId": "globy-school:STU001",
+      "actorRole": "student",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "fallback",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-19T20:11:37.051Z"
+    },
+    {
+      "id": "5150137d-923c-402e-af9c-8c91d3a6f355",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T20:14:43.126Z"
+    },
+    {
+      "id": "2f153bb4-47d2-441f-aa8c-57c2b1f4b32d",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T20:30:44.412Z"
+    },
+    {
+      "id": "24363e3c-87b6-4901-aca0-11e32f304e58",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-19T20:31:39.562Z"
+    },
+    {
+      "id": "bd960293-234d-485b-9a57-0994c9e0afb7",
+      "actorId": "globy-school:STU001",
+      "actorRole": "student",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "fallback",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-19T20:36:41.614Z"
+    },
+    {
+      "id": "931d4c46-afc0-49a5-bbcc-985679f429c6",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-19T20:41:52.765Z"
+    },
+    {
+      "id": "56bf7d63-fd38-4e48-830e-5cf9a2a6d90a",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T21:28:06.540Z"
+    },
+    {
+      "id": "a10424a6-5cba-4584-bbba-4a889c7f1acc",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "school.suspended",
+      "resourceType": "school",
+      "resourceId": "globy-school",
+      "success": true,
+      "metadata": {
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T21:30:04.004Z"
+    },
+    {
+      "id": "77666b30-8f26-4d94-af6c-f7174826b9ba",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "GLB-2026-00004",
+      "action": "school.suspended",
+      "resourceType": "school",
+      "resourceId": "GLB-2026-00004",
+      "success": true,
+      "metadata": {
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T21:41:18.427Z"
+    },
+    {
+      "id": "ba4fa994-eb70-4968-92f7-46faad6c8840",
+      "actorId": "globy-school:ataetaben@gmail.com",
+      "actorRole": "super_admin",
+      "tenantId": "globy-school",
+      "action": "school.activated",
+      "resourceType": "school",
+      "resourceId": "globy-school",
+      "success": true,
+      "metadata": {
+        "ipAddress": "127.0.0.1",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
+      },
+      "createdAt": "2026-09-19T21:41:38.906Z"
     }
   ]
 }

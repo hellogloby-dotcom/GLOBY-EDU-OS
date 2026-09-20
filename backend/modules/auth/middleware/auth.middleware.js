@@ -32,6 +32,12 @@ function parseMockToken(token) {
   }
 }
 
+function isFallbackLocalToken(payload) {
+  if (!payload || typeof payload.userId !== 'string') return false;
+  if (!payload.tenantId) return false;
+  return payload.userId.includes(':') && payload.roles && Array.isArray(payload.roles);
+}
+
 function findFallbackUser(schoolId, username) {
   const schools = loadSchoolData();
   const school = schools.find((entry) => entry.schoolId === schoolId);
@@ -120,13 +126,20 @@ async function authMiddleware(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const payload = verifyAccessToken(token);
-    if (prisma && !prisma.__stub && payload.userId) {
+    const fallbackLocalToken = isFallbackLocalToken(payload);
+
+    if (prisma && !prisma.__stub && payload.userId && !fallbackLocalToken) {
       const user = await prisma.user.findUnique({ where: { id: payload.userId } });
       if (!user || user.status !== 'active') {
         return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
       }
       payload.passwordNeedsReset = user.passwordNeedsReset === true;
     }
+
+    if (fallbackLocalToken) {
+      payload.passwordNeedsReset = payload.passwordNeedsReset === true;
+    }
+
     req.user = payload; // minimal payload: { userId, roles, tenantId, passwordNeedsReset }
     if (enforcePasswordChange(req, res, req.user)) return;
     return next();

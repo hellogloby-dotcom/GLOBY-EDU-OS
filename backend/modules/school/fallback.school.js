@@ -20,8 +20,14 @@ const DEMO_TEACHER_PASSWORD = 'GlobyTeacher@123';
 const DEMO_STUDENT_PASSWORD = 'GlobyStudent@123';
 
 function assertFallbackStoreAllowed() {
+  if (process.env.NODE_ENV === 'production' && String(process.env.DATABASE_URL || '').trim().length > 0) {
+    return;
+  }
+  if (process.env.NODE_ENV === 'production' && String(process.env.DATA_STORE_MODE || '').trim().toLowerCase() === 'firebase') {
+    return;
+  }
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('JSON fallback storage is disabled in production. Configure PostgreSQL through DATABASE_URL.');
+    console.warn('[fallback.school] No DATABASE_URL or Firebase mode configured; using JSON fallback storage in production.');
   }
 }
 

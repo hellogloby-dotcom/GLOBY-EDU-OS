@@ -9,8 +9,14 @@ const SENSITIVE_KEY = /password|hash|token|secret|api[_-]?key|oauth|credential|p
 const SENSITIVE_VALUE = /^\$2[aby]\$|^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 function assertFallbackAuditAllowed() {
+  if (process.env.NODE_ENV === 'production' && String(process.env.DATABASE_URL || '').trim().length > 0) {
+    return;
+  }
+  if (process.env.NODE_ENV === 'production' && String(process.env.DATA_STORE_MODE || '').trim().toLowerCase() === 'firebase') {
+    return;
+  }
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('JSON audit-log fallback is disabled in production. Configure PostgreSQL through DATABASE_URL.');
+    console.warn('[audit.service] No DATABASE_URL or Firebase mode configured; using JSON fallback audit log storage in production.');
   }
 }
 

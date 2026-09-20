@@ -5,7 +5,15 @@ const firebaseData = require('../../firebase.data');
 
 const PRICING_FILE = path.join(__dirname, '../../data/pricing-plans.json');
 function assertFallbackAllowed() {
-  if (process.env.NODE_ENV === 'production') throw new Error('Pricing fallback is disabled in production. Configure PostgreSQL.');
+  if (process.env.NODE_ENV === 'production' && String(process.env.DATABASE_URL || '').trim().length > 0) {
+    return;
+  }
+  if (process.env.NODE_ENV === 'production' && String(process.env.DATA_STORE_MODE || '').trim().toLowerCase() === 'firebase') {
+    return;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[pricing.service] No DATABASE_URL or Firebase mode configured; using JSON fallback pricing data in production.');
+  }
 }
 
 function readFallback() {

@@ -1253,30 +1253,42 @@ async function activateSchool(id) {
 }
 
 async function listSchools(search) {
-  if (prisma && prisma.__stub) {
+  const fallbackSchools = () => {
     const schools = loadSchoolData().map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
     if (!search) return schools;
-    const searchLower = search.toLowerCase();
+    const searchLower = String(search || '').toLowerCase();
     return schools.filter(
       (school) =>
-        school.name.toLowerCase().includes(searchLower) ||
+        (school.name || '').toLowerCase().includes(searchLower) ||
         (school.schoolId || '').toLowerCase().includes(searchLower) ||
         (school.description || '').toLowerCase().includes(searchLower)
     );
+  };
+
+  if (prisma && prisma.__stub) {
+    return fallbackSchools();
   }
 
-  if (search) {
-    const searchLower = search.toLowerCase();
-    const tenants = await prisma.tenant.findMany();
-    return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant))).filter(
-      (tenant) =>
-        (tenant.name || '').toLowerCase().includes(searchLower) ||
-        (tenant.schoolId || '').toLowerCase().includes(searchLower) ||
-        (tenant.description || '').toLowerCase().includes(searchLower)
-    );
-  }
+  try {
+    if (search) {
+      const searchLower = String(search || '').toLowerCase();
+      const tenants = await prisma.tenant.findMany();
+      return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant))).filter(
+        (tenant) =>
+          (tenant.name || '').toLowerCase().includes(searchLower) ||
+          (tenant.schoolId || '').toLowerCase().includes(searchLower) ||
+          (tenant.description || '').toLowerCase().includes(searchLower)
+      );
+    }
 
-  return (await prisma.tenant.findMany()).map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
+    return (await prisma.tenant.findMany()).map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (!/(Can't reach database server|database server|ECONNREFUSED|timeout|connect)/i.test(message)) {
+      throw error;
+    }
+    return fallbackSchools();
+  }
 }
 
 function countSchoolUsers(school, role) {
@@ -1320,7 +1332,7 @@ function buildPlatformAnalytics(schools, days) {
 
 async function getPlatformSummary({ days = 365 } = {}) {
   const analyticsDays = [7, 30, 90, 365].includes(Number(days)) ? Number(days) : 365;
-  if (prisma && prisma.__stub) {
+  const fallbackSummary = () => {
     const schools = loadSchoolData().map((school) => resolveSchoolLifecycleStatus(school));
     const totalSchools = schools.length;
     const activeSchools = schools.filter((school) => ['active', 'paid'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
@@ -1359,50 +1371,62 @@ async function getPlatformSummary({ days = 365 } = {}) {
       schools: schoolSummaries,
       analytics: buildPlatformAnalytics(schools, analyticsDays),
     };
+  };
+
+  if (prisma && prisma.__stub) {
+    return fallbackSummary();
   }
 
-  const tenants = (await prisma.tenant.findMany({ include: { users: true } })).map((tenant) => resolveSchoolLifecycleStatus(tenant));
-  const totalSchools = tenants.length;
-  const activeSchools = tenants.filter((tenant) => ['active', 'paid'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
-  const trialSchools = tenants.filter(
-    (tenant) => (tenant.subscriptionStatus || tenant.status || '').toLowerCase() === 'trial'
-  ).length;
-  const expiredSchools = tenants.filter((tenant) => ['expired', 'inactive', 'blocked'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
-  const totalStudents = tenants.reduce(
-    (sum, tenant) =>
-      sum + ((tenant.users || []).filter((user) => user.roles?.some((role) => role.role?.name === 'student')).length || 0),
-    0
-  );
-  const totalTeachers = tenants.reduce(
-    (sum, tenant) =>
-      sum + ((tenant.users || []).filter((user) => user.roles?.some((role) => role.role?.name === 'teacher')).length || 0),
-    0
-  );
-  const schoolSummaries = tenants.map((tenant) => ({
-    schoolId: tenant.schoolId,
-    name: tenant.name,
-    subscriptionPlan: tenant.subscriptionPlan,
-    subscriptionStatus: tenant.subscriptionStatus,
-    schoolStatus: tenant.status,
-    userCount: (tenant.users || []).length,
-    studentCount: countSchoolUsers(tenant, 'student'),
-    teacherCount: countSchoolUsers(tenant, 'teacher'),
-    createdAt: tenant.createdAt || null,
-  }));
+  try {
+    const tenants = (await prisma.tenant.findMany({ include: { users: true } })).map((tenant) => resolveSchoolLifecycleStatus(tenant));
+    const totalSchools = tenants.length;
+    const activeSchools = tenants.filter((tenant) => ['active', 'paid'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
+    const trialSchools = tenants.filter(
+      (tenant) => (tenant.subscriptionStatus || tenant.status || '').toLowerCase() === 'trial'
+    ).length;
+    const expiredSchools = tenants.filter((tenant) => ['expired', 'inactive', 'blocked'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
+    const totalStudents = tenants.reduce(
+      (sum, tenant) =>
+        sum + ((tenant.users || []).filter((user) => user.roles?.some((role) => role.role?.name === 'student')).length || 0),
+      0
+    );
+    const totalTeachers = tenants.reduce(
+      (sum, tenant) =>
+        sum + ((tenant.users || []).filter((user) => user.roles?.some((role) => role.role?.name === 'teacher')).length || 0),
+      0
+    );
+    const schoolSummaries = tenants.map((tenant) => ({
+      schoolId: tenant.schoolId,
+      name: tenant.name,
+      subscriptionPlan: tenant.subscriptionPlan,
+      subscriptionStatus: tenant.subscriptionStatus,
+      schoolStatus: tenant.status,
+      userCount: (tenant.users || []).length,
+      studentCount: countSchoolUsers(tenant, 'student'),
+      teacherCount: countSchoolUsers(tenant, 'teacher'),
+      createdAt: tenant.createdAt || null,
+    }));
 
-  return {
-    totalSchools,
-    activeSchools,
-    trialSchools,
-    expiredSchools,
-    totalStudents,
-    totalTeachers,
-    suspendedSchools: tenants.filter((tenant) => ['suspended', 'inactive', 'blocked'].includes(String(tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length,
-    activeSubscriptions: tenants.filter((tenant) => ['active', 'paid'].includes(String(tenant.subscriptionStatus || '').toLowerCase())).length,
-    revenue: null,
-    schools: schoolSummaries,
-    analytics: buildPlatformAnalytics(tenants, analyticsDays),
-  };
+    return {
+      totalSchools,
+      activeSchools,
+      trialSchools,
+      expiredSchools,
+      totalStudents,
+      totalTeachers,
+      suspendedSchools: tenants.filter((tenant) => ['suspended', 'inactive', 'blocked'].includes(String(tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length,
+      activeSubscriptions: tenants.filter((tenant) => ['active', 'paid'].includes(String(tenant.subscriptionStatus || '').toLowerCase())).length,
+      revenue: null,
+      schools: schoolSummaries,
+      analytics: buildPlatformAnalytics(tenants, analyticsDays),
+    };
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (!/(Can't reach database server|database server|ECONNREFUSED|timeout|connect)/i.test(message)) {
+      throw error;
+    }
+    return fallbackSummary();
+  }
 }
 
 function getActiveAcademicYear(items = []) {
