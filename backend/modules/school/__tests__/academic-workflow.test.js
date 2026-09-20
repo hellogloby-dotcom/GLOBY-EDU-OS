@@ -51,6 +51,7 @@ describe('academic workflow', () => {
   });
 
   it('student can see only their own class assignments and submit them', async () => {
+    const futureDueDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const school = loadSchoolData().find((entry) => entry.schoolId === schoolId);
     school.assignments = [{
       id: 'assignment-1',
@@ -58,7 +59,7 @@ describe('academic workflow', () => {
       description: 'Solve the review set.',
       classId: 'JHS-3A',
       subject: 'Mathematics',
-      dueDate: '2026-09-20T17:00:00.000Z',
+      dueDate: futureDueDate,
       status: 'assigned',
       teacherId: 'T001',
       createdBy: 'T001',

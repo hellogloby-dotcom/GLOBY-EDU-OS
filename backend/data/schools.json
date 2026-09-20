@@ -88,7 +88,7 @@
       "users": [
         {
           "username": "hellogloby@gmail.com",
-          "passwordHash": "$2b$12$PfS66AhBCPY/2NAUd9lV8eTXmRRHeAy5V8vGSlo52ADscfuOmn5Em",
+          "passwordHash": "$2b$04$PPJPJCDFxeDwzpdn0uqKCONVIrSLIpRnJpUtj0NJ9VMNQhyWg3mCW",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -99,7 +99,7 @@
         },
         {
           "username": "ataetaben@gmail.com",
-          "passwordHash": "$2b$12$PfS66AhBCPY/2NAUd9lV8eTXmRRHeAy5V8vGSlo52ADscfuOmn5Em",
+          "passwordHash": "$2b$04$PPJPJCDFxeDwzpdn0uqKCONVIrSLIpRnJpUtj0NJ9VMNQhyWg3mCW",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -112,7 +112,7 @@
         },
         {
           "username": "ataetabenjamin@gmail.com",
-          "passwordHash": "$2b$12$PfS66AhBCPY/2NAUd9lV8eTXmRRHeAy5V8vGSlo52ADscfuOmn5Em",
+          "passwordHash": "$2b$04$PPJPJCDFxeDwzpdn0uqKCONVIrSLIpRnJpUtj0NJ9VMNQhyWg3mCW",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -123,7 +123,7 @@
         },
         {
           "username": "benjaminataeta@gmail.com",
-          "passwordHash": "$2b$12$PfS66AhBCPY/2NAUd9lV8eTXmRRHeAy5V8vGSlo52ADscfuOmn5Em",
+          "passwordHash": "$2b$04$PPJPJCDFxeDwzpdn0uqKCONVIrSLIpRnJpUtj0NJ9VMNQhyWg3mCW",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -134,7 +134,7 @@
         },
         {
           "username": "authority@globyedu.test",
-          "passwordHash": "$2b$12$fnfg/wtfi9Yw22wEyPpuquQ7w578BbsmBRdNAt.pi.rE4fZ5gL9pG",
+          "passwordHash": "$2b$04$Lo6psLnjBvJywUCCjCK3ouQtgfbcJYoWqJTKgoT1gva4Q5YfwtXM.",
           "role": "school_authority",
           "grade": "N/A",
           "fullName": "Globy School Authority",
@@ -147,7 +147,7 @@
         },
         {
           "username": "T001",
-          "passwordHash": "$2b$12$qkDFKi26XZ57/FthioSEgeYEUnRxjKLFw4jYzfE7MDOiI2UUYOn/i",
+          "passwordHash": "$2b$04$H.a8zMUdvQD77PFBf9eaMua0lyqRlqsJtMlcca2cIMc042DyjEhgC",
           "role": "teacher",
           "grade": "JHS 3",
           "fullName": "Test Teacher",
@@ -173,7 +173,7 @@
           "className": "JHS 3",
           "passwordNeedsReset": true,
           "passwordChangedAt": "2026-09-17T09:32:41.915Z",
-          "studentPasswordHash": "$2b$12$RCqJpFEHBHgozWEGbEJNiOxqiDAusCSpb6OQPhdL9WBtmNh3MXsSq"
+          "studentPasswordHash": "$2b$04$I8i.4r3w8/p4dx8oE7XO9OOGPij5GbeA6lhv/sl7W5G0M10Z7MVLu"
         },
         {
           "username": "ataetabenjamin@gmail.com",

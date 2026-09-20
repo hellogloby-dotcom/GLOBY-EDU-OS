@@ -4,6 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const dotenv = require('dotenv');
 
 // Load environment variables from .env file if available.
@@ -82,22 +83,26 @@ app.get('/config/firebase.js', (req, res) => {
 // Return a no-content response for favicon requests when no favicon asset is present.
 app.get('/favicon.ico', (req, res) => res.sendStatus(204));
 
-// Serve frontend static files from the sibling frontend folder.
-// express.static serves files such as index.html, app.js, styles.css, and component modules.
-// __dirname is the current file folder, backend, so we use path.join(__dirname, '../frontend')
-// to resolve the frontend directory relative to the backend code.
-const frontendPath = path.join(__dirname, '../frontend');
-const marketingPath = path.join(frontendPath, 'marketing');
-const publicPath = path.join(__dirname, '../public');
-const rootAssetsPath = path.join(__dirname, '../src/assets/images');
+// Serve frontend static files from the built output when available, otherwise from the source frontend folder.
+// In production, the app must not cache HTML/JS/CSS between Render deploys or stale bundles will remain in the browser.
+const appRoot = path.join(__dirname, '..');
+const distFrontendPath = path.join(appRoot, 'dist', 'frontend');
+const sourceFrontendPath = path.join(appRoot, 'frontend');
+const sourceMarketingPath = path.join(sourceFrontendPath, 'marketing');
+const distMarketingPath = path.join(distFrontendPath, 'marketing');
+const frontendPath = fs.existsSync(distFrontendPath) ? distFrontendPath : sourceFrontendPath;
+const marketingPath = fs.existsSync(distMarketingPath) ? distMarketingPath : sourceMarketingPath;
+const publicPath = path.join(appRoot, 'public');
+const rootAssetsPath = path.join(appRoot, 'src', 'assets', 'images');
 const staticOptions = {
   setHeaders(res, filePath) {
-    if (process.env.NODE_ENV !== 'production' && /\.(?:html|css|js)$/.test(filePath)) {
+    const fileExtension = path.extname(filePath).toLowerCase();
+    if (['.html', '.css', '.js', '.json', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2'].includes(fileExtension)) {
       res.setHeader('Cache-Control', 'no-store, must-revalidate');
     }
   },
 };
-app.use(express.static(marketingPath, staticOptions));
+app.use('/marketing', express.static(marketingPath, staticOptions));
 app.use(express.static(frontendPath, staticOptions));
 app.use('/src/assets/images', express.static(rootAssetsPath));
 app.use('/root-assets/images', express.static(rootAssetsPath));
@@ -107,22 +112,41 @@ app.use('/images', express.static(path.join(publicPath, 'images')));
 // When a URL does not match any API or static file, the client-side router in app.js
 // can take over and render the correct frontend view.
 app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ status: 'error', message: 'API route not found.' });
+  }
+
+  const hasAssetExtension = /\.[a-z0-9]+$/i.test(req.path);
+  if (hasAssetExtension) {
+    return res.status(404).type('text/plain').send('Asset not found');
+  }
+
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
 const DEFAULT_PORT = Number(process.env.PORT) || 4000;
 const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 
-const server = app.listen(DEFAULT_PORT, HOST, () => {
-  console.log(`GlobyEdu OS backend is running on http://${HOST}:${DEFAULT_PORT}`);
-});
+function startServer() {
+  const server = app.listen(DEFAULT_PORT, HOST, () => {
+    console.log(`GlobyEdu OS backend is running on http://${HOST}:${DEFAULT_PORT}`);
+  });
 
-server.on('error', (error) => {
-  if (error.code === 'EADDRINUSE') {
-    console.error(`Port ${DEFAULT_PORT} is already in use. Please stop the running process or set PORT to an unused value before starting the backend.`);
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${DEFAULT_PORT} is already in use. Please stop the running process or set PORT to an unused value before starting the backend.`);
+      process.exit(1);
+    }
+
+    console.error('Server error:', error);
     process.exit(1);
-  }
+  });
 
-  console.error('Server error:', error);
-  process.exit(1);
-});
+  return server;
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, startServer };

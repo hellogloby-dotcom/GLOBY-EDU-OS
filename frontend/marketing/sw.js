@@ -1,4 +1,4 @@
-const CACHE_NAME = 'globyedu-pwa-v6';
+const CACHE_NAME = 'globyedu-pwa-v7';
 const DB_NAME = 'globyedu_pwa_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'offlineQueue';

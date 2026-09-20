@@ -39,7 +39,7 @@ describe('login experience', () => {
     expect(mainSource).toContain("localStorage.removeItem('globyedu_accessToken');");
     expect(mainSource).toContain("localStorage.removeItem('globyedu_userRole');");
     expect(mainSource).toContain("profile.email = localStorage.getItem('globyedu_userEmail') || profile.email || '';");
-    expect(serviceWorkerSource).toContain("const CACHE_NAME = 'globyedu-pwa-v6';");
+    expect(serviceWorkerSource).toContain("const CACHE_NAME = 'globyedu-pwa-v7';");
     expect(serviceWorkerSource).toContain("if (/\\.(?:css|js)$/.test(requestUrl.pathname))");
   });
 
