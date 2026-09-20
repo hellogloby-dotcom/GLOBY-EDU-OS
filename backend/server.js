@@ -28,17 +28,36 @@ const developmentOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ];
-const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+const productionOrigins = [
+  'https://globyedu.com',
+  'https://www.globyedu.com',
+  'https://globy-edu-os.onrender.com',
+];
+const configuredOrigins = String(process.env.CORS_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-if (process.env.NODE_ENV !== 'production' && allowedOrigins.length === 0) {
-  allowedOrigins.push(...developmentOrigins);
+const allowedOrigins = new Set([
+  ...productionOrigins,
+  ...configuredOrigins,
+  ...(process.env.NODE_ENV !== 'production' ? developmentOrigins : []),
+]);
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === 'globyedu.com' || hostname.endsWith('.globyedu.com');
+  } catch (error) {
+    return false;
+  }
 }
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
