@@ -9,8 +9,8 @@ const firebaseConfigured = String(process.env.FIREBASE_PROJECT_ID || '').trim().
 const isJestTest = String(process.env.NODE_ENV || '').toLowerCase() === 'test';
 const forceRealDatabase = String(process.env.USE_REAL_DATABASE || '').trim().toLowerCase() === 'true';
 
-if (process.env.NODE_ENV === 'production' && !hasDatabaseUrl && !firebaseDataMode) {
-  throw new Error('DATABASE_URL is required unless DATA_STORE_MODE=firebase is configured.');
+if (process.env.NODE_ENV === 'production' && !hasDatabaseUrl && !firebaseDataMode && !forceRealDatabase) {
+  console.warn('[prisma.client] No DATABASE_URL configured and DATA_STORE_MODE is not firebase. Falling back to the JSON-backed local store.');
 }
 
 if (firebaseDataMode && firebaseConfigured) {

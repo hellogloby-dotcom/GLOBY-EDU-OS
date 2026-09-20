@@ -111,7 +111,7 @@ app.get('*', (req, res) => {
 });
 
 const DEFAULT_PORT = Number(process.env.PORT) || 4000;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 
 const server = app.listen(DEFAULT_PORT, HOST, () => {
   console.log(`GlobyEdu OS backend is running on http://${HOST}:${DEFAULT_PORT}`);
