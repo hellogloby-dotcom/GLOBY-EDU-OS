@@ -254,7 +254,7 @@ const DEFAULT_STATE = {
   },
   cms: {
     companyName: 'GlobyEdu OS',
-    logoUrl: '/src/assets/images/hero/hero-dashboard.svg',
+    logoUrl: './src/assets/images/hero/hero-dashboard.svg',
     heroTitle: 'The premium operating system for modern schools.',
     heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
     contactEmail: 'hello@globyedu.com',
@@ -283,8 +283,8 @@ const DEFAULT_STATE = {
     faqItems: [
       { question: 'Can we start small?', answer: 'Yes. Grow from one school to a full network without changing your workflows.' },
     ],
-    heroImage: '/src/assets/images/hero/hero-dashboard.svg',
-    dashboardPreviewImage: '/src/assets/images/dashboard/dashboard-preview.png',
+    heroImage: './src/assets/images/hero/hero-dashboard.svg',
+    dashboardPreviewImage: './src/assets/images/dashboard/dashboard-preview.png',
   },
   messages: [],
   announcements: [],

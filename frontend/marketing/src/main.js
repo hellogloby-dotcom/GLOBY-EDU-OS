@@ -118,7 +118,7 @@ const TEACHER_ASSIGNABLE_CLASS_OPTIONS = [
 ];
 const DEFAULT_WEBSITE_CMS = {
   companyName: 'GlobyEdu OS',
-  logoUrl: '/src/assets/images/ui/operations-hero.svg',
+  logoUrl: './src/assets/images/ui/operations-hero.svg',
   heroTitle: 'The premium operating system for modern schools.',
   heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
   contactEmail: 'hello@globyedu.com',

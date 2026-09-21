@@ -779,7 +779,7 @@ function renderSchoolDetailsModal(school) {
 function getWebsiteCMSSettings() {
   const defaultSettings = {
     companyName: 'GlobyEdu OS',
-    logoUrl: '/src/assets/images/hero/hero-dashboard.svg',
+    logoUrl: './src/assets/images/hero/hero-dashboard.svg',
     heroTitle: 'The premium operating system for modern schools.',
     heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
     contactEmail: 'hello@globyedu.com',
@@ -875,7 +875,7 @@ function renderBlogManager() {
             <input type="text" name="category" value="General" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
           </label>
           <label class="block text-sm text-slate-700">Featured image
-            <input type="text" name="featuredImage" value="/src/assets/images/homepage/homepage-about-placeholder.svg" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+            <input type="text" name="featuredImage" value="./src/assets/images/homepage/homepage-about-placeholder.svg" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
           </label>
           <label class="block text-sm text-slate-700">Publication date
             <input type="date" name="publicationDate" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
@@ -1005,7 +1005,7 @@ export function attachWebsiteCMSHandlers() {
         content: data.get('content')?.toString().trim() || '',
         author: data.get('author')?.toString().trim() || 'Super Admin',
         category: data.get('category')?.toString().trim() || 'General',
-        featuredImage: data.get('featuredImage')?.toString().trim() || '/src/assets/images/homepage/homepage-about-placeholder.svg',
+        featuredImage: data.get('featuredImage')?.toString().trim() || './src/assets/images/homepage/homepage-about-placeholder.svg',
         publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10),
         status: 'draft',
         createdAt: new Date().toISOString(),
@@ -1041,8 +1041,8 @@ export function attachWebsiteCMSHandlers() {
         const posts = getBlogPosts();
         const postId = data.get('postId')?.toString() || `post-${Date.now()}`;
         const nextPosts = posts.some((post) => post.id === postId)
-          ? posts.map((post) => post.id === postId ? { ...post, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || '/src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', updatedAt: new Date().toISOString() } : post)
-          : [{ id: postId, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || '/src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...posts];
+          ? posts.map((post) => post.id === postId ? { ...post, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || './src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', updatedAt: new Date().toISOString() } : post)
+          : [{ id: postId, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || './src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...posts];
         saveBlogPosts(nextPosts);
         const blogStatus = document.getElementById('blog-status');
         if (blogStatus) {

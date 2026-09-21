@@ -12,11 +12,11 @@ export function Hero(cms = {}) {
   const values = ['Secure by design', 'Cloud-first platform', 'Multi-tenant scale', 'Role-based access'];
 
   return `
-  <section class="relative overflow-hidden py-20 lg:py-28">
+  <section class="relative overflow-hidden pt-8 pb-16 sm:pt-10 lg:pt-14 lg:pb-20">
     <div class="hero-mesh absolute inset-0"></div>
     <div class="relative mx-auto max-w-7xl px-6">
       <div class="grid gap-8 lg:grid-cols-[minmax(0,0.56fr)_minmax(0,0.44fr)] lg:items-start">
-        <div class="min-w-0 pt-6 lg:pt-12">
+        <div class="min-w-0 pt-2 lg:pt-4">
           <div class="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50/90 px-4 py-2 text-sm font-semibold text-sky-700 shadow-sm shadow-sky-100">
             <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
             ${companyName.toUpperCase()} • Trusted • Enterprise

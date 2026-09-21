@@ -88,11 +88,16 @@ body {
 .card-media{background:#f8fafc}
 .dashboard-preview-media {
   aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
 }
 
 .dashboard-preview-media img {
+  display: block;
   height: 100%;
   width: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
 .analytics-feature-media,
@@ -147,7 +152,7 @@ details.faq-item summary span:last-child{display:inline-flex;transition:transfor
 
 /* Responsive spacing adjustments to closely match reference */
 @media (min-width: 1024px){
-  main>section{padding-top:36px}
+  main>section{padding-top:0}
   .hero h1{font-size:var(--fs-2xl)}
 }
 
@@ -182,11 +187,25 @@ nav a[data-scroll]:hover::after { background: rgba(14,165,233,0.12); }
 nav a[data-scroll][aria-current="page"]::after { background: linear-gradient(90deg,#0ea5e9,#10b981); }
 
 /* Ensure hero and sections spacing aligns closely with design reference */
-main > section { padding-top: 28px; }
+main > section { padding-top: 0; }
+
+@media (max-width: 767px) {
+  .dashboard-preview-media {
+    aspect-ratio: 16 / 11;
+  }
+
+  .card-media img {
+    min-height: 220px;
+  }
+}
 
 @media (max-width: 639px) {
   .dashboard-preview-media {
-    aspect-ratio: 808 / 632;
+    aspect-ratio: 4 / 3;
+  }
+
+  .dashboard-preview-media img {
+    object-position: center;
   }
 
   main section.mt-12 > div > .card {

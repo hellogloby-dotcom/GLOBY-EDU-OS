@@ -30,13 +30,13 @@ export function savePushPreferences(prefs) {
 
 export function dispatchPushNotification(payload) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  const { title, body, category = 'systemUpdates', icon = '/src/assets/images/ui/operations-hero.svg', data = {} } = payload;
+  const { title, body, category = 'systemUpdates', icon = './src/assets/images/ui/operations-hero.svg', data = {} } = payload;
   const tag = `globyedu-${category}-${Date.now()}`;
   navigator.serviceWorker.ready.then((registration) => {
     registration.showNotification(title, {
       body,
       icon,
-      badge: '/src/assets/images/ui/operations-hero.svg',
+      badge: './src/assets/images/ui/operations-hero.svg',
       tag,
       data,
       renotify: true,
