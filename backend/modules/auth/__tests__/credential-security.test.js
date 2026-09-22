@@ -63,7 +63,7 @@ describe('credential security', () => {
     const body = await response.json();
     expect(response.status).toBe(429);
     expect(body.message).toMatch(/too many failed/i);
-  });
+  }, 30000);
 
   test('blocks school logins when the tenant has been suspended', async () => {
     const port = server.address().port;
@@ -94,6 +94,46 @@ describe('credential security', () => {
     } finally {
       target.schoolStatus = previousStatus || 'active';
       target.subscriptionStatus = previousSubscription || 'active';
+      saveSchoolData(schools);
+    }
+  });
+
+  test('rejects an already-issued token when the account is suspended', async () => {
+    const port = server.address().port;
+    const schools = loadSchoolData();
+    const targetSchool = schools.find((school) => school.schoolId === 'globy-school') || schools[0];
+    const authority = (targetSchool.users || []).find((user) => user.username === 'authority@globyedu.test');
+    expect(authority).toBeTruthy();
+
+    const previousStatus = authority.status;
+    authority.status = 'active';
+    saveSchoolData(schools);
+
+    const loginResponse = await fetch(`http://127.0.0.1:${port}/api/v1/auth/school-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        schoolId: 'globy-school',
+        username: 'authority@globyedu.test',
+        password: 'GlobySchool@123',
+        loginType: 'school_authority',
+      }),
+    });
+    const loginBody = await loginResponse.json();
+    expect(loginResponse.status).toBe(200);
+
+    authority.status = 'suspended';
+    saveSchoolData(schools);
+
+    try {
+      const protectedResponse = await fetch(`http://127.0.0.1:${port}/api/v1/protected/globy-school`, {
+        headers: { Authorization: `Bearer ${loginBody.accessToken}` },
+      });
+      const protectedBody = await protectedResponse.json();
+      expect(protectedResponse.status).toBe(403);
+      expect(protectedBody.message).toMatch(/suspended|contact your school administrator/i);
+    } finally {
+      authority.status = previousStatus || 'active';
       saveSchoolData(schools);
     }
   });

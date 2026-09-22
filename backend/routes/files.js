@@ -4,6 +4,7 @@ const firebaseData = require('../firebase.data');
 const {
   uploadSchoolFile,
   createSchoolFileSignedUrl,
+  isR2Configured,
 } = require('../lib/supabaseClient');
 
 const router = express.Router();
@@ -44,8 +45,8 @@ router.post('/upload', authMiddleware, express.raw({ type: '*/*', limit: '20mb' 
       const file = firebaseData.getStorageBucket().file(`tenants/${scopedPath}`);
       await file.save(req.body, { contentType: req.get('content-type') || 'application/octet-stream', resumable: false, validation: 'md5' });
     } else {
-      if (process.env.NODE_ENV === 'production') {
-        return res.status(503).json({ status: 'error', message: 'Firebase Storage is required in production. Configure DATA_STORE_MODE=firebase.' });
+      if (process.env.NODE_ENV === 'production' && !isR2Configured()) {
+        return res.status(503).json({ status: 'error', message: 'Storage is not configured for production. Configure Firebase Storage or Cloudflare R2.' });
       }
       await uploadSchoolFile(scopedPath, req.body, {
         contentType: req.get('content-type') || 'application/octet-stream',
@@ -74,8 +75,8 @@ router.get('/*', authMiddleware, async (req, res) => {
       Math.max(Number(req.query.expiresIn) || MAX_SIGNED_URL_SECONDS, 1),
       MAX_SIGNED_URL_SECONDS
     );
-    if (process.env.NODE_ENV === 'production' && !firebaseData.isFirebaseDataConfigured()) {
-      return res.status(503).json({ status: 'error', message: 'Firebase Storage is required in production. Configure DATA_STORE_MODE=firebase.' });
+    if (process.env.NODE_ENV === 'production' && !firebaseData.isFirebaseDataConfigured() && !isR2Configured()) {
+      return res.status(503).json({ status: 'error', message: 'Storage is not configured for production. Configure Firebase Storage or Cloudflare R2.' });
     }
     const signedUrl = firebaseData.isFirebaseDataConfigured()
       ? (await firebaseData.getStorageBucket().file(`tenants/${scopedPath}`).getSignedUrl({ action: 'read', expires: Date.now() + expiresIn * 1000 }))[0]

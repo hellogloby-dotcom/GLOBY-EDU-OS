@@ -52,7 +52,29 @@ function findFallbackUser(schoolId, username) {
     roles: [user.role],
     platformAdmin: user.platformAdmin === true,
     passwordNeedsReset: user.passwordNeedsReset === true,
+    status: user.status || 'active',
   };
+}
+
+function findFallbackUserByPayload(payload) {
+  if (!payload || typeof payload.userId !== 'string' || !payload.userId.includes(':')) return null;
+  const separator = payload.userId.indexOf(':');
+  const schoolId = payload.userId.slice(0, separator);
+  const username = payload.userId.slice(separator + 1);
+  return findFallbackUser(schoolId, username);
+}
+
+function enforceAccountStatus(req, res, user) {
+  const status = String(user?.status || 'active').trim().toLowerCase();
+  const isSuspended = status === 'suspended' || status === 'inactive' || status === 'blocked' || status === 'disabled';
+  if (isSuspended) {
+    return res.status(403).json({
+      status: 'error',
+      code: 'ACCOUNT_SUSPENDED',
+      message: 'Your account has been suspended. Please contact your school administrator.',
+    });
+  }
+  return false;
 }
 
 function enforcePasswordChange(req, res, user) {
@@ -141,6 +163,15 @@ async function authMiddleware(req, res, next) {
     }
 
     req.user = payload; // minimal payload: { userId, roles, tenantId, passwordNeedsReset }
+    const fallbackUser = findFallbackUserByPayload(payload);
+    if (fallbackUser && enforceAccountStatus(req, res, fallbackUser)) return;
+    if (payload.status && String(payload.status).toLowerCase() === 'suspended') {
+      return res.status(403).json({
+        status: 'error',
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'Your account has been suspended. Please contact your school administrator.',
+      });
+    }
     if (enforcePasswordChange(req, res, req.user)) return;
     return next();
   } catch (err) {
@@ -152,6 +183,7 @@ async function authMiddleware(req, res, next) {
       }
 
       req.user = fallbackUser;
+      if (enforceAccountStatus(req, res, req.user)) return;
       if (enforcePasswordChange(req, res, req.user)) return;
       return next();
     }
@@ -167,6 +199,7 @@ async function authMiddleware(req, res, next) {
         return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
       }
       req.user = firebaseUser;
+      if (enforceAccountStatus(req, res, req.user)) return;
       if (enforcePasswordChange(req, res, req.user)) return;
       return next();
     } catch (firebaseError) {

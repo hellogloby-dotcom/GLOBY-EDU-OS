@@ -71,6 +71,35 @@ function renderSuspendedSchoolPage() {
   }
 }
 
+function renderNotFoundPage() {
+  if (!root) return;
+
+  root.innerHTML = `
+    <main class="min-h-screen bg-slate-50">
+      <div class="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-6 py-16 text-center">
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] sm:p-12">
+          <p class="text-sm font-semibold uppercase tracking-[0.35em] text-sky-700">404</p>
+          <h1 class="mt-6 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">Page not found</h1>
+          <p class="mt-4 max-w-xl text-lg text-slate-600">The page you are looking for does not exist or may have moved.</p>
+          <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <button id="not-found-home" type="button" class="inline-flex items-center justify-center rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Return home</button>
+            <button id="not-found-login" type="button" class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Go to sign in</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    ${Footer()}
+  `;
+
+  document.getElementById('not-found-home')?.addEventListener('click', () => {
+    location.hash = '#/';
+  });
+
+  document.getElementById('not-found-login')?.addEventListener('click', () => {
+    location.hash = '#/login';
+  });
+}
+
 async function ensureSchoolAccessIsActive() {
   const schoolId = localStorage.getItem('globyedu_schoolId');
   const token = getAccessToken();
@@ -118,7 +147,7 @@ const TEACHER_ASSIGNABLE_CLASS_OPTIONS = [
 ];
 const DEFAULT_WEBSITE_CMS = {
   companyName: 'GlobyEdu OS',
-  logoUrl: './src/assets/images/ui/operations-hero.svg',
+  logoUrl: '/src/assets/images/ui/globyedu-logo.jpg',
   heroTitle: 'The premium operating system for modern schools.',
   heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
   contactEmail: 'hello@globyedu.com',
@@ -159,6 +188,34 @@ function readWorkspaceStorage(key, fallback) {
 
 function writeWorkspaceStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function pushWorkspaceNotification({
+  title,
+  message,
+  type = 'system',
+  sender = 'System',
+  priority = 'normal',
+  status = 'active',
+  targetSchoolIds = [],
+} = {}) {
+  const notifications = readWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, []);
+  const nextEntry = {
+    id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: title || 'Workspace update',
+    message: message || '',
+    type,
+    read: false,
+    createdAt: new Date().toISOString(),
+    sender,
+    targetSchoolIds: Array.isArray(targetSchoolIds) ? targetSchoolIds.filter(Boolean) : [],
+    priority,
+    status,
+  };
+  const next = [nextEntry, ...notifications].slice(0, 100);
+  writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.notifications, next);
+  recordWorkspaceActivity(nextEntry.title, nextEntry.message, type);
+  return nextEntry;
 }
 
 function seedWorkspaceData() {
@@ -310,6 +367,10 @@ function getWebsiteCMSSettings() {
     const settings = { ...DEFAULT_WEBSITE_CMS, ...JSON.parse(stored) };
     if (settings.companyName === 'Demo Academy') settings.companyName = DEFAULT_WEBSITE_CMS.companyName;
     if (settings.heroSubtitle === 'Updated subtitle') settings.heroSubtitle = DEFAULT_WEBSITE_CMS.heroSubtitle;
+    const rawLogo = String(settings.logoUrl || '').trim();
+    const staleLogoTokens = ['operations-hero.svg', 'logo-placeholder', 'placeholder-logo', 'hero-dashboard.svg'];
+    const hasStaleLogo = !rawLogo || rawLogo === 'null' || rawLogo === 'undefined' || staleLogoTokens.some((token) => rawLogo.toLowerCase().includes(token.toLowerCase()));
+    if (hasStaleLogo) settings.logoUrl = DEFAULT_WEBSITE_CMS.logoUrl;
     ['contactEmail', 'contactPhone', 'whatsApp'].forEach((field) => {
       if (String(settings[field] || '').includes('*')) settings[field] = DEFAULT_WEBSITE_CMS[field];
     });
@@ -1083,7 +1144,8 @@ function renderNewsletter() {
 }
 
 function renderLoginPage() {
-  root.innerHTML = `${Nav()}${LoginPage()}${Footer()}`;
+  const cms = getWebsiteCMSSettings();
+  root.innerHTML = `${Nav(cms)}${LoginPage()}${Footer(cms)}`;
   attachLoginHandlers();
 }
 
@@ -1844,6 +1906,51 @@ function validateSchoolImage(file) {
   return '';
 }
 
+function sanitizeStorageFileName(fileName, prefix = 'assets') {
+  const baseName = String(fileName || `${prefix}-${Date.now()}`)
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || `${prefix}-${Date.now()}`;
+  return `${prefix}/${Date.now()}-${baseName}`;
+}
+
+async function uploadTenantAsset(file, prefix = 'assets') {
+  const token = getAccessToken();
+  if (!token) {
+    throw new Error('Your session has expired. Please sign in again.');
+  }
+
+  const storagePath = sanitizeStorageFileName(file.name || `${prefix}.png`, prefix);
+  const uploadResponse = await fetch(`/api/v1/files/upload?filename=${encodeURIComponent(storagePath)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  });
+
+  const uploadData = await uploadResponse.json().catch(() => null);
+  if (!uploadResponse.ok || uploadData?.status !== 'ok') {
+    throw new Error(uploadData?.message || 'Unable to upload the selected image to cloud storage.');
+  }
+
+  const signedUrlResponse = await fetch(`/api/v1/files/${encodeURIComponent(storagePath)}?expiresIn=86400`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const signedUrlData = await signedUrlResponse.json().catch(() => null);
+  if (!signedUrlResponse.ok || signedUrlData?.status !== 'ok' || !signedUrlData.url) {
+    throw new Error(signedUrlData?.message || 'Image upload succeeded, but the signed URL could not be generated.');
+  }
+
+  return signedUrlData.url;
+}
+
 async function handleImageUpload(fileInput, hiddenInput, previewElement, fallbackText) {
   if (!fileInput || !hiddenInput || !previewElement) return;
   const file = fileInput.files && fileInput.files[0];
@@ -1855,11 +1962,11 @@ async function handleImageUpload(fileInput, hiddenInput, previewElement, fallbac
     return;
   }
   try {
-    const dataUrl = await readFileAsDataUrl(file);
-    hiddenInput.value = dataUrl;
-    renderImagePreview(previewElement, dataUrl, fallbackText);
+    const remoteUrl = await uploadTenantAsset(file, 'school-assets');
+    hiddenInput.value = remoteUrl;
+    renderImagePreview(previewElement, remoteUrl, fallbackText);
   } catch (error) {
-    alert(error.message || 'Unable to read selected image.');
+    alert(error.message || 'Unable to upload selected image.');
   }
 }
 
@@ -2065,6 +2172,14 @@ async function handleQuickAction(action) {
       alert(result.data?.message || 'Unable to send message.');
       return;
     }
+    pushWorkspaceNotification({
+      title: 'New school message',
+      message: `School message queued for ${formData.recipient || 'admin'}: ${formData.subject || 'New message'}`,
+      type: 'message',
+      sender: 'School Authority',
+      targetSchoolIds: schoolId ? [schoolId] : [],
+      priority: formData.priority || 'normal',
+    });
     alert('Message queued successfully.');
     renderSchoolDashboardPage('overview');
     return;
@@ -2405,18 +2520,23 @@ function attachWorkspaceModuleHandlers() {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
-      input.onchange = () => {
+      input.onchange = async () => {
         const file = input.files && input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
+        if (!file.type.startsWith('image/')) {
+          alert('Please choose a valid image file.');
+          return;
+        }
+        try {
+          const remoteUrl = await uploadTenantAsset(file, 'workspace-profile');
           const profile = getWorkspaceProfile();
-          profile.avatar = String(reader.result || '');
+          profile.avatar = remoteUrl;
           writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
           recordWorkspaceActivity('Profile photo updated', 'A profile photo was uploaded.', 'profile');
           alert('Profile photo updated.');
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+          alert(error.message || 'Unable to upload the selected profile photo.');
+        }
       };
       input.click();
     });
@@ -2426,18 +2546,17 @@ function attachWorkspaceModuleHandlers() {
   const studentProfilePhotoInput = document.querySelector('[data-student-profile-photo-input]');
   if (studentProfileUploadButton && studentProfilePhotoInput) {
     studentProfileUploadButton.addEventListener('click', () => studentProfilePhotoInput.click());
-    studentProfilePhotoInput.addEventListener('change', () => {
+    studentProfilePhotoInput.addEventListener('change', async () => {
       const file = studentProfilePhotoInput.files?.[0];
       if (!file || !file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = String(reader.result || '');
-        if (!dataUrl) return;
-        localStorage.setItem('globyedu_profilePhoto', dataUrl);
+      try {
+        const remoteUrl = await uploadTenantAsset(file, 'student-profile');
+        localStorage.setItem('globyedu_profilePhoto', remoteUrl);
         recordWorkspaceActivity('Profile photo updated', 'A student profile photo was uploaded.', 'profile');
         location.reload();
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        alert(error.message || 'Unable to upload the student profile photo.');
+      }
     });
   }
 
@@ -2778,7 +2897,6 @@ function attachSchoolHandlers() {
           ] },
           { name: 'dateOfBirth', label: 'Date of birth', type: 'date' },
           { name: 'phone', label: 'Phone number' },
-          { name: 'nationalId', label: 'National ID' },
           { name: 'classId', label: 'Class / Section', type: 'select', options: classOptions, required: true },
           { name: 'gradeLevel', label: 'Grade / Year', placeholder: 'e.g. 1, 2, 3' },
           { name: 'house', label: 'House / Boarding' },
@@ -3331,7 +3449,6 @@ function attachSchoolHandlers() {
           ] },
           { name: 'dateOfBirth', label: 'Date of birth', type: 'date', value: studentRecord.dateOfBirth || '' },
           { name: 'phone', label: 'Phone number', value: studentRecord.phone || '', placeholder: '+1234567890' },
-          { name: 'nationalId', label: 'National ID', value: studentRecord.nationalId || '' },
           { name: 'className', label: 'Class / Section', value: studentRecord.className || '', placeholder: 'e.g. JHS 1A', required: true },
           { name: 'gradeLevel', label: 'Grade / Year', value: studentRecord.gradeLevel || studentRecord.grade || '', placeholder: 'e.g. 1' },
           { name: 'house', label: 'House / Boarding', value: studentRecord.house || '' },
@@ -3347,7 +3464,6 @@ function attachSchoolHandlers() {
           phone: formData.phone || null,
           gender: formData.gender || null,
           dateOfBirth: formData.dateOfBirth || null,
-          nationalId: formData.nationalId || null,
           gradeLevel: formData.gradeLevel || null,
           className: formData.className || null,
           section: formData.className || null,
@@ -3740,7 +3856,6 @@ function attachSchoolHandlers() {
               phone: record.phone || record.Phone || null,
               gender: record.gender || record.Gender || null,
               dateOfBirth: record.dateOfBirth || record.DateOfBirth || null,
-              nationalId: record.nationalId || record.NationalID || null,
               gradeLevel: record.gradeLevel || record.Grade || record['Grade Level'] || null,
               className: record.className || record.Class || record['Class Name'] || null,
               section: record.section || record.Section || null,
@@ -4601,6 +4716,16 @@ function initializeTeacherWorkspaceHandlers() {
           alert(result.data?.message || 'Unable to save academic content.');
           return;
         }
+        if (action === 'create-assignment') {
+          pushWorkspaceNotification({
+            title: 'New assignment created',
+            message: `Assignment created for ${selectedClass?.label || 'class'}: ${formData.title}`,
+            type: 'assignment',
+            sender: localStorage.getItem('globyedu_userFullName') || 'Teacher',
+            targetSchoolIds: schoolId ? [schoolId] : [],
+            priority: 'normal',
+          });
+        }
         alert(action === 'create-assignment' ? 'Assignment created successfully.' : 'Learning material created successfully.');
         renderRolePage('teacher', action === 'create-assignment' ? 'assignments' : 'lessons');
         return;
@@ -4609,24 +4734,41 @@ function initializeTeacherWorkspaceHandlers() {
       if (action === 'create-student') {
         const schoolResult = await fetchSchoolDetails(token, schoolId);
         const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school || {} : {};
-        const classOptions = (Array.isArray(school.classes) ? school.classes : []).map((entry) => ({
-          label: entry.name || entry.className || entry.classId || 'Class',
-          value: entry.classId || entry.id || entry.name || '',
-        })).filter((entry) => entry.value);
-        const formData = await showAdminForm('Add student', [
-          { name: 'fullName', label: 'Student full name', required: true },
-          { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*', capture: 'environment' },
-          { name: 'classId', label: 'Authorized class', type: 'select', options: classOptions, required: true },
+        const classOptions = (Array.isArray(school.classes) ? school.classes : [])
+          .filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived')
+          .map((entry) => ({
+            label: entry.name || entry.className || entry.classId || 'Class',
+            value: entry.classId || entry.id || entry.name || '',
+          }))
+          .filter((entry) => entry.value);
+        const formData = await showAdminForm('Create student', [
+          { name: 'fullName', label: 'Full name', placeholder: 'First and last name', required: true },
+          { name: 'email', label: 'Email', type: 'email', placeholder: 'student@example.com', required: true },
+          { name: 'profilePhoto', label: 'Profile photo or camera capture', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'gender', label: 'Gender', type: 'select', options: [
+            { label: 'Male', value: 'male' },
+            { label: 'Female', value: 'female' },
+            { label: 'Other', value: 'other' },
+          ] },
+          { name: 'dateOfBirth', label: 'Date of birth', type: 'date' },
+          { name: 'phone', label: 'Phone number' },
+          { name: 'classId', label: 'Class / Section', type: 'select', options: classOptions, required: true },
+          { name: 'gradeLevel', label: 'Grade / Year', placeholder: 'e.g. 1, 2, 3' },
+          { name: 'house', label: 'House / Boarding' },
+          { name: 'guardian', label: 'Guardian name' },
+          { name: 'parentPhone', label: 'Guardian phone' },
+          { name: 'parentEmail', label: 'Guardian email', type: 'email' },
+          { name: 'medical', label: 'Medical notes', type: 'textarea', placeholder: 'e.g. Allergies, conditions, etc.' },
+          { name: 'documents', label: 'Documents', placeholder: 'Comma-separated URLs or file names' },
         ]);
         if (!formData) return;
         const selectedClass = classOptions.find((entry) => entry.value === formData.classId);
-        const result = await createSchoolEntity(token, schoolId, 'students', {
-          fullName: formData.fullName,
-          profilePhoto: formData.profilePhoto || null,
-          classId: formData.classId,
-          className: selectedClass?.label || '',
+        const studentData = {
+          ...formData,
+          className: selectedClass?.label || null,
           status: 'active',
-        });
+        };
+        const result = await createSchoolEntity(token, schoolId, 'students', buildSchoolEntityPayload('students', studentData));
         if (!result.ok || result.data?.status !== 'ok') {
           alert(result.data?.message || 'Unable to create student.');
           return;
@@ -4984,8 +5126,7 @@ function attachLoginHandlers() {
     if (data?.code === 'ACCOUNT_SUSPENDED') {
       return `<div class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950" role="alert">
         <p class="text-base font-semibold">Account Suspended</p>
-        <p class="mt-2">Your school's account has been temporarily suspended. Please contact GlobyEdu support to resolve this and reactivate your account.</p>
-        <p class="mt-3 font-semibold">support@globyedu.com</p>
+        <p class="mt-2">Your account has been suspended. Please contact your school administrator.</p>
       </div>`;
     }
     return `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">${data?.message || fallbackMessage}</div>`;
@@ -5495,6 +5636,7 @@ async function route() {
     root.innerHTML = `${LegalPage(policy)}${Footer()}`;
     return;
   }
+  if (current === '404') return renderNotFoundPage();
   if (current === 'forgot') return renderForgotPage(params.get('type') || 'school');
   if (current === 'reset-password') return renderResetPasswordPage(params.get('token') || params.get('oobCode') || '', params.get('type') || 'school');
   if (current === 'change-password') {
@@ -5557,7 +5699,7 @@ async function route() {
     return renderRolePage(role || 'super_admin', section || 'overview', navigationId);
   }
 
-  renderLanding('home');
+  return renderNotFoundPage();
 }
 
 function attachAdminHandlers() {
@@ -5919,7 +6061,17 @@ async function handleCreateSchool() {
     return;
   }
 
-  showAdminMessage('success', `School created successfully: ${result.data.school?.name || result.data.school?.schoolId || 'New school'}`);
+  const createdSchoolLabel = result.data.school?.name || result.data.school?.schoolId || payload.name || 'New school';
+  pushWorkspaceNotification({
+    title: 'New school created',
+    message: `School created successfully: ${createdSchoolLabel}`,
+    type: 'school',
+    sender: 'Super Admin',
+    targetSchoolIds: result.data.school?.schoolId ? [result.data.school.schoolId] : [],
+    priority: 'normal',
+  });
+
+  showAdminMessage('success', `School created successfully: ${createdSchoolLabel}`);
   await refreshAdminSchoolList();
 }
 

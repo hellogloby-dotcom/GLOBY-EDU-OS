@@ -1,23 +1,23 @@
 const POLICY_META = {
   privacy: {
     title: 'Privacy Policy',
-    effective: 'September 18, 2026',
-    intro: 'This Privacy Policy explains what GlobyEdu OS collects and how it is used when schools and their authorized users use the platform.',
+    effective: 'September 21, 2026',
+    intro: 'This Privacy Policy explains how GlobyEdu OS handles personal data for schools, staff, students, parents, and administrators operating in Ghana and other approved jurisdictions.',
   },
   terms: {
     title: 'Terms of Service',
-    effective: 'September 18, 2026',
-    intro: 'These Terms describe the agreement between GlobyEdu OS and a school or organization that subscribes to the platform.',
+    effective: 'September 21, 2026',
+    intro: 'These Terms describe the agreement between GlobyEdu OS and a Ghana-based school, academy, institution, or organization using the platform.',
   },
   cookies: {
     title: 'Cookie Policy',
-    effective: 'September 18, 2026',
-    intro: 'This Cookie Policy explains the browser storage and cookies used to keep GlobyEdu OS working and to remember user preferences.',
+    effective: 'September 21, 2026',
+    intro: 'This Cookie Policy explains the browser cookies, local storage, and session tools used to keep GlobyEdu OS secure and functional for Ghanaian users.',
   },
   payments: {
     title: 'Payment & Refund Policy',
-    effective: 'September 18, 2026',
-    intro: 'This policy explains subscription billing, price changes, payment records, and the fourteen-day refund window for GlobyEdu OS subscriptions.',
+    effective: 'September 21, 2026',
+    intro: 'This policy explains the billing, payment, and refund process for Ghana-based schools using GlobyEdu OS subscriptions and school management services.',
   },
 };
 
@@ -26,70 +26,74 @@ const Link = ({ href, children }) => `<a class="font-semibold text-sky-700 hover
 function policyBody(type) {
   if (type === 'privacy') {
     return `
-      <h2>Information schools provide</h2>
-      <p>Schools may provide school details, administrator contact information, teacher records, student records, class information, attendance, academic results, messages, uploaded photos, documents, and other information needed to operate their workspace.</p>
-      <p>Authentication records may include email addresses, Firebase account identifiers, role information, password hashes, sign-in activity, and security events. GlobyEdu OS does not store passwords in plain text.</p>
-      <h2>How information is used</h2>
-      <p>We use information to provide school workspaces, authenticate users, apply tenant and role permissions, deliver requested features, maintain security, provide support, process subscriptions, and improve reliability. Activity and audit records may be used to investigate misuse or security incidents.</p>
-      <h2>Services and payments</h2>
-      <p>Firebase may provide authentication, database, and file-storage services for production deployments. Paystack may process subscription payments. Payment card details are handled by the payment provider; GlobyEdu OS does not receive or store full card numbers.</p>
-      <h2>Student information</h2>
-      <p>Schools are responsible for deciding what student information to enter, confirming that they have the authority and permissions required for their use of the service, and responding to requests from students, parents, guardians, or regulators where applicable. GlobyEdu OS is a service provider to the subscribing school and does not decide why a school collects a student's information.</p>
-      <h2>Sharing and service providers</h2>
-      <p>We share information with service providers only as needed to operate the platform, such as hosting, authentication, storage, email, monitoring, and payment services. We may disclose information when required by law, to protect the platform, or to address fraud, abuse, or security risks.</p>
-      <h2>Retention and deletion</h2>
-      <p>Schools control their workspace content subject to the subscription agreement and applicable retention needs. We retain account, payment, and security records for as long as reasonably needed for operations, dispute handling, legal obligations, and security. Contact us to request account closure or discuss deletion options.</p>
+      <h2>Personal data we may collect</h2>
+      <p>For Ghana-based schools and institutions, GlobyEdu OS may process school registration data, school address and contact information, administrator names and email addresses, teacher details, student profiles, class records, attendance information, academic records, assignments, assessment results, messaging records, uploaded documents, and account activity necessary to deliver the school operating system.</p>
+      <p>We also process authentication information such as hashed passwords, email addresses, role assignments, sign-in activity, and security logs. We do not store raw passwords in plain text.</p>
+      <h2>Lawful basis and purpose</h2>
+      <p>We process personal data to provide access to the school workspace, authenticate users, apply role-based permissions, deliver school operations, maintain account security, manage subscriptions, provide support, and meet legitimate business needs such as fraud prevention and audit readiness.</p>
+      <p>Where a school is using the platform to process student or parent personal data, that school remains responsible for ensuring it has lawful authority to do so under Ghanaian law and its internal policies.</p>
+      <h2>Student and parent information</h2>
+      <p>Schools using GlobyEdu OS should collect and process student and parent data only for valid educational, administrative, and legal purposes. We support school operations, but the subscribing institution decides what data it records and why it is needed.</p>
+      <p>Where a student or parent requests information, correction, or restrictions on processing, the school should respond through its internal data governance process and, where relevant, direct issues to the appropriate regulator or authority.</p>
+      <h2>Service providers and cross-border transfer</h2>
+      <p>GlobyEdu OS may use hosting, authentication, storage, monitoring, email, and payment service providers such as Firebase, cloud hosting infrastructure, and Paystack. Those providers may process data outside Ghana when necessary to provide the platform and services.</p>
+      <p>We put safeguards in place to limit access, use encryption and access control measures, and require service providers to meet reasonable security and privacy requirements.</p>
+      <h2>Retention, deletion, and rights</h2>
+      <p>We retain records needed for authentication, billing, audits, security, and dispute resolution. Schools can request closure or data deletion where permitted by contract and applicable law, though some records may need to be kept for legal or accounting reasons.</p>
+      <p>Users may request information about their data, correction, or deletion through the school administrator or through the support channel listed on ${Link({ href: '#/contact', children: 'the contact page' })}. Requests are assessed in line with the school's operational policies and local legal requirements.</p>
+      <h2>Regulatory notice for Ghana</h2>
+      <p>GlobyEdu OS supports Ghanaian school operations and is designed to align with the Ghana Data Protection Act, 2012 (Act 843) and the oversight role of the National Data Protection Commission (NDPC) for personal data protection. This policy is not a substitute for a school’s own data protection policy or legal advice from a licensed Ghanaian adviser.</p>
       <h2>Security and contact</h2>
-      <p>We use access controls, tenant separation, password hashing, signed sessions, and other safeguards. No service can promise absolute security. Privacy questions or requests can be sent to ${Link({ href: '#/contact', children: 'our contact team' })}.</p>
+      <p>We use role-based access control, tenant separation, password hashing, signed sessions, and secure infrastructure safeguards. No service can guarantee absolute security, but we take reasonable steps to protect user and school data. Privacy or data protection questions can be sent to ${Link({ href: '#/contact', children: 'our support and contact team' })}.</p>
     `;
   }
   if (type === 'terms') {
     return `
       <h2>The service</h2>
-      <p>GlobyEdu OS is a multi-tenant school-management SaaS platform. A subscribing school may create and manage its workspace, authorize school authorities, teachers, students, and other users, and use the features included in its current plan.</p>
-      <h2>Accounts and school responsibility</h2>
-      <p>The school is responsible for keeping account details accurate, protecting administrator credentials, assigning appropriate permissions, and ensuring that its users use only the information and features they are authorized to access. The school is also responsible for the content it uploads and for its legal authority to process student and staff information.</p>
+      <p>GlobyEdu OS is a school management and operations platform designed for Ghanaian educational institutions, academies, and school networks. A subscribing school may create a workspace, invite authorized staff, teachers, students, and parents, and use the features included in its plan.</p>
+      <h2>School responsibilities</h2>
+      <p>The school remains responsible for maintaining correct account information, protecting administrator credentials, assigning appropriate permissions, and ensuring that its users only access the information and features they are authorized to use. The school is responsible for the content it uploads and for confirming it has lawful authority to process student and staff information.</p>
       <h2>Acceptable use</h2>
-      <p>You must not misuse the service, attempt to bypass tenant or role controls, upload malicious or unlawful content, interfere with another school's workspace, use the service for unauthorized surveillance, or test security against the platform without written permission.</p>
-      <h2>Subscriptions and service availability</h2>
-      <p>Plans have a billing period, student limit, price, and currency shown at purchase. Trials, plan limits, expiration, suspension, and renewal are applied according to the current plan and account status. We may change or discontinue plans, but a completed payment is not silently changed. Future purchases and renewals use the price displayed at that time. The service may occasionally be unavailable for maintenance, failures, or events outside our control.</p>
+      <p>Users must not misuse the service, bypass tenant or role controls, upload unlawful content, interfere with another school's workspace, attempt unauthorized surveillance, or test the platform's security without written permission. Schools must also comply with Ghanaian law and the policies of the relevant education authority where applicable.</p>
+      <h2>Subscriptions and availability</h2>
+      <p>Plans include the billing period, student limit, price, and currency shown at purchase. Trials, plan limits, suspension, renewal, and expiration are applied according to the subscribed plan and account status. We may change or discontinue plans, but a completed payment is not silently changed without notice and a valid update to the pricing and billing terms.</p>
       <p>Payment and refund details are described in ${Link({ href: '#/legal/payments', children: 'Payment & Refund Policy' })}.</p>
-      <h2>Security and intellectual property</h2>
-      <p>You retain rights in your school content. You grant GlobyEdu OS the limited permission needed to host, process, back up, display, and transmit that content to provide the service. GlobyEdu OS and its licensors retain rights in the software, branding, documentation, and platform features.</p>
+      <h2>Security, data, and intellectual property</h2>
+      <p>You retain rights in the school content you manage in the platform. You grant GlobyEdu OS the limited permission needed to host, process, back up, display, and transmit that content in order to provide the service. GlobyEdu OS and its licensors retain rights in the software, branding, documentation, and platform features.</p>
       <h2>Suspension and termination</h2>
-      <p>We may suspend or terminate access for non-payment, misuse, security risk, unlawful activity, or material breach. A school may stop using the service or request account closure. Suspension does not remove payment obligations already incurred or prevent us from retaining records that are reasonably needed for security, disputes, or legal requirements.</p>
-      <h2>Disclaimers and limits</h2>
-      <p>The service is provided on an as-available basis. We do not promise uninterrupted availability, error-free operation, or that the service will meet every school requirement. To the extent permitted by law, neither party is liable for indirect, incidental, special, or consequential loss arising from use of the service. These limits do not exclude liability that cannot lawfully be excluded.</p>
-      <h2>Governing terms and updates</h2>
-      <p>Any governing-law or dispute terms applicable to a school should be confirmed in its order or subscription agreement. We may update these Terms by publishing a revised version with a new update date. Contact us through ${Link({ href: '#/contact', children: 'the public contact page' })} with questions.</p>
+      <p>We may suspend or terminate access for non-payment, misuse, security risk, unlawful activity, or a material breach of these Terms. A school may also stop using the service or request closure of its account. Suspension does not remove any payment obligations already incurred and does not prevent us from retaining records that are reasonably needed for security, dispute handling, or applicable legal requirements.</p>
+      <h2>Disclaimers</h2>
+      <p>The service is provided on an as-available basis and we do not guarantee uninterrupted performance, zero error rate, or that the service will meet every school requirement. To the extent permitted by law, we are not liable for indirect, incidental, special, or consequential losses arising from use of the service. This does not exclude liability that cannot lawfully be excluded.</p>
+      <h2>Updates</h2>
+      <p>We may update these Terms by publishing a revised version with a new effective date. Contact us through ${Link({ href: '#/contact', children: 'the contact page' })} if you have questions about the agreement or its application in a Ghanaian school context.</p>
     `;
   }
   if (type === 'cookies') {
     return `
-      <h2>Essential session storage</h2>
-      <p>GlobyEdu OS uses browser storage for access-token state, role and school context, remembered sign-in preference, session expiry, and other information needed to keep the SPA working. The backend can issue a refresh token in an HttpOnly cookie; in production it is configured for HTTPS and an appropriate SameSite setting.</p>
-      <h2>Preferences</h2>
-      <p>We may use local browser storage for interface preferences, workspace display settings, PWA state, and the school directory. These values help the application restore the experience you selected. They are not used to read information from another school's workspace.</p>
-      <h2>Firebase and payments</h2>
-      <p>Firebase Authentication may use browser storage and provider-managed session state when Firebase login is enabled. Paystack may use its own cookies or browser mechanisms during a hosted payment flow. Those mechanisms are controlled by the relevant provider and are subject to its policies.</p>
-      <h2>What we do not claim</h2>
-      <p>The current application does not advertise an analytics-cookie program or an advertising-cookie program. If that changes, this policy will be updated before those technologies are introduced.</p>
+      <h2>What cookies and browser storage we use</h2>
+      <p>GlobyEdu OS uses browser storage and cookies to keep the app working for Ghanaian school users. This includes session state, logged-in role and tenant information, remembered sign-in preference, school context, and app preferences needed for a consistent experience.</p>
+      <h2>Essential and functional storage</h2>
+      <p>We use storage to keep users signed in, remember the selected dashboard view, preserve preferences, and maintain local PWA state. These tools are necessary for the platform to operate properly and are generally treated as essential functionality rather than optional advertising tracking.</p>
+      <h2>Third-party providers</h2>
+      <p>Firebase Authentication and Paystack may also use browser session tools during sign-in, sign-up, or payment flows. Those cookies and storage mechanisms are controlled by those providers and are subject to their own operating policies.</p>
       <h2>Your choices</h2>
-      <p>You can clear browser storage or block cookies, but doing so may sign you out or prevent parts of the platform from working. To close an account or ask a question, contact us through ${Link({ href: '#/contact', children: 'the contact page' })}.</p>
+      <p>You can clear your browser storage or block cookies, but doing so may sign you out or prevent some parts of the platform from working. Where a school or user needs a formal explanation of cookie use or wishes to request data deletion, contact the school administrator or the support team via ${Link({ href: '#/contact', children: 'the contact page' })}.</p>
+      <h2>Consent notice</h2>
+      <p>Where a Ghanaian school or user needs a more explicit cookie-consent banner for local compliance and marketing use, GlobyEdu OS can be configured to show a clear consent banner before optional analytics or marketing cookies are enabled. We do not currently rely on third-party advertising cookies by default.</p>
     `;
   }
   return `
-    <h2>Plans, billing periods, and currency</h2>
-    <p>Subscription plans are shown with their current student limit, billing period, amount, and currency. GlobyEdu OS supports monthly and yearly billing where the selected plan offers both options. The backend is authoritative for the amount sent to Paystack; a client cannot change the payable amount.</p>
-    <h2>Fourteen-day refund window</h2>
-    <p>A school may request a refund within <strong>14 calendar days of the relevant subscription payment</strong>. The request should identify the school, payment date, Paystack reference, subscription, and reason. We review each request against the account and payment record. An approved refund is recorded with its decision and date.</p>
-    <p>After the fourteen-day period, subscription payments are generally non-refundable, except where applicable law requires otherwise or GlobyEdu OS expressly approves an exception. This policy does not remove any rights that cannot legally be waived.</p>
-    <h2>Price changes</h2>
-    <p>Published prices may change, and we may introduce, change, or discontinue plans. A completed payment keeps the amount confirmed at checkout. Future purchases or renewals may use the current published price, so schools should review the pricing page before paying.</p>
-    <h2>Payment records and failures</h2>
-    <p>Paystack supplies the payment reference and payment result. A payment is not treated as successfully activating a subscription until the server has received and verified the provider result. Failed, abandoned, reversed, or disputed payments may leave the subscription inactive or suspended until resolved.</p>
-    <h2>Refund requests and contact</h2>
-    <p>Refund requests should be made through the school support channel or ${Link({ href: '#/contact', children: 'the public contact page' })}. We do not claim to provide an automated Paystack refund where that workflow has not been enabled. An authorized platform administrator may review and record a decision.</p>
+    <h2>Subscription and billing</h2>
+    <p>Subscription plans are shown with the student limit, billing period, amount, and currency. GlobyEdu OS supports monthly and annual billing where the plan allows it. The platform's backend is authoritative for the amount sent to the payment provider and any approved local payment record.</p>
+    <h2>Refund and cancellation policy</h2>
+    <p>A school may request a refund within <strong>14 calendar days</strong> of making a subscription payment, subject to the applicable account and payment record. The request should include the school name, payment reference, date of purchase, plan, and reason for the request. Each request is reviewed in line with the platform's records and the applicable law.</p>
+    <p>After the initial refund window, subscription payments are generally non-refundable unless a different requirement applies under Ghanaian law or the platform grants an exception. This policy does not waive any right that cannot lawfully be waived.</p>
+    <h2>Price changes and renewals</h2>
+    <p>Plans and prices may change over time. A completed payment keeps the amount confirmed at checkout for the active subscription, while later renewals are charged according to the plan and price published at renewal time. Schools should review the current pricing before renewal or purchase.</p>
+    <h2>Payment failures and suspension</h2>
+    <p>If a payment fails, is reversed, is disputed, or is not approved by the provider, the service may be held or suspended until the payment issue is resolved. We may also refuse access to upgraded features where payment verification is incomplete or the school has exceeded its service terms.</p>
+    <h2>Support and disputes</h2>
+    <p>Refund and payment disputes should be handled through the school support channel or ${Link({ href: '#/contact', children: 'the public contact page' })}. The school will be asked to provide the payment reference, date, and relevant order information so the issue can be resolved accurately.</p>
   `;
 }
 

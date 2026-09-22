@@ -38,35 +38,51 @@ function ensureSchoolDataFile() {
   }
 }
 
+function keepOnlyPrimarySchool(schools) {
+  const list = Array.isArray(schools) ? schools : [];
+  const primary = list.filter((school) => {
+    const schoolId = String(school?.schoolId || '').trim().toLowerCase();
+    const legacyId = String(school?.id || '').trim().toLowerCase();
+    const name = String(school?.name || '').trim().toLowerCase();
+    return schoolId === DEMO_SCHOOL_ID || legacyId === LEGACY_DEMO_SCHOOL_ID.toLowerCase() || name === DEMO_SCHOOL_NAME.toLowerCase();
+  });
+
+  return primary.length ? primary : list.filter((school) => String(school?.schoolId || '').trim().toLowerCase() === DEMO_SCHOOL_ID || String(school?.name || '').trim().toLowerCase() === DEMO_SCHOOL_NAME.toLowerCase());
+}
+
 function loadSchoolData() {
   assertFallbackStoreAllowed();
   const snapshot = globalThis.__workspaceSnapshot;
+  let source = [];
+
   if (Array.isArray(snapshot)) {
-    return snapshot;
-  }
-  if (snapshot && Array.isArray(snapshot.schools)) {
-    return snapshot.schools;
+    source = snapshot;
+  } else if (snapshot && Array.isArray(snapshot.schools)) {
+    source = snapshot.schools;
+  } else {
+    ensureSchoolDataFile();
+    try {
+      const raw = fs.readFileSync(SCHOOLS_FILE, 'utf-8');
+      const json = JSON.parse(raw);
+      source = Array.isArray(json.schools) ? json.schools : [];
+    } catch (err) {
+      source = [];
+    }
   }
 
-  ensureSchoolDataFile();
-  try {
-    const raw = fs.readFileSync(SCHOOLS_FILE, 'utf-8');
-    const json = JSON.parse(raw);
-    return Array.isArray(json.schools) ? json.schools : [];
-  } catch (err) {
-    return [];
-  }
+  return Array.isArray(source) ? source : [];
 }
 
 function saveSchoolData(schools) {
   assertFallbackStoreAllowed();
   const normalized = Array.isArray(schools) ? schools : (schools && Array.isArray(schools.schools) ? schools.schools : []);
+  const sanitized = Array.isArray(normalized) ? normalized : [];
   if (globalThis.__workspaceSnapshot !== undefined) {
-    globalThis.__workspaceSnapshot = normalized;
-    return normalized;
+    globalThis.__workspaceSnapshot = sanitized;
+    return sanitized;
   }
-  fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: normalized }, null, 2), 'utf-8');
-  return normalized;
+  fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: sanitized }, null, 2), 'utf-8');
+  return sanitized;
 }
 
 function normalizeSchoolId(name) {
@@ -696,6 +712,10 @@ function ensureDemoSchool() {
   }
 
   if (changed) {
+    const nextSchools = keepOnlyPrimarySchool(schools);
+    if (nextSchools.length !== schools.length) {
+      schools.splice(0, schools.length, ...nextSchools);
+    }
     saveSchoolData(schools);
   }
 

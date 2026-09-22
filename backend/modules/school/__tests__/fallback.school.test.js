@@ -49,6 +49,28 @@ test('ensureDemoSchool seeds the required development accounts and school identi
   expect(student.passwordNeedsReset).toBe(true);
 });
 
+test('non-globy-school entries are removed and only the demo school remains in the fallback store', () => {
+  const extraSchools = {
+    schools: [
+      { schoolId: 'globy-school', name: 'Globy School' },
+      { schoolId: 'school-2', name: 'Demo Academy' },
+      { schoolId: 'school-3', name: 'Bright Future' },
+    ],
+  };
+
+  fs.writeFileSync(schoolsFile, JSON.stringify(extraSchools, null, 2), 'utf8');
+
+  const persisted = JSON.parse(fs.readFileSync(schoolsFile, 'utf8'));
+  expect(persisted.schools).toHaveLength(3);
+
+  const school = ensureDemoSchool();
+  const reloaded = JSON.parse(fs.readFileSync(schoolsFile, 'utf8'));
+
+  expect(school.schoolId).toBe('globy-school');
+  expect(reloaded.schools.every((entry) => entry.schoolId === 'globy-school' || entry.name === 'Globy School')).toBe(true);
+  expect(reloaded.schools).toHaveLength(1);
+});
+
 test('development accounts use the exact required passwords and roles', () => {
   fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
 

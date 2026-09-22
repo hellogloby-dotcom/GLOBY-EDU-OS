@@ -145,6 +145,24 @@ function getUserRoleList(actor = {}) {
   return roles.map((role) => String(role).trim().toLowerCase()).filter(Boolean);
 }
 
+function hasSchoolAuthorityRole(actor = {}) {
+  const roles = getUserRoleList(actor);
+  return roles.some((role) => ['super_admin', 'school_authority', 'school_head'].includes(role));
+}
+
+function restrictNonAuthorityUpdates(entityType, updates = {}, actor = {}) {
+  if (hasSchoolAuthorityRole(actor)) return updates;
+  const protectedFields = ['schoolId', 'tenantId', 'role', 'roles', 'permissions', 'classId', 'className', 'assignedClasses', 'assignedSubjects', 'status'];
+  const sanitized = { ...updates };
+  if (entityType === 'teachers' || entityType === 'students') {
+    protectedFields.forEach((field) => delete sanitized[field]);
+    delete sanitized.passwordHash;
+    delete sanitized.studentPasswordHash;
+    delete sanitized.passwordNeedsReset;
+  }
+  return sanitized;
+}
+
 function isTenantMatch(actor = {}, schoolId) {
   const actorSchoolId = String(actor.schoolId || actor.tenantId || '').trim();
   return !actorSchoolId || actorSchoolId === String(schoolId || '').trim();
@@ -1253,8 +1271,17 @@ async function activateSchool(id) {
 }
 
 async function listSchools(search) {
+  const keepOnlyGlobySchool = (schools) => {
+    const primary = schools.filter((school) => {
+      const schoolId = String(school?.schoolId || '').trim().toLowerCase();
+      const name = String(school?.name || '').trim().toLowerCase();
+      return schoolId === 'globy-school' || name === 'globy school';
+    });
+    return primary.length ? primary : schools;
+  };
+
   const fallbackSchools = () => {
-    const schools = loadSchoolData().map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
+    const schools = keepOnlyGlobySchool(loadSchoolData()).map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
     if (!search) return schools;
     const searchLower = String(search || '').toLowerCase();
     return schools.filter(
@@ -1272,7 +1299,7 @@ async function listSchools(search) {
   try {
     if (search) {
       const searchLower = String(search || '').toLowerCase();
-      const tenants = await prisma.tenant.findMany();
+      const tenants = keepOnlyGlobySchool(await prisma.tenant.findMany());
       return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant))).filter(
         (tenant) =>
           (tenant.name || '').toLowerCase().includes(searchLower) ||
@@ -1281,7 +1308,8 @@ async function listSchools(search) {
       );
     }
 
-    return (await prisma.tenant.findMany()).map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
+    const tenants = keepOnlyGlobySchool(await prisma.tenant.findMany());
+    return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
   } catch (error) {
     const message = String(error?.message || '');
     if (!/(Can't reach database server|database server|ECONNREFUSED|timeout|connect)/i.test(message)) {
@@ -1876,6 +1904,15 @@ async function createEntity(schoolId, entityType, payload, actor = {}) {
     throw new Error('Unsupported entity type');
   }
 
+  const hasExplicitActorRole = getUserRoleList(actor).length > 0;
+  const authorizedManagement = hasSchoolAuthorityRole(actor) || !hasExplicitActorRole;
+  if (!authorizedManagement) {
+    const restrictedEntityTypes = ['teachers', 'students', 'classes', 'subjects', 'departments', 'streams', 'academicYears', 'terms', 'semesters'];
+    if (restrictedEntityTypes.includes(field)) {
+      throw new Error('Only School Authority can manage student, teacher, class, and academic records.');
+    }
+  }
+
   if (firebaseCore.isFirebaseCoreMode()) {
     const school = await firebaseCore.getSchoolAggregate(schoolId);
     if (!school) throw new Error('School not found');
@@ -2056,6 +2093,14 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     throw new Error('Unsupported entity type');
   }
 
+  const actorRoles = getUserRoleList(actor);
+  const hasExplicitActorRole = actorRoles.length > 0;
+  if (hasExplicitActorRole && !hasSchoolAuthorityRole(actor)) {
+    if (['teachers', 'students', 'classes', 'subjects', 'departments', 'streams', 'academicYears', 'terms', 'semesters'].includes(field)) {
+      throw new Error('Only School Authority can update school records and assignments.');
+    }
+  }
+
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
@@ -2084,7 +2129,8 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
       const classRecord = school.classes.find((item) => String(item.classId || item.id) === String(updates.classId));
       if (!classRecord) throw new Error('Class does not belong to this school');
     }
-    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = updates || {};
+    const sanitizedUpdates = restrictNonAuthorityUpdates(field, updates || {}, actor);
+    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = sanitizedUpdates;
     const validatedUpdates = field === 'teachers'
       ? {
           ...safeUpdates,
@@ -2130,7 +2176,8 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     if (!user || user.tenantId !== tenant.id) {
       throw new Error('Entity not found');
     }
-    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = updates || {};
+    const sanitizedUpdates = restrictNonAuthorityUpdates(field, updates || {}, actor);
+    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = sanitizedUpdates;
     const updatesWithEmail = { ...safeUpdates };
     if (field === 'teachers') {
       delete updatesWithEmail.nationalId;
@@ -2219,10 +2266,14 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
   return prisma[model].update({ where: { id: existing.id }, data: updates });
 }
 
-async function deleteEntity(schoolId, entityType, entityId) {
+async function deleteEntity(schoolId, entityType, entityId, actor = {}) {
   const field = normalizeEntityType(entityType);
   if (!field) {
     throw new Error('Unsupported entity type');
+  }
+
+  if (getUserRoleList(actor).length > 0 && !hasSchoolAuthorityRole(actor)) {
+    throw new Error('Only School Authority can delete or deactivate school records.');
   }
 
   if (prisma && prisma.__stub) {

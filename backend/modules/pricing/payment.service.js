@@ -163,8 +163,12 @@ async function verifyPayment(reference, expectedSchoolId = null) {
   return activateVerifiedPayment(payment, body.data);
 }
 
+function getPaystackWebhookSecret() {
+  return String(process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY || '').trim();
+}
+
 function verifyWebhookSignature(rawBody, signature) {
-  const secret = String(process.env.PAYSTACK_SECRET_KEY || '').trim();
+  const secret = getPaystackWebhookSecret();
   if (!secret || !rawBody || !signature) return false;
   const normalizedRawBody = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody);
   const expected = crypto.createHmac('sha512', secret).update(normalizedRawBody).digest('hex');

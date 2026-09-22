@@ -32,6 +32,10 @@ const productionOrigins = [
   'https://globyedu.com',
   'https://www.globyedu.com',
   'https://globy-edu-os.onrender.com',
+  'http://localhost:4000',
+  'http://127.0.0.1:4000',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
 ];
 const configuredOrigins = String(process.env.CORS_ORIGINS || '')
   .split(',')
@@ -113,6 +117,7 @@ const frontendPath = fs.existsSync(distFrontendPath) ? distFrontendPath : source
 const marketingPath = fs.existsSync(distMarketingPath) ? distMarketingPath : sourceMarketingPath;
 const publicPath = path.join(appRoot, 'public');
 const rootAssetsPath = path.join(appRoot, 'src', 'assets', 'images');
+const marketingAssetsPath = path.join(sourceMarketingPath, 'assets', 'images');
 const staticOptions = {
   setHeaders(res, filePath) {
     const fileExtension = path.extname(filePath).toLowerCase();
@@ -123,6 +128,7 @@ const staticOptions = {
 };
 app.use('/marketing', express.static(marketingPath, staticOptions));
 app.use(express.static(frontendPath, staticOptions));
+app.use('/src/assets/images', express.static(marketingAssetsPath));
 app.use('/src/assets/images', express.static(rootAssetsPath));
 app.use('/root-assets/images', express.static(rootAssetsPath));
 app.use('/images', express.static(path.join(publicPath, 'images')));

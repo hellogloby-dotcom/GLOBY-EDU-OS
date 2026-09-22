@@ -87,4 +87,30 @@ describe('school authority workspace', () => {
     expect(dashboardSource).toContain('<select');
     expect(dashboardSource).not.toContain('id="school-settings-theme" value=');
   });
+
+  it('stores a workspace notification when a new school is created', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+
+    expect(mainSource).toContain('pushWorkspaceNotification({');
+    expect(mainSource).toContain("title: 'New school created'");
+    expect(mainSource).toContain("message: `School created successfully: ${");
+  });
+
+  it('keeps the teacher student form aligned with the school-authority form and strips National ID', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+
+    expect(mainSource).toContain("{ name: 'email', label: 'Email', type: 'email', placeholder: 'student@example.com', required: true }");
+    expect(mainSource).toContain("{ name: 'gender', label: 'Gender', type: 'select', options: [");
+    expect(mainSource).toContain("{ name: 'dateOfBirth', label: 'Date of birth', type: 'date' }");
+    expect(mainSource).toContain("{ name: 'guardian', label: 'Guardian name' }");
+    expect(mainSource).not.toContain("{ name: 'nationalId', label: 'National ID' }");
+    expect(mainSource).not.toContain('payload.nationalId =');
+  });
+
+  it('stores a workspace notification when a teacher creates an assignment', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+
+    expect(mainSource).toContain("title: 'New assignment created'");
+    expect(mainSource).toContain("message: `Assignment created for ${");
+  });
 });

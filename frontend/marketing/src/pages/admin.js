@@ -811,105 +811,52 @@ function saveWebsiteCMSSettings(values = {}) {
   return merged;
 }
 
-function getBlogPosts() {
-  try {
-    const raw = localStorage.getItem('globyedu_blog_posts_v1');
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveBlogPosts(posts = []) {
-  localStorage.setItem('globyedu_blog_posts_v1', JSON.stringify(posts));
-  return posts;
-}
-
-function renderBlogManager() {
-  const posts = getBlogPosts();
-  const postRows = posts.length
-    ? posts.map((post) => `
-      <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <p class="font-semibold text-slate-900">${post.title || 'Post title'}</p>
-              <span class="rounded-full ${post.status === 'published' ? 'bg-emerald-100 text-emerald-700' : post.status === 'archived' ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-700'} px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]">${post.status || 'draft'}</span>
-            </div>
-            <p class="mt-2 text-sm text-slate-600">${post.author || 'Super Admin'} • ${post.publicationDate ? new Date(post.publicationDate).toLocaleDateString() : 'Draft schedule'} • ${post.category || 'General'}</p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" data-blog-action="edit" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Edit</button>
-            <button type="button" data-blog-action="publish" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">${post.status === 'published' ? 'Refresh' : 'Publish'}</button>
-            <button type="button" data-blog-action="draft" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Draft</button>
-            <button type="button" data-blog-action="archive" data-blog-id="${post.id}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Archive</button>
-            <button type="button" data-blog-action="delete" data-blog-id="${post.id}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">Delete</button>
-          </div>
-        </div>
-        <p class="mt-3 line-clamp-3 text-sm text-slate-600">${(post.content || '').replace(/<[^>]*>/g, '').slice(0, 180) || 'No content yet.'}</p>
-      </div>
-    `).join('')
-    : '<div class="rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">No blog posts yet. Create the first post from the form below.</div>';
-
-  return `
-    <section class="space-y-6">
-      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Blog & content</p>
-            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Create, draft, publish, and archive content</h2>
-          </div>
-          <button type="button" id="create-blog-post" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Create post</button>
-        </div>
-        <form id="blog-post-form" class="grid gap-4 lg:grid-cols-2">
-          <input type="hidden" name="postId" />
-          <label class="block text-sm text-slate-700 lg:col-span-2">Title
-            <input type="text" name="title" required class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-          </label>
-          <label class="block text-sm text-slate-700">Author
-            <input type="text" name="author" value="Super Admin" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-          </label>
-          <label class="block text-sm text-slate-700">Category
-            <input type="text" name="category" value="General" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-          </label>
-          <label class="block text-sm text-slate-700">Featured image
-            <input type="text" name="featuredImage" value="./src/assets/images/homepage/homepage-about-placeholder.svg" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-          </label>
-          <label class="block text-sm text-slate-700">Publication date
-            <input type="date" name="publicationDate" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
-          </label>
-          <label class="block text-sm text-slate-700 lg:col-span-2">Content
-            <textarea name="content" rows="6" required class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"></textarea>
-          </label>
-          <div class="lg:col-span-2 flex flex-wrap gap-3">
-            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Save draft</button>
-            <button type="button" id="blog-publish-btn" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Publish now</button>
-            <button type="button" id="blog-cancel-btn" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Cancel</button>
-            <div id="blog-status" class="hidden rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"></div>
-          </div>
-        </form>
-      </div>
-      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Published blog posts</p>
-        <div class="mt-6 grid gap-4">${postRows}</div>
-      </div>
-    </section>
-  `;
-}
-
 export function attachWebsiteCMSHandlers() {
   const saveButton = document.getElementById('save-website-cms');
   const cancelButton = document.getElementById('cancel-website-cms');
   const status = document.getElementById('website-cms-status');
   const form = document.getElementById('website-cms-form');
 
+  async function uploadBrandingAsset(file) {
+    const token = typeof getAccessToken === 'function' ? getAccessToken() : localStorage.getItem('globyedu_accessToken');
+    if (!token) {
+      throw new Error('You must sign in before uploading branding assets to the cloud.');
+    }
+
+    const safeName = String(file.name || 'branding-logo.png').replace(/\\/g, '/').split('/').pop().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'branding-logo.png';
+    const storagePath = `website-branding/${Date.now()}-${safeName}`;
+
+    const uploadResponse = await fetch(`/api/v1/files/upload?filename=${encodeURIComponent(storagePath)}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+
+    const uploadData = await uploadResponse.json().catch(() => null);
+    if (!uploadResponse.ok || uploadData?.status !== 'ok') {
+      throw new Error(uploadData?.message || 'Unable to upload the branding image to storage.');
+    }
+
+    const signedUrlResponse = await fetch(`/api/v1/files/${encodeURIComponent(storagePath)}?expiresIn=86400`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const signedUrlData = await signedUrlResponse.json().catch(() => null);
+    if (!signedUrlResponse.ok || signedUrlData?.status !== 'ok' || !signedUrlData.url) {
+      throw new Error(signedUrlData?.message || 'The uploaded branding image could not be published.');
+    }
+    return signedUrlData.url;
+  }
+
   if (form) {
     const logoFileInput = form.querySelector('[data-cms-logo-file]');
     const logoUrlInput = form.querySelector('[data-cms-field="logoUrl"]');
     const logoPreview = form.querySelector('[data-cms-logo-preview]');
-    logoFileInput?.addEventListener('change', () => {
+    logoFileInput?.addEventListener('change', async () => {
       const file = logoFileInput.files?.[0];
       if (!file) return;
       if (!file.type.startsWith('image/')) {
@@ -928,17 +875,20 @@ export function attachWebsiteCMSHandlers() {
         }
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = String(reader.result || '');
-        if (logoUrlInput) logoUrlInput.value = dataUrl;
-        if (logoPreview) logoPreview.src = dataUrl;
+      try {
+        const remoteUrl = await uploadBrandingAsset(file);
+        if (logoUrlInput) logoUrlInput.value = remoteUrl;
+        if (logoPreview) logoPreview.src = remoteUrl;
         if (status) {
           status.textContent = 'Logo uploaded successfully. Save changes to publish it live.';
           status.className = 'mb-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        if (status) {
+          status.textContent = error.message || 'Unable to upload the logo to cloud storage.';
+          status.className = 'mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800';
+        }
+      }
     });
 
     form.addEventListener('submit', (event) => {
@@ -992,109 +942,6 @@ export function attachWebsiteCMSHandlers() {
     });
   }
 
-  const blogForm = document.getElementById('blog-post-form');
-  if (blogForm) {
-    blogForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const data = new FormData(blogForm);
-      const postId = data.get('postId')?.toString();
-      const posts = getBlogPosts();
-      const nextPost = {
-        id: postId || `post-${Date.now()}`,
-        title: data.get('title')?.toString().trim() || 'Untitled post',
-        content: data.get('content')?.toString().trim() || '',
-        author: data.get('author')?.toString().trim() || 'Super Admin',
-        category: data.get('category')?.toString().trim() || 'General',
-        featuredImage: data.get('featuredImage')?.toString().trim() || './src/assets/images/homepage/homepage-about-placeholder.svg',
-        publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10),
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const nextPosts = postId ? posts.map((post) => post.id === postId ? { ...post, ...nextPost, status: post.status || 'draft' } : post) : [nextPost, ...posts];
-      saveBlogPosts(nextPosts);
-      const blogStatus = document.getElementById('blog-status');
-      if (blogStatus) {
-        blogStatus.textContent = 'Draft saved successfully.';
-        blogStatus.className = 'rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800';
-      }
-      blogForm.reset();
-      const publishButton = document.getElementById('blog-publish-btn');
-      if (publishButton) publishButton.dataset.postId = '';
-      window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: nextPosts } }));
-    });
-
-    const publishButton = document.getElementById('blog-publish-btn');
-    if (publishButton) {
-      publishButton.addEventListener('click', () => {
-        const data = new FormData(blogForm);
-        const title = data.get('title')?.toString().trim();
-        if (!title) {
-          const blogStatus = document.getElementById('blog-status');
-          if (blogStatus) {
-            blogStatus.textContent = 'A title is required before publishing.';
-            blogStatus.className = 'rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800';
-          }
-          return;
-        }
-        const posts = getBlogPosts();
-        const postId = data.get('postId')?.toString() || `post-${Date.now()}`;
-        const nextPosts = posts.some((post) => post.id === postId)
-          ? posts.map((post) => post.id === postId ? { ...post, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || './src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', updatedAt: new Date().toISOString() } : post)
-          : [{ id: postId, title, content: data.get('content')?.toString().trim() || '', author: data.get('author')?.toString().trim() || 'Super Admin', category: data.get('category')?.toString().trim() || 'General', featuredImage: data.get('featuredImage')?.toString().trim() || './src/assets/images/homepage/homepage-about-placeholder.svg', publicationDate: data.get('publicationDate')?.toString() || new Date().toISOString().slice(0, 10), status: 'published', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...posts];
-        saveBlogPosts(nextPosts);
-        const blogStatus = document.getElementById('blog-status');
-        if (blogStatus) {
-          blogStatus.textContent = 'Post published and now visible on the public website.';
-          blogStatus.className = 'rounded-3xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800';
-        }
-        blogForm.reset();
-        window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: nextPosts } }));
-      });
-    }
-
-    document.getElementById('blog-cancel-btn')?.addEventListener('click', () => {
-      blogForm.reset();
-      const blogStatus = document.getElementById('blog-status');
-      if (blogStatus) {
-        blogStatus.textContent = 'Cancelled. The latest saved post remains unchanged.';
-        blogStatus.className = 'rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700';
-      }
-    });
-
-    document.querySelectorAll('[data-blog-action]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const action = button.getAttribute('data-blog-action');
-        const blogId = button.getAttribute('data-blog-id');
-        const posts = getBlogPosts();
-        const nextPosts = posts.filter((post) => post.id !== blogId);
-        if (action === 'delete') {
-          saveBlogPosts(nextPosts);
-          window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: nextPosts } }));
-          button.closest('div')?.closest('div')?.remove();
-          return;
-        }
-        const target = posts.find((post) => post.id === blogId);
-        if (!target) return;
-        if (action === 'edit') {
-          blogForm.elements.postId.value = target.id;
-          blogForm.elements.title.value = target.title || '';
-          blogForm.elements.author.value = target.author || 'Super Admin';
-          blogForm.elements.category.value = target.category || 'General';
-          blogForm.elements.featuredImage.value = target.featuredImage || '';
-          blogForm.elements.publicationDate.value = target.publicationDate || '';
-          blogForm.elements.content.value = target.content || '';
-          blogForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          return;
-        }
-        const updated = { ...target, status: action === 'publish' ? 'published' : action === 'draft' ? 'draft' : 'archived', updatedAt: new Date().toISOString() };
-        saveBlogPosts(posts.map((post) => post.id === blogId ? updated : post));
-        window.dispatchEvent(new CustomEvent('globyedu-cms-updated', { detail: { blogPosts: posts.map((post) => post.id === blogId ? updated : post) } }));
-        window.location.reload();
-      });
-    });
-  }
 }
 
 function renderWebsiteCMS() {
@@ -1105,7 +952,7 @@ function renderWebsiteCMS() {
         <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Website CMS</p>
-            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage homepage content, branding, and blog posts</h2>
+            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage homepage content and branding</h2>
             <p class="mt-3 text-slate-600">These values update the public marketing site immediately in the current session and persist in local storage.</p>
           </div>
           <div class="flex flex-wrap gap-3">
@@ -1135,7 +982,6 @@ function renderWebsiteCMS() {
           </div>
         </form>
       </div>
-      ${renderBlogManager()}
     </section>
   `;
 }
@@ -2938,7 +2784,6 @@ function createPlatformBackupSnapshot() {
       schools: maskSensitiveBackupData(schoolDirectory),
       schoolDirectory,
       cms: maskSensitiveBackupData(state.cms || getWebsiteCMSSettings()),
-      blogPosts: maskSensitiveBackupData(getBlogPosts()),
       announcements: maskSensitiveBackupData(state.announcements || []),
       messages: maskSensitiveBackupData(state.messages || []),
       supportTickets: maskSensitiveBackupData(state.supportTickets || []),
@@ -3014,7 +2859,6 @@ function restoreLatestBackup() {
   if (Array.isArray(backupData.messages)) nextState.messages = backupData.messages;
   if (Array.isArray(backupData.announcements)) nextState.announcements = backupData.announcements;
   if (Array.isArray(backupData.supportTickets)) nextState.supportTickets = backupData.supportTickets;
-  if (Array.isArray(backupData.blogPosts)) saveBlogPosts(backupData.blogPosts);
   if (Array.isArray(backupData.notifications)) nextState.notifications = backupData.notifications;
   if (backupData.modules) nextState.modules = { ...nextState.modules, ...backupData.modules };
   if (Array.isArray(backupData.pricingPlans)) nextState.pricingPlans = backupData.pricingPlans;

@@ -3,14 +3,15 @@
 
 export function Footer(cms = {}) {
   const companyName = cms.companyName || 'GlobyEdu OS';
-  const logoUrl = cms.logoUrl || '';
+  const logoUrl = cms.logoUrl || './src/assets/images/ui/globyedu-logo.jpg';
   const contactEmail = cms.contactEmail || 'hello@globyedu.com';
   const contactPhone = cms.contactPhone || '+1 (555) 123-4567';
   const website = cms.website || 'https://globyedu.com';
-  const socialLinks = String(cms.socialLinks || 'LinkedIn, Twitter, Facebook, Instagram')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const socialLinks = [
+    { label: 'Facebook', url: 'https://www.facebook.com/share/18j4bKMorr/' },
+    { label: 'X', url: 'https://x.com/GlobyTechndz' },
+    { label: 'Instagram', url: 'https://www.instagram.com/globytechnologies?igsh=aWgwdGVocHFya3g3' },
+  ];
 
   return `
     <footer class="mt-12 border-t bg-white" role="contentinfo" aria-label="Footer">
@@ -56,7 +57,7 @@ export function Footer(cms = {}) {
                 <button class="btn btn-primary" type="submit">Subscribe</button>
               </form>
             <div class="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-sm text-slate-600">
-              ${socialLinks.map((link) => `<a href="#/contact" class="transition hover:text-slate-900">${link}</a>`).join('')}
+              ${socialLinks.map((link) => `<a href="${link.url}" target="_blank" rel="noopener noreferrer" class="transition hover:text-slate-900">${link.label}</a>`).join('')}
             </div>
           </div>
         </div>
@@ -69,6 +70,9 @@ export function Footer(cms = {}) {
             <a href="#/legal/cookies" class="transition hover:text-slate-900">Cookies</a>
             <a href="#/legal/payments" class="transition hover:text-slate-900">Payments & refunds</a>
           </div>
+        </div>
+        <div class="mt-4 border-t pt-4 text-center text-xs font-medium uppercase tracking-[0.25em] text-slate-500">
+          Powered by <span class="font-semibold text-slate-900">GlobyTechnologies</span>
         </div>
       </div>
     </footer>

@@ -228,6 +228,40 @@ export function attachRegisterWizardHandlers() {
   let current = 0;
   let logoDataUrl = '';
 
+  async function uploadSchoolBrandAsset(file) {
+    const token = localStorage.getItem('globyedu_accessToken');
+    if (!token) return '';
+
+    const safeName = String(file.name || 'school-logo.png').replace(/\\/g, '/').split('/').pop().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'school-logo.png';
+    const storagePath = `school-branding/${Date.now()}-${safeName}`;
+
+    const uploadResponse = await fetch(`/api/v1/files/upload?filename=${encodeURIComponent(storagePath)}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+
+    const uploadData = await uploadResponse.json().catch(() => null);
+    if (!uploadResponse.ok || uploadData?.status !== 'ok') {
+      throw new Error(uploadData?.message || 'Unable to upload the school logo to cloud storage.');
+    }
+
+    const signedUrlResponse = await fetch(`/api/v1/files/${encodeURIComponent(storagePath)}?expiresIn=86400`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const signedUrlData = await signedUrlResponse.json().catch(() => null);
+    if (!signedUrlResponse.ok || signedUrlData?.status !== 'ok' || !signedUrlData.url) {
+      throw new Error(signedUrlData?.message || 'The uploaded school logo could not be published.');
+    }
+
+    return signedUrlData.url;
+  }
+
   function renderProgress(index = 0) {
     const percent = ((index + 1) / steps.length) * 100;
     progressBar.style.width = `${percent}%`;
@@ -320,13 +354,11 @@ export function attachRegisterWizardHandlers() {
       logoMessage.innerHTML = '<span class="text-rose-600">Image is too large. Please choose a file smaller than 2MB.</span>';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      logoDataUrl = reader.result;
-      logoPreview.innerHTML = `<img src="${reader.result}" alt="School logo preview" class="h-24 w-24 rounded-2xl object-cover shadow-sm" />`;
-      logoMessage.textContent = 'Preview ready. You can continue or choose a different image.';
-    };
-    reader.readAsDataURL(file);
+
+    const previewUrl = URL.createObjectURL(file);
+    logoDataUrl = '';
+    logoPreview.innerHTML = `<img src="${previewUrl}" alt="School logo preview" class="h-24 w-24 rounded-2xl object-cover shadow-sm" />`;
+    logoMessage.textContent = 'Preview ready. You can continue or choose a different image.';
   }
 
   document.getElementById('wizard-next').addEventListener('click', () => {
@@ -408,15 +440,23 @@ export function attachRegisterWizardHandlers() {
     }
 
     const values = readFormValues();
-    const payload = {
-      ...values,
-      logo: logoDataUrl || null,
-      schoolName: values.schoolName,
-      head: values.head,
-      agreements: values.agreements,
-    };
+    const selectedLogoFile = logoInput && logoInput.files && logoInput.files[0] ? logoInput.files[0] : null;
+    let payloadLogo = logoDataUrl || null;
 
     try {
+      if (selectedLogoFile) {
+        const uploadedLogoUrl = await uploadSchoolBrandAsset(selectedLogoFile);
+        if (uploadedLogoUrl) payloadLogo = uploadedLogoUrl;
+      }
+
+      const payload = {
+        ...values,
+        logo: payloadLogo || null,
+        schoolName: values.schoolName,
+        head: values.head,
+        agreements: values.agreements,
+      };
+
       const result = await apiRegister(payload);
       if (!result.ok || result.data?.status !== 'ok') {
         loadingOverlay.classList.add('hidden');

@@ -20,6 +20,10 @@ async function tenantMiddleware(req, res, next) {
 
     if (!user) return res.status(401).json({ status: 'error', message: 'Authentication required' });
 
+    if (user.status && ['suspended', 'inactive', 'blocked', 'disabled'].includes(String(user.status).trim().toLowerCase())) {
+      return res.status(403).json({ status: 'error', code: 'ACCOUNT_SUSPENDED', message: 'Your account has been suspended. Please contact your school administrator.' });
+    }
+
     if (user.passwordNeedsReset === true && req.path !== '/change-password') {
       return res.status(403).json({ status: 'error', code: 'PASSWORD_CHANGE_REQUIRED', message: 'You must change your temporary password before continuing.' });
     }

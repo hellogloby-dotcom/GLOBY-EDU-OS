@@ -320,7 +320,7 @@ router.get('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, 
 });
 
 // POST /api/v1/schools/:schoolId/entities/:entityType - Tenant-scoped create entity
-router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
+router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType } = req.params;
     const payload = req.body || {};
@@ -335,7 +335,7 @@ router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware,
 });
 
 // PUT /api/v1/schools/:schoolId/entities/:entityType/:entityId - Tenant-scoped edit entity
-router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
+router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType, entityId } = req.params;
     const updates = req.body || {};
@@ -353,7 +353,7 @@ router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMi
 router.delete('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType, entityId } = req.params;
-    const entity = await schoolService.deleteEntity(schoolId, entityType, entityId);
+    const entity = await schoolService.deleteEntity(schoolId, entityType, entityId, req.user);
     if (['students', 'teachers'].includes(entityType)) {
       await auditSchoolAction(req, { action: `${entityType.slice(0, -1)}.archived`, resourceType: entityType.slice(0, -1), resourceId: entityId });
     }

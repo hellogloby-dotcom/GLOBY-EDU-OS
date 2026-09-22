@@ -28,7 +28,6 @@ function buildSchoolEntityPayload(entityType, data = {}) {
     payload.profilePhoto = data.profilePhoto || data.passportPhoto || null;
     payload.gender = data.gender || null;
     payload.dateOfBirth = data.dateOfBirth || data.birthDate || null;
-    payload.nationalId = data.nationalId || data.nationalIdNumber || null;
     payload.address = data.address || data.homeAddress || null;
     payload.country = data.country || null;
     payload.region = data.region || null;

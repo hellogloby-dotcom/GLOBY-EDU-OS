@@ -194,7 +194,11 @@ if (!useFallbackAuth) {
 // Endpoint: GET /api/v1/auth/schools
 // Returns a simple list of available tenant schools for the frontend dropdown.
 router.get('/schools', (req, res) => {
-    const schools = loadSchoolData();
+    const schools = loadSchoolData().filter((school) => {
+      const schoolId = String(school?.schoolId || '').trim().toLowerCase();
+      const name = String(school?.name || '').trim().toLowerCase();
+      return schoolId === 'globy-school' || name === 'globy school';
+    });
     const response = schools.map((school) => ({
       schoolId: school.schoolId,
       name: school.name,
@@ -291,7 +295,7 @@ router.get('/schools', (req, res) => {
 
   async function executeLogin({ schoolId, username, password, platformAdminMode, schoolName, studentName, className, teacherName, loginType }) {
     const genericAuthMessage = 'Unable to sign in. Please check your details.';
-    const suspendedAccountMessage = 'Your school\'s account has been temporarily suspended. Please contact GlobyEdu support to resolve this and reactivate your account.';
+    const suspendedAccountMessage = 'Your account has been suspended. Please contact your school administrator.';
     const loginAttemptKey = getLoginAttemptKey({ schoolId, username, platformAdminMode });
 
     if (isLoginRateLimited(loginAttemptKey)) {
@@ -424,7 +428,7 @@ router.get('/schools', (req, res) => {
     }
 
     if (user.status !== 'active') {
-      return { statusCode: 403, body: { status: 'error', message: genericAuthMessage } };
+      return { statusCode: 403, body: { status: 'error', code: 'ACCOUNT_SUSPENDED', message: suspendedAccountMessage } };
     }
 
     if (user.emailVerified !== true) {
