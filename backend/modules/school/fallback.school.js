@@ -33,8 +33,17 @@ function assertFallbackStoreAllowed() {
 
 function ensureSchoolDataFile() {
   assertFallbackStoreAllowed();
+  try {
+    fs.mkdirSync(path.dirname(SCHOOLS_FILE), { recursive: true });
+  } catch (err) {
+    // Ignore directory-creation failures; the fallback in-memory snapshot still works during tests.
+  }
   if (!fs.existsSync(SCHOOLS_FILE)) {
-    fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: [] }, null, 2), 'utf-8');
+    try {
+      fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: [] }, null, 2), 'utf-8');
+    } catch (err) {
+      // Keep the in-memory fallback working even when the file is temporarily unavailable.
+    }
   }
 }
 
@@ -81,7 +90,12 @@ function saveSchoolData(schools) {
     globalThis.__workspaceSnapshot = sanitized;
     return sanitized;
   }
-  fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: sanitized }, null, 2), 'utf-8');
+  try {
+    fs.mkdirSync(path.dirname(SCHOOLS_FILE), { recursive: true });
+    fs.writeFileSync(SCHOOLS_FILE, JSON.stringify({ schools: sanitized }, null, 2), 'utf-8');
+  } catch (err) {
+    globalThis.__workspaceSnapshot = sanitized;
+  }
   return sanitized;
 }
 

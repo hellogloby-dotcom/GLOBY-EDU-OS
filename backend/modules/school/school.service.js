@@ -1904,8 +1904,10 @@ async function createEntity(schoolId, entityType, payload, actor = {}) {
     throw new Error('Unsupported entity type');
   }
 
-  const hasExplicitActorRole = getUserRoleList(actor).length > 0;
-  const authorizedManagement = hasSchoolAuthorityRole(actor) || !hasExplicitActorRole;
+  const actorRoles = getUserRoleList(actor);
+  const hasExplicitActorRole = actorRoles.length > 0;
+  const teacherStudentAccess = actorRoles.includes('teacher') && field === 'students';
+  const authorizedManagement = hasSchoolAuthorityRole(actor) || teacherStudentAccess || !hasExplicitActorRole;
   if (!authorizedManagement) {
     const restrictedEntityTypes = ['teachers', 'students', 'classes', 'subjects', 'departments', 'streams', 'academicYears', 'terms', 'semesters'];
     if (restrictedEntityTypes.includes(field)) {
@@ -2095,7 +2097,8 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
 
   const actorRoles = getUserRoleList(actor);
   const hasExplicitActorRole = actorRoles.length > 0;
-  if (hasExplicitActorRole && !hasSchoolAuthorityRole(actor)) {
+  const teacherStudentAccess = actorRoles.includes('teacher') && field === 'students';
+  if (hasExplicitActorRole && !hasSchoolAuthorityRole(actor) && !teacherStudentAccess) {
     if (['teachers', 'students', 'classes', 'subjects', 'departments', 'streams', 'academicYears', 'terms', 'semesters'].includes(field)) {
       throw new Error('Only School Authority can update school records and assignments.');
     }
@@ -2272,7 +2275,9 @@ async function deleteEntity(schoolId, entityType, entityId, actor = {}) {
     throw new Error('Unsupported entity type');
   }
 
-  if (getUserRoleList(actor).length > 0 && !hasSchoolAuthorityRole(actor)) {
+  const actorRoles = getUserRoleList(actor);
+  const teacherStudentAccess = actorRoles.includes('teacher') && field === 'students';
+  if (actorRoles.length > 0 && !hasSchoolAuthorityRole(actor) && !teacherStudentAccess) {
     throw new Error('Only School Authority can delete or deactivate school records.');
   }
 

@@ -146,6 +146,62 @@ test('entity onboarding generates usable teacher and student credentials without
   expect(reloaded.students.find((entry) => entry.studentId === student.studentId).profilePhoto).toContain('data:image/png');
 });
 
+test('teachers can create, update, and delete students within their own school', async () => {
+  fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
+
+  const school = ensureDemoSchool();
+  const classRecord = school.classes[0];
+  const actor = {
+    userId: `${school.schoolId}:T001`,
+    username: 'T001',
+    roles: ['teacher'],
+    schoolId: school.schoolId,
+    tenantId: school.schoolId,
+  };
+
+  const created = await schoolService.createEntity(school.schoolId, 'students', {
+    fullName: 'Teacher Added Student',
+    email: 'teacher-added-student@globy.test',
+    classId: classRecord.classId,
+    className: classRecord.name,
+    profilePhoto: 'data:image/png;base64,teacher-managed-photo',
+  }, actor);
+
+  const updated = await schoolService.updateEntity(school.schoolId, 'students', created.studentId, {
+    fullName: 'Teacher Updated Student',
+  }, actor);
+
+  const deleted = await schoolService.deleteEntity(school.schoolId, 'students', created.studentId, actor);
+
+  expect(created.studentId).toMatch(/^STD-/);
+  expect(updated.fullName).toBe('Teacher Updated Student');
+  expect(deleted.studentId).toBe(created.studentId);
+});
+
+test('teacher access is denied to another school tenant', async () => {
+  fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
+
+  const alphaSchool = ensureDemoSchool();
+  const betaSchool = await schoolService.createSchool({
+    name: 'Beta School',
+    headEmail: 'beta-head@globy.test',
+    headFullName: 'Beta Head',
+  });
+
+  const req = {
+    user: { roles: ['teacher'], tenantId: alphaSchool.schoolId, schoolId: alphaSchool.schoolId },
+    params: { schoolId: betaSchool.schoolId },
+  };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  const next = jest.fn();
+
+  const tenantMiddleware = require('../../school/middleware/tenant.middleware');
+  await tenantMiddleware(req, res, next);
+
+  expect(res.status).toHaveBeenCalledWith(403);
+  expect(next).not.toHaveBeenCalled();
+});
+
 test('teacher creation omits national ID and signature fields', async () => {
   fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
 

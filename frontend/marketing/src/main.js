@@ -550,6 +550,7 @@ async function renderLanding(activeSection = 'home') {
       <section class="bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_25%),radial-gradient(circle_at_bottom_right,rgba(34,197,94,0.16),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.96))]">
         <div class="max-w-7xl mx-auto px-6 pb-24 pt-10">
           ${Hero(cms)}
+          ${renderPricing(pricingPlans)}
           ${Features(cms)}
           ${renderTrustSection()}
           ${renderWhyChooseSection()}
@@ -557,7 +558,6 @@ async function renderLanding(activeSection = 'home') {
           ${renderScreenshots()}
           ${renderPlatformStats()}
           ${renderTestimonials()}
-          ${renderPricing(pricingPlans)}
           ${renderFAQ(cms)}
           ${renderContact(cms)}
           ${renderInstallAppSection()}
@@ -997,17 +997,82 @@ function renderTestimonial(image, message = '', author = '', score = 5) {
 
 function renderPricing(pricingPlans = []) {
   const plans = Array.isArray(pricingPlans) ? pricingPlans.filter((plan) => plan.active) : [];
-  const planCards = plans.length > 0 ? plans.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map((plan) => renderPricingCard(plan)).join('') : `
-      <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p class="text-sm font-semibold uppercase tracking-[0.3em] text-slate-600">Pricing</p>
-        <h2 class="mt-6 text-2xl font-semibold text-slate-900">No pricing plans have been configured yet.</h2>
-        <p class="mt-4 text-slate-600">Visit the Super Admin pricing console to define product plans and publish them here.</p>
-      </article>
-    `;
+  const defaultPlanCards = `
+    <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm transition hover:shadow-lg">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">STARTER</p>
+          <p class="mt-2 text-sm text-slate-500">Essential school management tools for small schools ready to move their daily operations online.</p>
+        </div>
+      </div>
+      <p class="mt-6 text-4xl font-semibold text-slate-900">GHS 150<span class="text-lg font-medium text-slate-500">/month</span></p>
+      <p class="mt-2 text-sm text-slate-500">Up to 100 students</p>
+      <p class="mt-3 text-sm font-medium text-emerald-600">GHS 1,500/year — Save GHS 300</p>
+      <ul class="mt-6 space-y-3 text-sm text-slate-600">
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Student records</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Attendance tracking</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Basic school communication</li>
+      </ul>
+      <button data-action="get-started" data-plan-slug="starter" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
+    </article>
+    <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm transition hover:shadow-lg">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">GROWTH</p>
+          <p class="mt-2 text-sm text-slate-500">More capacity and flexibility for growing schools managing more students, teachers, and school activities.</p>
+        </div>
+      </div>
+      <p class="mt-6 text-4xl font-semibold text-slate-900">GHS 300<span class="text-lg font-medium text-slate-500">/month</span></p>
+      <p class="mt-2 text-sm text-slate-500">Up to 300 students</p>
+      <p class="mt-3 text-sm font-medium text-emerald-600">GHS 3,000/year — Save GHS 600</p>
+      <ul class="mt-6 space-y-3 text-sm text-slate-600">
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Advanced reporting</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Staff and payroll tools</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>School operations workflows</li>
+      </ul>
+      <button data-action="get-started" data-plan-slug="growth" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
+    </article>
+    <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm transition hover:shadow-lg">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">PRO</p>
+          <p class="mt-2 text-sm text-slate-500">A complete school operating solution for larger schools that need a powerful platform to manage their entire school community.</p>
+        </div>
+      </div>
+      <p class="mt-6 text-4xl font-semibold text-slate-900">GHS 500<span class="text-lg font-medium text-slate-500">/month</span></p>
+      <p class="mt-2 text-sm text-slate-500">Up to 700 students</p>
+      <p class="mt-3 text-sm font-medium text-emerald-600">GHS 5,000/year — Save GHS 1,000</p>
+      <ul class="mt-6 space-y-3 text-sm text-slate-600">
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Custom school workflows</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Parent and staff portals</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>Full operational visibility</li>
+      </ul>
+      <button data-action="get-started" data-plan-slug="pro" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
+    </article>
+    <article class="rounded-4xl border border-slate-200 bg-slate-950 p-8 text-white shadow-sm transition hover:shadow-lg">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-300">ENTERPRISE</p>
+          <p class="mt-2 text-sm text-slate-300">Built for large schools and institutions requiring higher capacity, custom requirements, and dedicated support.</p>
+        </div>
+      </div>
+      <p class="mt-6 text-4xl font-semibold text-white">CUSTOM</p>
+      <p class="mt-2 text-sm text-slate-300">700+ students</p>
+      <p class="mt-3 text-sm font-medium text-emerald-300">Contact us for custom pricing and dedicated support.</p>
+      <ul class="mt-6 space-y-3 text-sm text-slate-300">
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>Custom capacity planning</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>White-glove onboarding</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>Priority support</li>
+      </ul>
+      <button data-action="contact-sales" class="mt-8 inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Contact Sales</button>
+    </article>
+  `;
+
+  const planCards = plans.length > 0 ? plans.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map((plan) => renderPricingCard(plan)).join('') : defaultPlanCards;
 
   return `
     <section class="mt-20" id="pricing">
-      <div class="grid gap-8 lg:grid-cols-3">
+      <div class="grid gap-8 lg:grid-cols-2 xl:grid-cols-4">
         ${planCards}
       </div>
       <p class="mt-6 text-sm text-slate-600">Before subscribing, review the ${'<a href="#/legal/terms" class="font-semibold text-sky-700">Terms of Service</a>'}, ${'<a href="#/legal/privacy" class="font-semibold text-sky-700">Privacy Policy</a>'}, and ${'<a href="#/legal/payments" class="font-semibold text-sky-700">Payment & Refund Policy</a>'}.</p>
@@ -1016,29 +1081,57 @@ function renderPricing(pricingPlans = []) {
 }
 
 function renderPricingCard(plan) {
-  const priceLabel = `${plan.currency || 'GHS'} ${Number(plan.monthlyAmount || 0).toLocaleString()}/month`;
-  const features = [];
-  if (plan.features) {
-    Object.entries(plan.features).forEach(([key, enabled]) => {
-      if (enabled) {
-        features.push(key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase()));
-      }
-    });
+  const isCustomPlan = Number(plan.monthlyAmount || 0) === 0 && Number(plan.yearlyAmount || 0) === 0;
+  const planName = String(plan.name || '').toUpperCase();
+
+  if (isCustomPlan) {
+    return `
+      <div class="rounded-4xl border border-slate-200 bg-slate-950 p-8 text-white shadow-sm hover:shadow-lg transition">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-300">ENTERPRISE</p>
+            <p class="mt-2 text-sm text-slate-300">Built for large schools and institutions requiring higher capacity, custom requirements, and dedicated support.</p>
+          </div>
+        </div>
+        <p class="mt-6 text-4xl font-semibold text-white">CUSTOM PRICING</p>
+        <p class="mt-2 text-sm text-slate-300">700+ students</p>
+        <p class="mt-3 text-sm font-medium text-emerald-300">Contact us for custom pricing.</p>
+        <ul class="mt-6 space-y-3 text-sm text-slate-300">
+          <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>Custom capacity planning</li>
+          <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>Dedicated support</li>
+          <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-400"></span>Higher-scale onboarding</li>
+        </ul>
+        <button data-action="contact-sales" class="mt-8 inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Contact Sales</button>
+      </div>
+    `;
   }
+
+  const customDescriptions = {
+    STARTER: 'Essential school management tools for small schools ready to move their daily operations online.',
+    GROWTH: 'More capacity and flexibility for growing schools managing more students, teachers, and school activities.',
+    PRO: 'A complete school operating solution for larger schools that need a powerful platform to manage their entire school community.'
+  };
+
+  const description = customDescriptions[planName] || plan.shortDescription || 'School operations for growing teams.';
+  const priceText = `${plan.currency || 'GHS'} ${Number(plan.monthlyAmount || 0).toLocaleString()}/month`;
+  const yearlyText = `${plan.currency || 'GHS'} ${Number(plan.yearlyAmount || 0).toLocaleString()}/year`;
 
   return `
     <div class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm hover:shadow-lg transition">
       <div class="flex items-center justify-between gap-3">
         <div>
-          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">${plan.name}</p>
-          <p class="mt-2 text-sm text-slate-500">${plan.shortDescription}</p>
+          <p class="text-sm font-semibold uppercase tracking-[0.3em] text-sky-600">${planName}</p>
+          <p class="mt-2 text-sm text-slate-500">${description}</p>
         </div>
         ${plan.recommendedBadge ? `<span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">Recommended</span>` : ''}
       </div>
-      <p class="mt-6 text-4xl font-semibold text-slate-900">${priceLabel}</p>
-      <p class="mt-2 text-sm text-slate-500">Up to ${Number(plan.studentLimit || 0).toLocaleString()} students • ${plan.currency || 'GHS'} ${Number(plan.yearlyAmount || 0).toLocaleString()}/year</p>
+      <p class="mt-6 text-4xl font-semibold text-slate-900">${priceText}</p>
+      <p class="mt-2 text-sm text-slate-500">Up to ${Number(plan.studentLimit || 0).toLocaleString()} students • ${yearlyText}</p>
+      <p class="mt-3 text-sm font-medium text-emerald-600">${planName === 'STARTER' ? 'GHS 1,500/year — Save GHS 300' : planName === 'GROWTH' ? 'GHS 3,000/year — Save GHS 600' : 'GHS 5,000/year — Save GHS 1,000'}</p>
       <ul class="mt-6 space-y-3 text-sm text-slate-600">
-        ${features.slice(0, 6).map((item) => `<li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>${item}</li>`).join('')}
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>${planName === 'STARTER' ? 'Student records' : planName === 'GROWTH' ? 'Advanced reporting' : 'Custom school workflows'}</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>${planName === 'STARTER' ? 'Attendance tracking' : planName === 'GROWTH' ? 'Staff and payroll tools' : 'Parent and staff portals'}</li>
+        <li class="flex items-start gap-3"><span class="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500"></span>${planName === 'STARTER' ? 'Basic school communication' : planName === 'GROWTH' ? 'School operations workflows' : 'Full operational visibility'}</li>
       </ul>
       <button data-action="get-started" data-plan-slug="${plan.slug}" class="mt-8 inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Start Free Trial</button>
     </div>
@@ -4936,6 +5029,29 @@ function passwordChangeRequired() {
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+
+  const isLocalDev = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+  if (isLocalDev) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    } catch (error) {
+      console.warn('Unable to unregister stale local service workers:', error);
+    }
+
+    try {
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+      }
+    } catch (error) {
+      console.warn('Unable to clear stale local caches:', error);
+    }
+
+    console.info('Skipping service worker registration in local development and clearing stale cache state.');
+    return;
+  }
 
   try {
     const registration = await navigator.serviceWorker.register('/sw.js');

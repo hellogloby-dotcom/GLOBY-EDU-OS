@@ -1264,6 +1264,8 @@ export function attachAdminSectionHandlers(section) {
           currency: form.querySelector('input[name="currency"]').value.trim(),
           active: form.querySelector('input[name="active"]').checked,
           displayOrder: Number(form.querySelector('input[name="displayOrder"]').value || 0),
+          shortDescription: form.querySelector('textarea[name="shortDescription"]').value.trim(),
+          recommendedBadge: !!form.querySelector('input[name="recommendedBadge"]')?.checked,
         });
         const status = form.querySelector('[data-pricing-status]');
         if (status) {
@@ -3186,6 +3188,12 @@ function renderPricingPlanForm(plan) {
         </label>
         <label class="text-sm text-slate-700">Display order
           <input type="number" min="0" name="displayOrder" value="${plan.displayOrder || 0}" class="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+        </label>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="recommendedBadge" ${plan.recommendedBadge ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-sky-600" /> Recommended
         </label>
       </div>
 

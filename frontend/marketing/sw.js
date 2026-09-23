@@ -7,8 +7,8 @@ const ASSETS_TO_CACHE = [
   '/index.html',
   '/offline.html',
   '/manifest.json',
-  '/marketing/src/main.js',
-  '/marketing/src/styles.generated.css',
+  '/marketing/src/main.js?v=20260923-pricing-fix',
+  '/marketing/src/styles.generated.css?v=20260923-pricing-fix',
   '/src/utils/school-dashboard-actions.js?v=20260718'
 ];
 

@@ -1,7 +1,199 @@
 {
   "logs": [
     {
-      "id": "773f7001-1eaa-435c-b5ac-5353374ef620",
+      "id": "7d18538f-7a83-472b-8366-8d84284430b4",
+      "actorId": "globy-school:STU001",
+      "actorRole": "student",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "fallback",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:10.634Z"
+    },
+    {
+      "id": "ad27c56b-3c43-4aef-8567-197ce7824513",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:11.062Z"
+    },
+    {
+      "id": "c5f3fb77-5e92-467c-a331-05199d64f37f",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:11.269Z"
+    },
+    {
+      "id": "944a1fdd-5c44-40a2-9a67-e5bfbc7f46d1",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:11.733Z"
+    },
+    {
+      "id": "8ed47b8d-376c-48bf-9729-011d7e10539b",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.035Z"
+    },
+    {
+      "id": "e643b860-7037-4d66-af84-bfc186c8f644",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.133Z"
+    },
+    {
+      "id": "bf5ce03b-0d84-46fc-a964-6b95baa43eff",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.201Z"
+    },
+    {
+      "id": "a280e980-a36c-4f57-8e27-8fbb556a898c",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.269Z"
+    },
+    {
+      "id": "d3acf82a-772f-47a5-b41f-cfff9e760f79",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.396Z"
+    },
+    {
+      "id": "66c4089b-f2e4-462e-846b-97b944ea32aa",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": null,
+      "action": "auth.login_rate_limited",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "platform",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.425Z"
+    },
+    {
+      "id": "3fc10f40-6ea3-4017-9ff9-f1d756b42e29",
+      "actorId": null,
+      "actorRole": null,
+      "tenantId": "globy-school",
+      "action": "auth.login_failed",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": false,
+      "metadata": {
+        "loginType": "fallback",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:12.691Z"
+    },
+    {
+      "id": "1f10460e-9ca4-452c-bc63-e60b303a5919",
+      "actorId": "globy-school:authority@globyedu.test",
+      "actorRole": "school_authority",
+      "tenantId": "globy-school",
+      "action": "auth.login_succeeded",
+      "resourceType": "user",
+      "resourceId": null,
+      "success": true,
+      "metadata": {
+        "loginType": "fallback",
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-23T20:51:13.224Z"
+    },
+    {
+      "id": "4cb55cc2-e388-423c-8b7d-fe9ab20f3977",
       "actorId": "prisma-valid-school:authority@prisma.test",
       "actorRole": "school_authority",
       "tenantId": "prisma-valid-school",
@@ -14,10 +206,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:12.123Z"
+      "createdAt": "2026-09-23T20:51:15.058Z"
     },
     {
-      "id": "cea6ecdc-39d7-4c4e-80b8-60029929f794",
+      "id": "18004908-ce4f-430e-9be5-49c323f85f27",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -30,10 +222,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:12.614Z"
+      "createdAt": "2026-09-23T20:51:15.090Z"
     },
     {
-      "id": "1c0f9b35-f5a0-4401-afa1-31ac59b22a63",
+      "id": "21eb1a0c-c6da-4d0f-9f2e-f617b4a2245b",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -46,10 +238,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:12.867Z"
+      "createdAt": "2026-09-23T20:51:15.121Z"
     },
     {
-      "id": "75babebc-62d9-46af-b070-00d2701c8ae7",
+      "id": "aadeaf48-7da6-4bdc-b2ee-94524ca8b4e9",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -62,10 +254,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:12.943Z"
+      "createdAt": "2026-09-23T20:51:15.135Z"
     },
     {
-      "id": "8797f770-28d7-4fdc-8f88-16d25b9a1262",
+      "id": "79561185-736f-4c6a-a3ff-af2dbc852935",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -78,10 +270,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:13.154Z"
+      "createdAt": "2026-09-23T20:51:15.149Z"
     },
     {
-      "id": "03370c9a-ffd4-4126-94a5-61e2f47e42af",
+      "id": "d419ee4b-f8dd-429d-8a56-8e33582f0586",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -94,10 +286,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:13.285Z"
+      "createdAt": "2026-09-23T20:51:15.173Z"
     },
     {
-      "id": "73ccaa86-2dc5-438d-bfc7-50a5170b6451",
+      "id": "db45fd64-39ba-446c-9341-daa5ba4b1314",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -110,10 +302,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:13.585Z"
+      "createdAt": "2026-09-23T20:51:15.188Z"
     },
     {
-      "id": "4ec7e649-b074-4d53-994f-9bc729d7f823",
+      "id": "b0685ae2-7729-49f3-8010-274da2295130",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -126,10 +318,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:13.712Z"
+      "createdAt": "2026-09-23T20:51:15.230Z"
     },
     {
-      "id": "f21e77e3-4485-4af4-9ab0-149ecc5301f4",
+      "id": "95a6e231-fc08-4a1f-ab97-e50d3d9968ce",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -142,10 +334,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:13.931Z"
+      "createdAt": "2026-09-23T20:51:15.252Z"
     },
     {
-      "id": "e50fa577-80f0-49a6-a9ad-11b69ce9cabc",
+      "id": "cb8d4a22-e7b0-4528-a75f-1a00390b2905",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -158,10 +350,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:14.356Z"
+      "createdAt": "2026-09-23T20:51:15.281Z"
     },
     {
-      "id": "cc94bd49-b09f-4bdd-bf20-77a57107a630",
+      "id": "5fa642c9-51cc-4283-83d6-499de1a7249c",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -174,10 +366,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:14.922Z"
+      "createdAt": "2026-09-23T20:51:15.297Z"
     },
     {
-      "id": "6cd79bc2-febe-4c01-acb8-0e3d87c2d322",
+      "id": "04e5294a-485c-4a87-ad64-b8728445c5ca",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -190,10 +382,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:15.244Z"
+      "createdAt": "2026-09-23T20:51:15.319Z"
     },
     {
-      "id": "94f22c8f-d524-4c79-b4ba-3e30f15f3e0c",
+      "id": "659cc50a-de36-46f1-9c77-e8ebb7b389aa",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -206,10 +398,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:15.518Z"
+      "createdAt": "2026-09-23T20:51:15.333Z"
     },
     {
-      "id": "31e475e4-4caa-4153-bb5d-dad01edc231e",
+      "id": "50aff5e4-51b1-46c0-9580-a1a0ed1f9801",
       "actorId": "prisma-recovery-school:authority@recovery.test",
       "actorRole": "school_authority",
       "tenantId": "prisma-recovery-school",
@@ -222,10 +414,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:15.769Z"
+      "createdAt": "2026-09-23T20:51:15.345Z"
     },
     {
-      "id": "3a135770-2d38-422d-9942-b0b461746464",
+      "id": "9459c1ae-52c6-4f17-985f-6570dc3f5f5e",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -238,10 +430,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:15.866Z"
+      "createdAt": "2026-09-23T20:51:15.359Z"
     },
     {
-      "id": "4d5cfe3c-c9ff-4fc6-a0a8-758b434924c8",
+      "id": "129a6836-67a7-45d3-9004-3833e827e277",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -254,10 +446,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:16.180Z"
+      "createdAt": "2026-09-23T20:51:15.375Z"
     },
     {
-      "id": "30308a7e-89bc-47ca-9cdb-b9ac8aa4e75d",
+      "id": "c874b37f-966b-4def-873a-ffdd66247220",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -270,10 +462,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:16.397Z"
+      "createdAt": "2026-09-23T20:51:15.402Z"
     },
     {
-      "id": "b026d501-1855-45f3-a040-8d22da271fc0",
+      "id": "34af7920-27ea-425d-9185-35c7476b5ca8",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -286,10 +478,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:16.611Z"
+      "createdAt": "2026-09-23T20:51:15.432Z"
     },
     {
-      "id": "64b35a43-2b84-4e5f-9501-936d55f832de",
+      "id": "f90ba789-0344-4957-a6a8-f8e3464e3ce1",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -302,10 +494,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:16.963Z"
+      "createdAt": "2026-09-23T20:51:15.456Z"
     },
     {
-      "id": "6c731a18-1669-4272-9891-eb0bed5b6092",
+      "id": "d0767446-638c-4087-bc2a-1b2aa71c4a89",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -318,10 +510,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:17.063Z"
+      "createdAt": "2026-09-23T20:51:15.504Z"
     },
     {
-      "id": "9fcb0610-2575-4893-b6ce-4ded23ec61a3",
+      "id": "98635831-4df9-47a9-8758-4fa670d86dc2",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -334,10 +526,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:17.152Z"
+      "createdAt": "2026-09-23T20:51:15.517Z"
     },
     {
-      "id": "a5ea27fe-b38a-4e19-91bf-5ac9fc00be76",
+      "id": "1d88ec9b-bcd4-4e29-8c93-1b42e3894afa",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -350,10 +542,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:17.516Z"
+      "createdAt": "2026-09-23T20:51:15.530Z"
     },
     {
-      "id": "8ea267d0-982a-49c8-ac05-e9f12c71b4c0",
+      "id": "84e75a38-8ac5-49f3-9980-82b7d9673ba3",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -366,10 +558,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:17.684Z"
+      "createdAt": "2026-09-23T20:51:15.543Z"
     },
     {
-      "id": "5a9e6756-3585-4578-b70f-11ca0bdbe546",
+      "id": "ec6edc7a-0441-4ffe-9142-a575bdbfa6f7",
       "actorId": "prisma-isolation-b:same@prisma.test",
       "actorRole": "school_authority",
       "tenantId": "prisma-isolation-b",
@@ -382,10 +574,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:18.083Z"
+      "createdAt": "2026-09-23T20:51:15.555Z"
     },
     {
-      "id": "e8724373-5de7-4e95-9113-801f0efded3c",
+      "id": "912cc319-cdee-4618-887d-3cfd296e4965",
       "actorId": "pricing-test-user",
       "actorRole": "super_admin",
       "tenantId": null,
@@ -397,10 +589,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:39.745Z"
+      "createdAt": "2026-09-23T20:51:18.485Z"
     },
     {
-      "id": "669d9398-01c3-4a2e-9a3e-e5cfb4f5d7f6",
+      "id": "e0a3118d-7b80-4727-8763-445982486142",
       "actorId": "globy-school:STU001",
       "actorRole": "student",
       "tenantId": "globy-school",
@@ -413,1269 +605,7 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-22T16:58:48.865Z"
-    },
-    {
-      "id": "3d886785-4aa8-434f-b8f2-cb6d55d0a284",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.182Z"
-    },
-    {
-      "id": "5b84ec59-a27c-4654-9ecf-e7c07612205a",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.217Z"
-    },
-    {
-      "id": "b3a62fc5-d56d-4c65-9e58-530ed8250b8a",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.260Z"
-    },
-    {
-      "id": "1278fef1-de9c-4c38-81da-9b36e970a943",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.347Z"
-    },
-    {
-      "id": "1f30e90b-db53-44df-95f3-264cedd59ac3",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.428Z"
-    },
-    {
-      "id": "5cd266e8-1571-461d-b08e-8b654704a11d",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.498Z"
-    },
-    {
-      "id": "d9e1178e-e724-496d-acab-a577a0da9afe",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.614Z"
-    },
-    {
-      "id": "8dc2dc12-5d48-436a-bd15-497900b3c81f",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.750Z"
-    },
-    {
-      "id": "b0a905d9-33ec-4a35-ba99-d40a242e348a",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_rate_limited",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:49.809Z"
-    },
-    {
-      "id": "fbb5b4e3-c478-4c82-9858-459d0821b390",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:50.050Z"
-    },
-    {
-      "id": "0739a169-1e84-4f93-9793-d7ff6c8dd347",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T16:58:57.086Z"
-    },
-    {
-      "id": "30b283a1-cfeb-4543-b07b-1a5d511e729c",
-      "actorId": "globy-school:hellogloby@gmail.com",
-      "actorRole": "super_admin",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:26:43.722Z"
-    },
-    {
-      "id": "e0f235e9-d01a-4146-ba2d-4925103b1633",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:26:48.098Z"
-    },
-    {
-      "id": "13d3e378-42a1-483f-b061-057e16701ecd",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:26:53.040Z"
-    },
-    {
-      "id": "64cea800-1138-4791-9470-8944096c0dc8",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:26:57.140Z"
-    },
-    {
-      "id": "e2f1e1c4-75ed-48c0-a282-acd39e7c39bb",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:31:54.836Z"
-    },
-    {
-      "id": "26a60a1c-34fd-4490-a369-e3138394d533",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T17:35:52.535Z"
-    },
-    {
-      "id": "d0cdd5c9-87b5-4540-b209-4e6d86403248",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T17:35:52.583Z"
-    },
-    {
-      "id": "b07a3813-86eb-4948-b826-2dbf2a677374",
-      "actorId": "globy-school:T001",
-      "actorRole": "teacher",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T17:35:52.653Z"
-    },
-    {
-      "id": "2ac62ada-beb1-4735-8a12-f9b80d45d37f",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:36:15.746Z"
-    },
-    {
-      "id": "f67e20ba-efd0-4336-9de5-bc7896e1d778",
-      "actorId": "globy-school:T001",
-      "actorRole": "teacher",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:36:24.455Z"
-    },
-    {
-      "id": "d5396d85-878a-4771-a9a0-9821d2924def",
-      "actorId": "globy-school:T001",
-      "actorRole": "teacher",
-      "tenantId": "globy-school",
-      "action": "student.updated",
-      "resourceType": "student",
-      "resourceId": "STU001",
-      "success": true,
-      "metadata": {
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:38:13.002Z"
-    },
-    {
-      "id": "29f41540-052d-45be-9daa-93db5b9b4355",
-      "actorId": "globy-school:T001",
-      "actorRole": "teacher",
-      "tenantId": "globy-school",
-      "action": "student.created",
-      "resourceType": "student",
-      "resourceId": "STD-002-FEG",
-      "success": true,
-      "metadata": {
-        "ipAddress": "127.0.0.1",
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.138.0 Chrome/148.0.7778.280 Electron/42.10.0 Safari/537.36"
-      },
-      "createdAt": "2026-09-22T17:39:55.245Z"
-    },
-    {
-      "id": "004f1e41-2f61-417e-ad1d-a8df10f8de00",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:36.039Z"
-    },
-    {
-      "id": "ea81e12a-271f-4944-bbf1-83fa253e14b9",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:37.783Z"
-    },
-    {
-      "id": "2e489467-2bde-4b1c-8b71-d78c00743ae2",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:38.432Z"
-    },
-    {
-      "id": "d7c116b5-d429-4dd7-9667-04bf77b684be",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:39.552Z"
-    },
-    {
-      "id": "65204bd7-570d-4322-8cde-8cc760043474",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:40.804Z"
-    },
-    {
-      "id": "2703a99d-1990-45ad-8158-095ef78ee4e1",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:42.424Z"
-    },
-    {
-      "id": "336f2937-bd80-4ca9-8591-75a1bc043411",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:46.414Z"
-    },
-    {
-      "id": "22348239-1859-48f5-926a-462ffbe66484",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:47.506Z"
-    },
-    {
-      "id": "6ea8d213-4d0c-40ba-a258-31696e9ef49e",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:48.172Z"
-    },
-    {
-      "id": "384c39ca-83a2-4c35-b3db-8a82e816d44a",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:48.200Z"
-    },
-    {
-      "id": "fa17b290-a82d-4cef-90af-655bc86a6f07",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:16:48.467Z"
-    },
-    {
-      "id": "59af3349-4a11-4e02-a219-2411937b90fe",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:19.103Z"
-    },
-    {
-      "id": "670c72f0-6e68-406d-95df-2e76544ed35f",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:22.119Z"
-    },
-    {
-      "id": "08f59393-0092-4ef2-bc32-0305d6e83442",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:23.866Z"
-    },
-    {
-      "id": "899019c4-2337-44c0-8ee7-49b8bb9e1729",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:26.104Z"
-    },
-    {
-      "id": "fe48988f-e870-4ef7-a29d-b4f2d480f869",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:27.926Z"
-    },
-    {
-      "id": "a372d343-d593-40fb-84b3-948d3fa51ecb",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:29.834Z"
-    },
-    {
-      "id": "73df4f48-97cd-4c4d-9bd0-04dd4c0b892c",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:30.572Z"
-    },
-    {
-      "id": "cff0377f-7f33-4d3a-ad16-2fe7f32c86e4",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:31.101Z"
-    },
-    {
-      "id": "f10e84a5-b8b0-458e-9dfc-e5b9baee236b",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:18:32.319Z"
-    },
-    {
-      "id": "f8844690-2083-49e9-94fe-b31ebb3e2214",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:16.349Z"
-    },
-    {
-      "id": "a6e7f6b8-73e5-46ef-a6e2-61c0b8d1078c",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:18.272Z"
-    },
-    {
-      "id": "8dc199ce-ac61-435e-8c9c-f3550c0b62bd",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:18.790Z"
-    },
-    {
-      "id": "ff7fbb2e-4e62-42ff-810c-65fe902603c3",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:19.109Z"
-    },
-    {
-      "id": "ba499b4f-b21b-473d-8b49-2c47bcb4cceb",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:19.304Z"
-    },
-    {
-      "id": "91a9b2d8-9cd3-4074-8ca7-3eb4bc6397df",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:19.741Z"
-    },
-    {
-      "id": "e5e2be92-32c7-42ae-9a1a-77aff294eb1f",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:20.158Z"
-    },
-    {
-      "id": "afee6669-bfc4-420a-a638-2fbb92d3261e",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:20.592Z"
-    },
-    {
-      "id": "e087e45a-ed67-4211-9c7d-ba3092a1e2db",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:21.302Z"
-    },
-    {
-      "id": "8cb8ea26-f3ef-4b2d-a377-8e2f17e65ab2",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_rate_limited",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:21.355Z"
-    },
-    {
-      "id": "25ba5bec-6798-455a-931e-bcb38d8858d6",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:22.490Z"
-    },
-    {
-      "id": "75226926-3014-4a74-ad55-818781746b40",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:21:23.311Z"
-    },
-    {
-      "id": "a1b2fcfb-dd66-4857-81cf-a538490eaec6",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:02.528Z"
-    },
-    {
-      "id": "497002ee-ee49-4792-9d33-11747f8bd83d",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:04.762Z"
-    },
-    {
-      "id": "388115c6-63d7-4a0a-9308-429acafe30f4",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:05.560Z"
-    },
-    {
-      "id": "f4129ed7-7a11-4ac9-ae8d-982881569a61",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:06.077Z"
-    },
-    {
-      "id": "54c9a15f-dfc0-4b84-9d3b-019aaf171fc6",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:06.391Z"
-    },
-    {
-      "id": "ac711a74-7c53-4259-b360-44d167757632",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:07.024Z"
-    },
-    {
-      "id": "6bd9b981-8580-4fad-bb61-dca42f2e1f34",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:07.973Z"
-    },
-    {
-      "id": "81f817b6-36eb-48ba-a8e6-a5782e743f54",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:08.912Z"
-    },
-    {
-      "id": "e5f85200-4828-4582-a29b-c0ccb360a635",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:09.228Z"
-    },
-    {
-      "id": "06e9a9f1-24be-40d5-82eb-7323bcd9d88f",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_rate_limited",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:09.290Z"
-    },
-    {
-      "id": "5251e62a-50c7-425e-ac55-1fbed770b092",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:10.093Z"
-    },
-    {
-      "id": "8967578c-b5ed-4e6e-94d4-3a173fd00a3f",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T19:45:12.018Z"
-    },
-    {
-      "id": "5a75af66-3784-4403-83cb-ac31ece1bdc7",
-      "actorId": "globy-school:STU001",
-      "actorRole": "student",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:07.453Z"
-    },
-    {
-      "id": "3a4eb40f-309d-4d43-9df9-98dd1149f118",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:08.622Z"
-    },
-    {
-      "id": "42eb9814-3dfb-4e51-b2c9-41c10d1af0b2",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:09.178Z"
-    },
-    {
-      "id": "0ac7644e-4fcc-4b09-8440-5062f2246c82",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:09.532Z"
-    },
-    {
-      "id": "a6862bcc-c4ac-490a-9786-4bef9788bd3d",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:09.934Z"
-    },
-    {
-      "id": "38e299be-4e21-48e5-a934-deaf915eaf19",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:10.449Z"
-    },
-    {
-      "id": "527ca9f5-7851-4125-a60b-080a7f2d6ab7",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:10.845Z"
-    },
-    {
-      "id": "3a0e0c61-ee17-4618-9ec3-43dfc51d33dd",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:11.383Z"
-    },
-    {
-      "id": "858ff359-008e-4c1f-b252-ae2bffede13a",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:12.250Z"
-    },
-    {
-      "id": "4bb304b2-4a20-4574-be7a-d88029093b86",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": null,
-      "action": "auth.login_rate_limited",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "platform",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:12.371Z"
-    },
-    {
-      "id": "1e9074c2-6e6b-44ea-a477-9f071c9845b9",
-      "actorId": null,
-      "actorRole": null,
-      "tenantId": "globy-school",
-      "action": "auth.login_failed",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": false,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:13.279Z"
-    },
-    {
-      "id": "4eb7491b-efb1-4481-9cf0-2e00b71b5385",
-      "actorId": "globy-school:authority@globyedu.test",
-      "actorRole": "school_authority",
-      "tenantId": "globy-school",
-      "action": "auth.login_succeeded",
-      "resourceType": "user",
-      "resourceId": null,
-      "success": true,
-      "metadata": {
-        "loginType": "fallback",
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-22T20:00:14.987Z"
+      "createdAt": "2026-09-23T20:51:27.674Z"
     }
   ]
 }

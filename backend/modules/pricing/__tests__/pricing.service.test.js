@@ -22,6 +22,22 @@ describe('authoritative pricing service', () => {
     await expect(pricingService.getPricingPlan(slug, period)).resolves.toMatchObject({ slug, billingPeriod: period, amount, currency: 'GHS' });
   });
 
+  it('persists admin-editable plan metadata such as shortDescription', async () => {
+    const plan = (await pricingService.listPricingPlans({ activeOnly: true }))[0];
+    const updated = await pricingService.updatePricingPlan(plan.id, {
+      ...plan,
+      shortDescription: 'Essential school management tools for small schools ready to move their daily operations online.',
+      recommendedBadge: true,
+    });
+
+    expect(updated.shortDescription).toBe('Essential school management tools for small schools ready to move their daily operations online.');
+    expect(updated.recommendedBadge).toBe(true);
+
+    const reloaded = await pricingService.getPricingPlan(plan.slug, 'monthly');
+    expect(reloaded.shortDescription).toBe('Essential school management tools for small schools ready to move their daily operations online.');
+    expect(reloaded.recommendedBadge).toBe(true);
+  });
+
   it('rejects inactive or unknown plans and invalid periods', async () => {
     await expect(pricingService.getPricingPlan('missing', 'monthly')).rejects.toThrow('not available');
     await expect(pricingService.getPricingPlan('starter', 'termly')).rejects.toThrow('monthly or yearly');

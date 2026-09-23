@@ -42,6 +42,8 @@ function normalizePlan(plan) {
     currency: String(plan.currency || 'GHS').toUpperCase(),
     active: plan.active !== false,
     displayOrder: Number(plan.displayOrder || 0),
+    shortDescription: String(plan.shortDescription || ''),
+    recommendedBadge: Boolean(plan.recommendedBadge),
   };
 }
 
@@ -74,6 +76,8 @@ async function updatePricingPlan(id, updates = {}) {
     currency: String(updates.currency || 'GHS').trim().toUpperCase(),
     active: updates.active === true,
     displayOrder: Number(updates.displayOrder || 0),
+    shortDescription: String(updates.shortDescription || '').trim(),
+    recommendedBadge: updates.recommendedBadge === true,
   };
   if (!payload.name || !Number.isInteger(payload.studentLimit) || payload.studentLimit < 1 || !Number.isFinite(payload.monthlyAmount) || payload.monthlyAmount < 0 || !Number.isFinite(payload.yearlyAmount) || payload.yearlyAmount < 0) {
     throw new Error('Plan name, student limit, and valid monthly/yearly prices are required.');
