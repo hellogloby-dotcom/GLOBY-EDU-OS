@@ -1,7 +1,7 @@
 {
   "logs": [
     {
-      "id": "7d18538f-7a83-472b-8366-8d84284430b4",
+      "id": "adf4f058-1422-4ca2-a717-490f074cc8e1",
       "actorId": "globy-school:STU001",
       "actorRole": "student",
       "tenantId": "globy-school",
@@ -14,10 +14,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:10.634Z"
+      "createdAt": "2026-09-24T07:09:00.613Z"
     },
     {
-      "id": "ad27c56b-3c43-4aef-8567-197ce7824513",
+      "id": "003c07ec-391b-4f3d-960d-b3f31fb7178d",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -30,10 +30,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:11.062Z"
+      "createdAt": "2026-09-24T07:09:01.073Z"
     },
     {
-      "id": "c5f3fb77-5e92-467c-a331-05199d64f37f",
+      "id": "f7755193-1b27-4d58-890b-8de484fb1d5b",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -46,10 +46,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:11.269Z"
+      "createdAt": "2026-09-24T07:09:01.437Z"
     },
     {
-      "id": "944a1fdd-5c44-40a2-9a67-e5bfbc7f46d1",
+      "id": "52c7337b-6b26-43c6-b5b7-d27afa3b543b",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -62,10 +62,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:11.733Z"
+      "createdAt": "2026-09-24T07:09:01.719Z"
     },
     {
-      "id": "8ed47b8d-376c-48bf-9729-011d7e10539b",
+      "id": "896bed6b-9e7b-4748-8e47-432c37c8528b",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -78,10 +78,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.035Z"
+      "createdAt": "2026-09-24T07:09:02.019Z"
     },
     {
-      "id": "e643b860-7037-4d66-af84-bfc186c8f644",
+      "id": "1b648ab9-c715-4465-85e0-e3f2c4700238",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -94,10 +94,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.133Z"
+      "createdAt": "2026-09-24T07:09:02.226Z"
     },
     {
-      "id": "bf5ce03b-0d84-46fc-a964-6b95baa43eff",
+      "id": "1cc17ecd-4c83-4f4a-9c91-3be8095a879a",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -110,10 +110,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.201Z"
+      "createdAt": "2026-09-24T07:09:02.424Z"
     },
     {
-      "id": "a280e980-a36c-4f57-8e27-8fbb556a898c",
+      "id": "9b2907ec-d32e-449f-a0f3-c41db31bed8b",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -126,10 +126,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.269Z"
+      "createdAt": "2026-09-24T07:09:02.859Z"
     },
     {
-      "id": "d3acf82a-772f-47a5-b41f-cfff9e760f79",
+      "id": "55a8146c-c287-4993-bff5-f465d24199a4",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -142,10 +142,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.396Z"
+      "createdAt": "2026-09-24T07:09:03.121Z"
     },
     {
-      "id": "66c4089b-f2e4-462e-846b-97b944ea32aa",
+      "id": "f98d2b85-0e79-460c-bcda-f92702079e18",
       "actorId": null,
       "actorRole": null,
       "tenantId": null,
@@ -158,10 +158,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.425Z"
+      "createdAt": "2026-09-24T07:09:03.272Z"
     },
     {
-      "id": "3fc10f40-6ea3-4017-9ff9-f1d756b42e29",
+      "id": "f2c6fc5f-2a8a-46b4-8532-feb3c4fda7d3",
       "actorId": null,
       "actorRole": null,
       "tenantId": "globy-school",
@@ -174,10 +174,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:12.691Z"
+      "createdAt": "2026-09-24T07:09:04.238Z"
     },
     {
-      "id": "1f10460e-9ca4-452c-bc63-e60b303a5919",
+      "id": "9b7d4157-078f-4e9a-9dbc-18a17de4db57",
       "actorId": "globy-school:authority@globyedu.test",
       "actorRole": "school_authority",
       "tenantId": "globy-school",
@@ -190,10 +190,25 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:13.224Z"
+      "createdAt": "2026-09-24T07:09:05.316Z"
     },
     {
-      "id": "4cb55cc2-e388-423c-8b7d-fe9ab20f3977",
+      "id": "11edc1fb-8691-4b58-b23f-3ebca03b35b8",
+      "actorId": "pricing-test-user",
+      "actorRole": "super_admin",
+      "tenantId": null,
+      "action": "pricing.updated",
+      "resourceType": "pricing_plan",
+      "resourceId": "starter-plan",
+      "success": true,
+      "metadata": {
+        "ipAddress": "::ffff:127.0.0.1",
+        "userAgent": "node"
+      },
+      "createdAt": "2026-09-24T07:09:24.570Z"
+    },
+    {
+      "id": "ff0c6f8c-fd60-46f1-8f79-668768496d43",
       "actorId": "prisma-valid-school:authority@prisma.test",
       "actorRole": "school_authority",
       "tenantId": "prisma-valid-school",
@@ -206,10 +221,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.058Z"
+      "createdAt": "2026-09-24T07:09:27.700Z"
     },
     {
-      "id": "18004908-ce4f-430e-9be5-49c323f85f27",
+      "id": "a79bf0cc-e620-49b5-91f2-e03195bcb35a",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -222,10 +237,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.090Z"
+      "createdAt": "2026-09-24T07:09:27.846Z"
     },
     {
-      "id": "21eb1a0c-c6da-4d0f-9f2e-f617b4a2245b",
+      "id": "93d66fcb-197c-49c3-a1fe-81b3de02fc2b",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -238,10 +253,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.121Z"
+      "createdAt": "2026-09-24T07:09:27.880Z"
     },
     {
-      "id": "aadeaf48-7da6-4bdc-b2ee-94524ca8b4e9",
+      "id": "bc7acbe0-357c-4cd4-83ad-a4ab8acad8f6",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -254,10 +269,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.135Z"
+      "createdAt": "2026-09-24T07:09:27.923Z"
     },
     {
-      "id": "79561185-736f-4c6a-a3ff-af2dbc852935",
+      "id": "e6d624e4-e2a4-4a3c-a6d8-b9e2d8c05ebe",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -270,10 +285,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.149Z"
+      "createdAt": "2026-09-24T07:09:27.964Z"
     },
     {
-      "id": "d419ee4b-f8dd-429d-8a56-8e33582f0586",
+      "id": "4352f2e7-2eab-44a6-aaf2-b0ec1d40f623",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -286,10 +301,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.173Z"
+      "createdAt": "2026-09-24T07:09:27.992Z"
     },
     {
-      "id": "db45fd64-39ba-446c-9341-daa5ba4b1314",
+      "id": "7ad5df7a-05a9-40a3-a5f1-902ce9341d04",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -302,10 +317,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.188Z"
+      "createdAt": "2026-09-24T07:09:28.023Z"
     },
     {
-      "id": "b0685ae2-7729-49f3-8010-274da2295130",
+      "id": "b3e8d792-a008-4ac1-a6a8-5be45abcb3fa",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -318,10 +333,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.230Z"
+      "createdAt": "2026-09-24T07:09:28.066Z"
     },
     {
-      "id": "95a6e231-fc08-4a1f-ab97-e50d3d9968ce",
+      "id": "735f3fed-c8ec-413b-a67e-dcca1204f7fa",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -334,10 +349,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.252Z"
+      "createdAt": "2026-09-24T07:09:28.107Z"
     },
     {
-      "id": "cb8d4a22-e7b0-4528-a75f-1a00390b2905",
+      "id": "b4d7c6c6-29b5-4906-84d3-5d34340514b9",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-brute-force-school",
@@ -350,10 +365,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.281Z"
+      "createdAt": "2026-09-24T07:09:28.141Z"
     },
     {
-      "id": "5fa642c9-51cc-4283-83d6-499de1a7249c",
+      "id": "61c305dc-e90f-4da8-bf69-1623bbe30e45",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -366,10 +381,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.297Z"
+      "createdAt": "2026-09-24T07:09:28.196Z"
     },
     {
-      "id": "04e5294a-485c-4a87-ad64-b8728445c5ca",
+      "id": "b300a522-718b-483f-8b4c-5dbc7c7144ba",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -382,10 +397,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.319Z"
+      "createdAt": "2026-09-24T07:09:28.236Z"
     },
     {
-      "id": "659cc50a-de36-46f1-9c77-e8ebb7b389aa",
+      "id": "6c5455b1-9291-42f8-ba55-bccc32551c00",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -398,10 +413,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.333Z"
+      "createdAt": "2026-09-24T07:09:28.288Z"
     },
     {
-      "id": "50aff5e4-51b1-46c0-9580-a1a0ed1f9801",
+      "id": "52913467-63bb-4854-bc47-c7a8fbadec68",
       "actorId": "prisma-recovery-school:authority@recovery.test",
       "actorRole": "school_authority",
       "tenantId": "prisma-recovery-school",
@@ -414,10 +429,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.345Z"
+      "createdAt": "2026-09-24T07:09:28.333Z"
     },
     {
-      "id": "9459c1ae-52c6-4f17-985f-6570dc3f5f5e",
+      "id": "4763012e-5f07-4893-8908-6d09956d1b3f",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-recovery-school",
@@ -430,10 +445,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.359Z"
+      "createdAt": "2026-09-24T07:09:28.354Z"
     },
     {
-      "id": "129a6836-67a7-45d3-9004-3833e827e277",
+      "id": "bf91b6fb-6455-4ac5-afe4-bbce2a25721f",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -446,10 +461,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.375Z"
+      "createdAt": "2026-09-24T07:09:28.390Z"
     },
     {
-      "id": "c874b37f-966b-4def-873a-ffdd66247220",
+      "id": "abefcff3-10f5-4aa8-ad4d-c83656b787c0",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -462,10 +477,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.402Z"
+      "createdAt": "2026-09-24T07:09:28.457Z"
     },
     {
-      "id": "34af7920-27ea-425d-9185-35c7476b5ca8",
+      "id": "c39a5fb5-ba37-495a-9aa8-de3fae8fdcff",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -478,10 +493,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.432Z"
+      "createdAt": "2026-09-24T07:09:28.508Z"
     },
     {
-      "id": "f90ba789-0344-4957-a6a8-f8e3464e3ce1",
+      "id": "0cb689ce-8af4-4744-a768-fefb1c96a7ab",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -494,10 +509,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.456Z"
+      "createdAt": "2026-09-24T07:09:28.546Z"
     },
     {
-      "id": "d0767446-638c-4087-bc2a-1b2aa71c4a89",
+      "id": "75f49793-43d1-4812-931d-8b112f6119bb",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -510,10 +525,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.504Z"
+      "createdAt": "2026-09-24T07:09:28.571Z"
     },
     {
-      "id": "98635831-4df9-47a9-8758-4fa670d86dc2",
+      "id": "ee9162cf-6410-4c30-9016-251e379805f1",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -526,10 +541,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.517Z"
+      "createdAt": "2026-09-24T07:09:28.602Z"
     },
     {
-      "id": "1d88ec9b-bcd4-4e29-8c93-1b42e3894afa",
+      "id": "0ed1856f-4d47-4413-8b4a-b8b478f8cb10",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -542,10 +557,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.530Z"
+      "createdAt": "2026-09-24T07:09:28.630Z"
     },
     {
-      "id": "84e75a38-8ac5-49f3-9980-82b7d9673ba3",
+      "id": "e54f9f5e-60fd-49b2-a373-dfe567d7a3f0",
       "actorId": null,
       "actorRole": null,
       "tenantId": "prisma-isolation-a",
@@ -558,10 +573,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.543Z"
+      "createdAt": "2026-09-24T07:09:28.649Z"
     },
     {
-      "id": "ec6edc7a-0441-4ffe-9142-a575bdbfa6f7",
+      "id": "6b7944db-69bc-4bf3-b71a-577798d3cc99",
       "actorId": "prisma-isolation-b:same@prisma.test",
       "actorRole": "school_authority",
       "tenantId": "prisma-isolation-b",
@@ -574,25 +589,10 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:15.555Z"
+      "createdAt": "2026-09-24T07:09:28.665Z"
     },
     {
-      "id": "912cc319-cdee-4618-887d-3cfd296e4965",
-      "actorId": "pricing-test-user",
-      "actorRole": "super_admin",
-      "tenantId": null,
-      "action": "pricing.updated",
-      "resourceType": "pricing_plan",
-      "resourceId": "starter-plan",
-      "success": true,
-      "metadata": {
-        "ipAddress": "::ffff:127.0.0.1",
-        "userAgent": "node"
-      },
-      "createdAt": "2026-09-23T20:51:18.485Z"
-    },
-    {
-      "id": "e0a3118d-7b80-4727-8763-445982486142",
+      "id": "6b14fa01-af4f-4281-aff5-7d39abfe7c0e",
       "actorId": "globy-school:STU001",
       "actorRole": "student",
       "tenantId": "globy-school",
@@ -605,7 +605,7 @@
         "ipAddress": "::ffff:127.0.0.1",
         "userAgent": "node"
       },
-      "createdAt": "2026-09-23T20:51:27.674Z"
+      "createdAt": "2026-09-24T07:09:30.573Z"
     }
   ]
 }

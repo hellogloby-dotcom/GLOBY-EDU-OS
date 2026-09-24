@@ -335,7 +335,7 @@ router.post('/:schoolId/entities/:entityType', authMiddleware, tenantMiddleware,
 });
 
 // PUT /api/v1/schools/:schoolId/entities/:entityType/:entityId - Tenant-scoped edit entity
-router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'super_admin']), async (req, res) => {
+router.put('/:schoolId/entities/:entityType/:entityId', authMiddleware, tenantMiddleware, roleGuard(['school_head', 'school_authority', 'teacher', 'student', 'super_admin']), async (req, res) => {
   try {
     const { schoolId, entityType, entityId } = req.params;
     const updates = req.body || {};

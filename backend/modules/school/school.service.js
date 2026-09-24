@@ -2098,9 +2098,18 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
   const actorRoles = getUserRoleList(actor);
   const hasExplicitActorRole = actorRoles.length > 0;
   const teacherStudentAccess = actorRoles.includes('teacher') && field === 'students';
-  if (hasExplicitActorRole && !hasSchoolAuthorityRole(actor) && !teacherStudentAccess) {
+  const studentOwnProfileAccess = actorRoles.includes('student') && field === 'students';
+  if (hasExplicitActorRole && !hasSchoolAuthorityRole(actor) && !teacherStudentAccess && !studentOwnProfileAccess) {
     if (['teachers', 'students', 'classes', 'subjects', 'departments', 'streams', 'academicYears', 'terms', 'semesters'].includes(field)) {
       throw new Error('Only School Authority can update school records and assignments.');
+    }
+  }
+
+  if (studentOwnProfileAccess) {
+    const allowedStudentFields = new Set(['profilePhoto', 'avatar', 'photo']);
+    const disallowedKeys = Object.keys(updates || {}).filter((key) => !allowedStudentFields.has(key));
+    if (disallowedKeys.length > 0) {
+      throw new Error('Students can only update their own profile photo.');
     }
   }
 
@@ -2111,6 +2120,16 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     ensureSchoolEntities(school);
     const roles = getUserRoleList(actor);
     if (roles.includes('teacher') && field !== 'students') throw new Error('Teachers can only manage students here');
+    if (roles.includes('student') && field === 'students') {
+      const currentStudent = school.students.find((item) => [item.studentId, item.id, item.email].filter(Boolean).some((value) => String(value).toLowerCase() === String(entityId).toLowerCase()));
+      if (!currentStudent) throw new Error('Student not found');
+      if (String(currentStudent.studentId || currentStudent.id || currentStudent.email || '').toLowerCase() !== String(entityId).trim().toLowerCase()) {
+        throw new Error('Students can only update their own profile.');
+      }
+      const selfAllowed = new Set(['profilePhoto', 'avatar']);
+      const disallowedSelf = Object.keys(updates || {}).filter((key) => !selfAllowed.has(key));
+      if (disallowedSelf.length > 0) throw new Error('Students can only update their own profile photo.');
+    }
     if (roles.includes('teacher') && field === 'students') {
       const currentStudent = school.students.find((item) => [item.studentId, item.id, item.email].filter(Boolean).some((value) => String(value).toLowerCase() === String(entityId).toLowerCase()));
       if (!currentStudent) throw new Error('Entity not found');
@@ -2178,6 +2197,18 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     const user = await findUserByIdentifier(entityId, tenant.id);
     if (!user || user.tenantId !== tenant.id) {
       throw new Error('Entity not found');
+    }
+    if (getUserRoleList(actor).includes('student') && field === 'students') {
+      const selfStudentId = String(user.studentId || user.email || user.id || '').trim().toLowerCase();
+      const actorStudentId = String(actor.username || actor.userId || '').split(':').pop().trim().toLowerCase();
+      if (selfStudentId !== actorStudentId && String(user.email || '').trim().toLowerCase() !== String(actor.username || '').trim().toLowerCase()) {
+        throw new Error('Students can only update their own profile.');
+      }
+      const selfAllowed = new Set(['profilePhoto', 'avatar']);
+      const disallowedSelf = Object.keys(updates || {}).filter((key) => !selfAllowed.has(key));
+      if (disallowedSelf.length > 0) {
+        throw new Error('Students can only update their own profile photo.');
+      }
     }
     const sanitizedUpdates = restrictNonAuthorityUpdates(field, updates || {}, actor);
     const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = sanitizedUpdates;

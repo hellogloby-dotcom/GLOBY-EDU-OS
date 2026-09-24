@@ -2642,9 +2642,20 @@ function attachWorkspaceModuleHandlers() {
     studentProfilePhotoInput.addEventListener('change', async () => {
       const file = studentProfilePhotoInput.files?.[0];
       if (!file || !file.type.startsWith('image/')) return;
+      const token = getAccessToken();
+      const schoolId = localStorage.getItem('globyedu_schoolId');
+      const studentId = localStorage.getItem('globyedu_studentId');
+      if (!token || !schoolId || !studentId) {
+        alert('Your student session is missing. Please sign in again.');
+        return;
+      }
       try {
         const remoteUrl = await uploadTenantAsset(file, 'student-profile');
         localStorage.setItem('globyedu_profilePhoto', remoteUrl);
+        const result = await updateSchoolEntity(token, schoolId, 'students', studentId, { profilePhoto: remoteUrl });
+        if (!result.ok || result.data?.status !== 'ok') {
+          throw new Error(result.data?.message || 'The photo could not be saved to the student profile.');
+        }
         recordWorkspaceActivity('Profile photo updated', 'A student profile photo was uploaded.', 'profile');
         location.reload();
       } catch (error) {

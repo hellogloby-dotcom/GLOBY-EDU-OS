@@ -43,6 +43,14 @@ describe('login experience', () => {
     expect(serviceWorkerSource).toContain("if (/\\.(?:css|js)$/.test(requestUrl.pathname))");
   });
 
+  it('serializes student profile uploads to the school record instead of only local storage', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+
+    expect(mainSource).toContain("localStorage.setItem('globyedu_profilePhoto', remoteUrl);");
+    expect(mainSource).toContain('updateSchoolEntity(token, schoolId, \'students\', studentId, {');
+    expect(mainSource).toContain('profilePhoto: remoteUrl');
+  });
+
   it('blocks protected cross-role and school/admin hash routes when a different authenticated role is active', () => {
     const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
 
