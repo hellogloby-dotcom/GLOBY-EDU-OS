@@ -49,7 +49,7 @@ test('ensureDemoSchool seeds the required development accounts and school identi
   expect(student.passwordNeedsReset).toBe(true);
 });
 
-test('non-globy-school entries are removed and only the demo school remains in the fallback store', () => {
+test('demo seeding preserves valid non-demo schools while deduplicating duplicate demo entries', () => {
   const extraSchools = {
     schools: [
       { schoolId: 'globy-school', name: 'Globy School' },
@@ -67,8 +67,8 @@ test('non-globy-school entries are removed and only the demo school remains in t
   const reloaded = JSON.parse(fs.readFileSync(schoolsFile, 'utf8'));
 
   expect(school.schoolId).toBe('globy-school');
-  expect(reloaded.schools.every((entry) => entry.schoolId === 'globy-school' || entry.name === 'Globy School')).toBe(true);
-  expect(reloaded.schools).toHaveLength(1);
+  expect(reloaded.schools).toHaveLength(3);
+  expect(reloaded.schools.map((entry) => entry.schoolId)).toEqual(expect.arrayContaining(['globy-school', 'school-2', 'school-3']));
 });
 
 test('development accounts use the exact required passwords and roles', () => {
@@ -308,6 +308,24 @@ test('new schools support class, teacher, and student onboarding without manual 
   expect(student.studentId).toBeTruthy();
   expect(reloaded.students.find((item) => item.studentId === student.studentId).classId).toBe(createdClass.classId);
   expect(reloaded.teachers.find((item) => item.teacherId === teacher.teacherId).assignedClasses).toContain(createdClass.classId);
+});
+
+test('super admin list includes newly created schools instead of filtering to the demo tenant only', async () => {
+  fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
+
+  const demo = ensureDemoSchool();
+  const created = await schoolService.createSchool({
+    name: 'Visible School',
+    headEmail: 'visible-head@globy.test',
+    headFullName: 'Visible Head',
+  });
+
+  const schools = await schoolService.listSchools('');
+  const ids = schools.map((entry) => entry.schoolId);
+
+  expect(ids).toContain(demo.schoolId);
+  expect(ids).toContain(created.schoolId);
+  expect(schools.some((entry) => entry.name === 'Visible School')).toBe(true);
 });
 
 test('createSchool assigns a normalized, collision-safe subdomain and persists it', async () => {

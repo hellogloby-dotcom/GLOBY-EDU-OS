@@ -49,14 +49,44 @@ function ensureSchoolDataFile() {
 
 function keepOnlyPrimarySchool(schools) {
   const list = Array.isArray(schools) ? schools : [];
-  const primary = list.filter((school) => {
+  const unique = [];
+  const seen = new Set();
+
+  for (const school of list) {
+    if (!school || typeof school !== 'object') continue;
+
     const schoolId = String(school?.schoolId || '').trim().toLowerCase();
     const legacyId = String(school?.id || '').trim().toLowerCase();
     const name = String(school?.name || '').trim().toLowerCase();
-    return schoolId === DEMO_SCHOOL_ID || legacyId === LEGACY_DEMO_SCHOOL_ID.toLowerCase() || name === DEMO_SCHOOL_NAME.toLowerCase();
-  });
+    const isDemo = schoolId === DEMO_SCHOOL_ID || legacyId === LEGACY_DEMO_SCHOOL_ID.toLowerCase() || name === DEMO_SCHOOL_NAME.toLowerCase();
+    const dedupeKey = schoolId || legacyId || name || `${unique.length}`;
 
-  return primary.length ? primary : list.filter((school) => String(school?.schoolId || '').trim().toLowerCase() === DEMO_SCHOOL_ID || String(school?.name || '').trim().toLowerCase() === DEMO_SCHOOL_NAME.toLowerCase());
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    if (!isDemo || unique.every((entry) => {
+      const entryId = String(entry?.schoolId || '').trim().toLowerCase();
+      const entryLegacy = String(entry?.id || '').trim().toLowerCase();
+      const entryName = String(entry?.name || '').trim().toLowerCase();
+      return !(entryId === DEMO_SCHOOL_ID || entryLegacy === LEGACY_DEMO_SCHOOL_ID.toLowerCase() || entryName === DEMO_SCHOOL_NAME.toLowerCase());
+    })) {
+      unique.push(school);
+    } else {
+      const demoIndex = unique.findIndex((entry) => {
+        const entryId = String(entry?.schoolId || '').trim().toLowerCase();
+        const entryLegacy = String(entry?.id || '').trim().toLowerCase();
+        const entryName = String(entry?.name || '').trim().toLowerCase();
+        return entryId === DEMO_SCHOOL_ID || entryLegacy === LEGACY_DEMO_SCHOOL_ID.toLowerCase() || entryName === DEMO_SCHOOL_NAME.toLowerCase();
+      });
+      if (demoIndex >= 0) {
+        unique.splice(demoIndex, 1, school);
+      } else {
+        unique.push(school);
+      }
+    }
+  }
+
+  return unique;
 }
 
 function loadSchoolData() {

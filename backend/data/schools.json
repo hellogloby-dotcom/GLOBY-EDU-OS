@@ -3,7 +3,7 @@
     {
       "id": "GLOBY-DEMO-001",
       "schoolId": "globy-school",
-      "subdomain": "globy-school-1",
+      "subdomain": "globy-school",
       "name": "Globy School",
       "email": "authority@globyedu.test",
       "description": "Development-only seed tenant for local testing.",
@@ -67,7 +67,7 @@
       "users": [
         {
           "username": "hellogloby@gmail.com",
-          "passwordHash": "$2b$04$p3R1UOt9Jser0s8yZEBHDOQZxGA7hRxFLWjst0unEuRn8hTbS50HW",
+          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -78,7 +78,7 @@
         },
         {
           "username": "ataetaben@gmail.com",
-          "passwordHash": "$2b$04$p3R1UOt9Jser0s8yZEBHDOQZxGA7hRxFLWjst0unEuRn8hTbS50HW",
+          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -89,7 +89,7 @@
         },
         {
           "username": "ataetabenjamin@gmail.com",
-          "passwordHash": "$2b$04$p3R1UOt9Jser0s8yZEBHDOQZxGA7hRxFLWjst0unEuRn8hTbS50HW",
+          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -100,7 +100,7 @@
         },
         {
           "username": "benjaminataeta@gmail.com",
-          "passwordHash": "$2b$04$p3R1UOt9Jser0s8yZEBHDOQZxGA7hRxFLWjst0unEuRn8hTbS50HW",
+          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -111,7 +111,7 @@
         },
         {
           "username": "authority@globyedu.test",
-          "passwordHash": "$2b$04$hTqt/ljePVQoenx5Y7375uLmLKJt87RsN/3BYQR.n8OPvTD1uyNUa",
+          "passwordHash": "$2b$04$LFffdAIFkwwo1zpt6hwSg./dp7vcDmdGgll5oLO6Wh0kVovhOLhQW",
           "role": "school_authority",
           "grade": "N/A",
           "fullName": "Globy School Authority",
@@ -122,7 +122,7 @@
         },
         {
           "username": "T001",
-          "passwordHash": "$2b$04$OgT/pCPuyRS08vqh7eO4huTwGLO3XL9VfMBCDXgdZmmOg6hrhaKBC",
+          "passwordHash": "$2b$04$DXXIa17hGDc5NvRaOmrLK.0IH/sXjBgNlkztBPZSKuMCEW9R7LrTm",
           "role": "teacher",
           "grade": "JHS 3",
           "fullName": "Test Teacher",
@@ -136,7 +136,7 @@
         },
         {
           "username": "STU001",
-          "studentPasswordHash": "$2b$04$m0ImkcVuz9jltxsaoqdsJub4TF7mzeDPpnMq9uvoGKVTlSYbKr2em",
+          "studentPasswordHash": "$2b$04$vgJTWeq3hvNvpOur11JLLuJ4LuA1P/cS4A804gxbUZjPW/saTS5iK",
           "role": "student",
           "grade": "JHS 3",
           "fullName": "Test Student",

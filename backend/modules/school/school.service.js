@@ -1271,17 +1271,8 @@ async function activateSchool(id) {
 }
 
 async function listSchools(search) {
-  const keepOnlyGlobySchool = (schools) => {
-    const primary = schools.filter((school) => {
-      const schoolId = String(school?.schoolId || '').trim().toLowerCase();
-      const name = String(school?.name || '').trim().toLowerCase();
-      return schoolId === 'globy-school' || name === 'globy school';
-    });
-    return primary.length ? primary : schools;
-  };
-
   const fallbackSchools = () => {
-    const schools = keepOnlyGlobySchool(loadSchoolData()).map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
+    const schools = loadSchoolData().map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
     if (!search) return schools;
     const searchLower = String(search || '').toLowerCase();
     return schools.filter(
@@ -1297,19 +1288,16 @@ async function listSchools(search) {
   }
 
   try {
-    if (search) {
-      const searchLower = String(search || '').toLowerCase();
-      const tenants = keepOnlyGlobySchool(await prisma.tenant.findMany());
-      return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant))).filter(
-        (tenant) =>
-          (tenant.name || '').toLowerCase().includes(searchLower) ||
-          (tenant.schoolId || '').toLowerCase().includes(searchLower) ||
-          (tenant.description || '').toLowerCase().includes(searchLower)
-      );
-    }
-
-    const tenants = keepOnlyGlobySchool(await prisma.tenant.findMany());
-    return tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
+    const tenants = await prisma.tenant.findMany();
+    const mapped = tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
+    if (!search) return mapped;
+    const searchLower = String(search || '').toLowerCase();
+    return mapped.filter(
+      (tenant) =>
+        (tenant.name || '').toLowerCase().includes(searchLower) ||
+        (tenant.schoolId || '').toLowerCase().includes(searchLower) ||
+        (tenant.description || '').toLowerCase().includes(searchLower)
+    );
   } catch (error) {
     const message = String(error?.message || '');
     if (!/(Can't reach database server|database server|ECONNREFUSED|timeout|connect)/i.test(message)) {

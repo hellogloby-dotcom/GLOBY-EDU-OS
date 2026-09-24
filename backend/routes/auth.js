@@ -194,15 +194,14 @@ if (!useFallbackAuth) {
 // Endpoint: GET /api/v1/auth/schools
 // Returns a simple list of available tenant schools for the frontend dropdown.
 router.get('/schools', (req, res) => {
-    const schools = loadSchoolData().filter((school) => {
-      const schoolId = String(school?.schoolId || '').trim().toLowerCase();
-      const name = String(school?.name || '').trim().toLowerCase();
-      return schoolId === 'globy-school' || name === 'globy school';
-    });
-    const response = schools.map((school) => ({
-      schoolId: school.schoolId,
-      name: school.name,
-    }));
+    const schools = loadSchoolData();
+    const response = schools
+      .filter((school) => school && typeof school === 'object')
+      .map((school) => ({
+        schoolId: school.schoolId,
+        name: school.name,
+      }))
+      .filter((school) => school.schoolId || school.name);
 
     res.json({
       status: 'ok',
