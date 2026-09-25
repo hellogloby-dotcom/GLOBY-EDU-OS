@@ -63,10 +63,15 @@ describe('login experience', () => {
 
   it('returns each authenticated role to its matching dashboard', () => {
     const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+    const routeStart = mainSource.indexOf('async function route() {');
+    const routeEnd = mainSource.indexOf('\nfunction attachAdminHandlers()', routeStart);
+    const routeSource = mainSource.slice(routeStart, routeEnd);
 
     expect(mainSource).toContain("if (platformAdmin || role === 'platform_admin' || role === 'super_admin') return '#/admin/overview';");
     expect(mainSource).toContain("if (role === 'teacher' || role === 'student') return `#/role/${role}`;");
     expect(mainSource).toContain("location.hash = getDashboardPathForRole(getUserRole(), getPlatformAdminFlag());");
     expect(mainSource).toContain("location.hash = getDashboardPathForRole(roleFromResponse, roleFromResponse === 'platform_admin');");
+    expect(routeSource).toContain('const { path: current, params } = parseHash();');
+    expect(routeSource).not.toContain('roleFromResponse');
   });
 });

@@ -5519,7 +5519,7 @@ function attachLoginHandlers() {
         }
 
         markActiveSession();
-        location.hash = roleFromResponse === 'platform_admin' ? '#/admin/overview' : '#/school/overview';
+        location.hash = getDashboardPathForRole(roleFromResponse, roleFromResponse === 'platform_admin');
       } catch (error) {
         messageSlot.innerHTML = `<div class="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-rose-800">Unable to sign in with Google. Try again later.</div>`;
         console.error('Google sign-in failed:', error);
@@ -5745,7 +5745,7 @@ function attachChangePasswordHandlers() {
 
 async function route() {
   const navigationId = ++routeGeneration;
-        location.hash = getDashboardPathForRole(roleFromResponse, roleFromResponse === 'platform_admin');
+  const { path: current, params } = parseHash();
 
   if (!current || current === 'home' || LANDING_ROUTES.includes(current)) {
     return renderLanding(current || 'home');
