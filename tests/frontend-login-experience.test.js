@@ -60,4 +60,13 @@ describe('login experience', () => {
     expect(mainSource).toContain("location.hash = redirectPath;");
     expect(mainSource).toContain("location.hash = '#/role/student';");
   });
+
+  it('returns each authenticated role to its matching dashboard', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+
+    expect(mainSource).toContain("if (platformAdmin || role === 'platform_admin' || role === 'super_admin') return '#/admin/overview';");
+    expect(mainSource).toContain("if (role === 'teacher' || role === 'student') return `#/role/${role}`;");
+    expect(mainSource).toContain("location.hash = getDashboardPathForRole(getUserRole(), getPlatformAdminFlag());");
+    expect(mainSource).toContain("location.hash = getDashboardPathForRole(roleFromResponse, roleFromResponse === 'platform_admin');");
+  });
 });

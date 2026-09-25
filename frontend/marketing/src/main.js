@@ -5120,17 +5120,19 @@ function isAuthenticated() {
   return Boolean(accessToken || role || sessionActive);
 }
 
+function getDashboardPathForRole(role, platformAdmin = false) {
+  if (platformAdmin || role === 'platform_admin' || role === 'super_admin') return '#/admin/overview';
+  if (role === 'teacher' || role === 'student') return `#/role/${role}`;
+  return '#/school/overview';
+}
+
 function redirectAuthenticatedUser() {
   if (!isAuthenticated()) return false;
   if (passwordChangeRequired()) {
     location.hash = '#/change-password';
     return true;
   }
-  if (getPlatformAdminFlag()) {
-    location.hash = '#/admin/overview';
-    return true;
-  }
-  location.hash = '#/school/overview';
+  location.hash = getDashboardPathForRole(getUserRole(), getPlatformAdminFlag());
   return true;
 }
 
@@ -5737,13 +5739,13 @@ function attachChangePasswordHandlers() {
     }
     localStorage.removeItem('globyedu_passwordNeedsReset');
     const role = getUserRole();
-    location.hash = role === 'super_admin' || getPlatformAdminFlag() ? '#/admin/overview' : role === 'school_authority' ? '#/school/overview' : `#/role/${role || 'student'}`;
+    location.hash = getDashboardPathForRole(role, getPlatformAdminFlag());
   });
 }
 
 async function route() {
   const navigationId = ++routeGeneration;
-  const { path: current, params } = parseHash();
+        location.hash = getDashboardPathForRole(roleFromResponse, roleFromResponse === 'platform_admin');
 
   if (!current || current === 'home' || LANDING_ROUTES.includes(current)) {
     return renderLanding(current || 'home');
