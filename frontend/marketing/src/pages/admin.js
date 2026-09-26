@@ -1992,6 +1992,9 @@ function attachSchoolCreateForm(token, onSuccess) {
       }
 
       const result = await response.json();
+      if (result?.status !== 'ok' || !result.school?.schoolId) {
+        throw new Error(result?.message || 'The server did not confirm school creation.');
+      }
       
       if (statusDiv) {
         const headAccount = result.school?.headAccount;

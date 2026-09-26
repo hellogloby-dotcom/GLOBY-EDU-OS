@@ -564,6 +564,9 @@ async function createSchoolFirebase(data) {
     city: data.city || null,
     address: data.address || null,
     phone: data.phone || null,
+    website: data.website || null,
+    logo: data.logo || null,
+    coverImage: data.coverImage || null,
     branding: data.branding || null,
     subscriptionPlan: data.subscriptionPlan || '5-Day Trial',
     subscriptionStatus: data.subscriptionStatus || 'trial',
@@ -1098,6 +1101,18 @@ async function updateSchool(id, updates) {
   if (firebaseCore.isFirebaseCoreMode()) {
     const school = await firebaseCore.getTenant(id);
     if (!school) throw new Error('School not found');
+    const teacherRecords = Array.isArray(tenantUpdates.teachers) ? tenantUpdates.teachers : [];
+    for (const teacher of teacherRecords) {
+      const identifier = teacher.teacherId || teacher.email || teacher.username || teacher.id;
+      if (identifier) await firebaseCore.saveById('teachers', `${id}:${identifier}`, { ...teacher, schoolId: id }, true);
+    }
+    const userRecords = Array.isArray(tenantUpdates.users) ? tenantUpdates.users : [];
+    for (const user of userRecords) {
+      const identifier = user.email || user.username || user.id;
+      if (identifier) await firebaseCore.saveById('users', `${id}:${identifier}`, { ...user, schoolId: id, tenantId: id }, true);
+    }
+    delete tenantUpdates.teachers;
+    delete tenantUpdates.users;
     const updated = await firebaseCore.saveTenant(id, {
       ...tenantUpdates,
       ...(branding ? { branding } : {}),
@@ -1282,6 +1297,17 @@ async function listSchools(search) {
         (school.description || '').toLowerCase().includes(searchLower)
     );
   };
+
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const tenants = (await firebaseCore.listTenants()).map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
+    if (!search) return tenants;
+    const searchLower = String(search || '').toLowerCase();
+    return tenants.filter((school) =>
+      (school.name || '').toLowerCase().includes(searchLower) ||
+      (school.schoolId || '').toLowerCase().includes(searchLower) ||
+      (school.description || '').toLowerCase().includes(searchLower)
+    );
+  }
 
   if (prisma && prisma.__stub) {
     return fallbackSchools();
@@ -2099,6 +2125,67 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     if (disallowedKeys.length > 0) {
       throw new Error('Students can only update their own profile photo.');
     }
+  }
+
+  if (firebaseCore.isFirebaseCoreMode() && ['teachers', 'students', 'classes'].includes(field)) {
+    const school = await firebaseCore.getSchoolAggregate(schoolId);
+    if (!school) throw new Error('School not found');
+    ensureSchoolEntities(school);
+    const records = school[field];
+    const identifierFields = field === 'students'
+      ? ['studentId', 'id', 'email', 'username']
+      : field === 'teachers'
+        ? ['teacherId', 'id', 'email', 'username']
+        : field === 'classes' ? ['classId', 'id', 'name'] : ['id'];
+    const record = (Array.isArray(records) ? records : []).find((entry) =>
+      identifierFields.some((key) => String(entry[key] || '').trim().toLowerCase() === String(entityId).trim().toLowerCase())
+    );
+    if (!record) throw new Error('Entity not found');
+    if (studentOwnProfileAccess) {
+      const actorId = String(actor.username || actor.userId || '').split(':').pop().trim().toLowerCase();
+      if (![record.studentId, record.email, record.username, record.id].filter(Boolean).some((value) => String(value).toLowerCase() === actorId)) {
+        throw new Error('Students can only update their own profile.');
+      }
+    }
+    if (actorRoles.includes('teacher') && field === 'students') {
+      const nextClass = updates.classId || updates.className || record.classId || record.className || record.grade;
+      if (!resolveTeacherAuthorization(school, actor, nextClass)) throw new Error('Teacher is not authorized for this class');
+    }
+    const sanitizedUpdates = restrictNonAuthorityUpdates(field, updates || {}, actor);
+    const { password, passwordHash, studentPasswordHash, passwordNeedsReset, ...safeUpdates } = sanitizedUpdates;
+    if (field === 'teachers') {
+      delete safeUpdates.nationalId;
+      delete safeUpdates.nationalIdNumber;
+      delete safeUpdates.signature;
+      if (safeUpdates.metadata) {
+        delete safeUpdates.metadata.nationalId;
+        delete safeUpdates.metadata.nationalIdNumber;
+        delete safeUpdates.metadata.signature;
+      }
+    }
+    const updated = { ...record, ...safeUpdates, schoolId };
+    const identifier = record.teacherId || record.studentId || record.classId || record.id || record.email || record.username;
+    await firebaseCore.saveById(field, `${schoolId}:${identifier}`, updated, true);
+    if (field === 'teachers' || field === 'students') {
+      const userIdentifier = record.email || record.username || identifier;
+      await firebaseCore.saveById('users', `${schoolId}:${userIdentifier}`, {
+        schoolId,
+        tenantId: schoolId,
+        username: record.username || record.email || identifier,
+        email: record.email || null,
+        fullName: updated.fullName || record.fullName || '',
+        role: field === 'teachers' ? 'teacher' : 'student',
+        teacherId: record.teacherId || null,
+        studentId: record.studentId || null,
+        profilePhoto: updated.profilePhoto || null,
+        metadata: { ...(record.metadata || {}), ...(safeUpdates.metadata || {}), ...(safeUpdates.profilePhoto !== undefined ? { profilePhoto: safeUpdates.profilePhoto } : {}) },
+        ...(safeUpdates.profilePhoto !== undefined ? { profilePhoto: safeUpdates.profilePhoto } : {}),
+        ...(safeUpdates.fullName ? { fullName: safeUpdates.fullName } : {}),
+        ...(safeUpdates.phone !== undefined ? { phone: safeUpdates.phone } : {}),
+        ...(safeUpdates.email ? { email: String(safeUpdates.email).toLowerCase() } : {}),
+      }, true);
+    }
+    return updated;
   }
 
   if (prisma && prisma.__stub) {

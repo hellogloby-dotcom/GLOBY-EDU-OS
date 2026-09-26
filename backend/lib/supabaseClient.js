@@ -29,6 +29,13 @@ function isR2Configured() {
   return Boolean(endpoint && accessKeyId && secretAccessKey && bucket);
 }
 
+function getSchoolFilePublicUrl(filePath) {
+  const { publicUrl } = getR2Config();
+  if (!publicUrl || !isR2Configured()) return null;
+  const encodedPath = String(filePath || '').split('/').map(encodeURIComponent).join('/');
+  return `${publicUrl.replace(/\/$/, '')}/${encodedPath}`;
+}
+
 function getSupabaseClient() {
   if (supabaseClient) return supabaseClient;
 
@@ -137,6 +144,7 @@ module.exports = {
   getSupabaseClient,
   getR2Client,
   isR2Configured,
+  getSchoolFilePublicUrl,
   getR2Config,
   uploadSchoolFile,
   createSchoolFileSignedUrl,

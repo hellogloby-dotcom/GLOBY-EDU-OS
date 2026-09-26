@@ -23,6 +23,22 @@ describe('marketing frontend syntax', () => {
     expect(source).toContain('profile-principal-signature-file');
   });
 
+  it('leaves mobile image pickers free to offer both camera and gallery sources', () => {
+    const mainPath = path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js');
+    const registrationPath = path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'register-wizard.js');
+    const dashboardPath = path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'school-dashboard.js');
+    const mainSource = fs.readFileSync(mainPath, 'utf8');
+    const registrationSource = fs.readFileSync(registrationPath, 'utf8');
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+
+    expect(mainSource).toContain('accept="${field.accept || \'image/*\'}"');
+    expect(registrationSource).toContain('id="school-logo-input" type="file" accept="image/*" class="hidden"');
+    expect(dashboardSource).toContain('type="file" accept="image/*" data-student-profile-photo-input');
+    expect(mainSource).not.toContain('capture="${field.capture}"');
+    expect(registrationSource).not.toContain('capture="environment"');
+    expect(dashboardSource).not.toContain('capture="environment"');
+  });
+
   it('supports academic JSON export and import for the academic management workflow', () => {
     const entryPath = path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js');
     const source = fs.readFileSync(entryPath, 'utf8');

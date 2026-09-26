@@ -141,7 +141,7 @@ export function RegisterWizardPage() {
                 <span class="rounded-full bg-violet-50 px-3 py-1 text-sm font-medium text-violet-700">Optional</span>
               </div>
               <div id="branding-dropzone" class="rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-sky-400 hover:bg-sky-50">
-                <input id="school-logo-input" type="file" accept="image/*" capture="environment" class="hidden" />
+                <input id="school-logo-input" type="file" accept="image/*" class="hidden" />
                 <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm">
                   <span class="text-2xl">🖼️</span>
                 </div>
@@ -441,14 +441,9 @@ export function attachRegisterWizardHandlers() {
 
     const values = readFormValues();
     const selectedLogoFile = logoInput && logoInput.files && logoInput.files[0] ? logoInput.files[0] : null;
-    let payloadLogo = logoDataUrl || null;
+    const payloadLogo = selectedLogoFile ? null : logoDataUrl || null;
 
     try {
-      if (selectedLogoFile) {
-        const uploadedLogoUrl = await uploadSchoolBrandAsset(selectedLogoFile);
-        if (uploadedLogoUrl) payloadLogo = uploadedLogoUrl;
-      }
-
       const payload = {
         ...values,
         logo: payloadLogo || null,
@@ -478,6 +473,24 @@ export function attachRegisterWizardHandlers() {
       localStorage.setItem('globyedu_trialStatus', result.data.trialStatus || '5-Day Trial');
       localStorage.setItem('globyedu_accountStatus', result.data.accountStatus || 'trial');
       sessionStorage.setItem('globyedu_sessionActive', 'true');
+      let logoUploadWarning = '';
+      if (selectedLogoFile) {
+        try {
+          const uploadedLogoUrl = await uploadSchoolBrandAsset(selectedLogoFile);
+          const logoResponse = await fetch(`/api/v1/schools/${encodeURIComponent(result.data.schoolId || '')}`, {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${result.data.accessToken || ''}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ logo: uploadedLogoUrl }),
+          });
+          const logoData = await logoResponse.json().catch(() => null);
+          if (!logoResponse.ok || logoData?.status !== 'ok') throw new Error(logoData?.message || 'Unable to save the school logo.');
+        } catch (error) {
+          logoUploadWarning = 'The school was created, but its logo could not be uploaded. You can add it from the school profile.';
+        }
+      }
       loadingOverlay.innerHTML = `
         <div class="w-full max-w-lg rounded-[2rem] border border-white/10 bg-white p-8 text-center shadow-2xl">
           <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl">✓</div>
@@ -489,6 +502,7 @@ export function attachRegisterWizardHandlers() {
             <p class="mt-2"><span class="font-semibold">Trial expiry:</span> ${result.data.trialEndsAt ? new Date(result.data.trialEndsAt).toLocaleDateString() : '5 days from now'}</p>
           </div>
           <p class="mt-6 text-sm text-slate-500">Taking you to your dashboard now.</p>
+          ${logoUploadWarning ? `<p class="mt-3 text-sm text-amber-700">${logoUploadWarning}</p>` : ''}
         </div>`;
       setTimeout(() => {
         location.hash = '#/school/overview';

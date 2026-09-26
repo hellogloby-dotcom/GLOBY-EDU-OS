@@ -3,6 +3,7 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const { ensureDemoSchool } = require('../fallback.school');
 const schoolService = require('../school.service');
+const firebaseCore = require('../../../firebase.core');
 const { generateSchoolSubdomain, resolveTenantFromHostname } = require('../tenant-hostname');
 
 const schoolsFile = path.join(__dirname, '../../../data/schools.json');
@@ -10,6 +11,7 @@ const originalData = fs.existsSync(schoolsFile) ? fs.readFileSync(schoolsFile, '
 
 afterEach(() => {
   fs.writeFileSync(schoolsFile, originalData, 'utf8');
+  jest.restoreAllMocks();
 });
 
 test('ensureDemoSchool seeds the required development accounts and school identifiers', () => {
@@ -326,6 +328,40 @@ test('super admin list includes newly created schools instead of filtering to th
   expect(ids).toContain(demo.schoolId);
   expect(ids).toContain(created.schoolId);
   expect(schools.some((entry) => entry.name === 'Visible School')).toBe(true);
+});
+
+test('Firebase Super Admin school list reads every persisted tenant', async () => {
+  jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+  jest.spyOn(firebaseCore, 'listTenants').mockResolvedValue([
+    { id: 'school-live-a', schoolId: 'school-live-a', name: 'Live Academy' },
+    { id: 'school-live-b', schoolId: 'school-live-b', name: 'North School' },
+  ]);
+
+  const schools = await schoolService.listSchools('');
+
+  expect(schools.map((school) => school.schoolId)).toEqual(['school-live-a', 'school-live-b']);
+  expect(firebaseCore.listTenants).toHaveBeenCalledTimes(1);
+});
+
+test('Firebase student photo updates persist to Firestore student and user records', async () => {
+  const school = {
+    schoolId: 'school-live',
+    students: [{ studentId: 'STD-1', email: 'student@live.test', fullName: 'Live Student', schoolId: 'school-live' }],
+    teachers: [],
+    classes: [],
+    users: [],
+  };
+  jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+  jest.spyOn(firebaseCore, 'getSchoolAggregate').mockResolvedValue(school);
+  const saveById = jest.spyOn(firebaseCore, 'saveById').mockResolvedValue({});
+
+  const updated = await schoolService.updateEntity('school-live', 'students', 'STD-1', {
+    profilePhoto: 'https://images.example.test/student.png',
+  }, { roles: ['school_authority'] });
+
+  expect(updated.profilePhoto).toBe('https://images.example.test/student.png');
+  expect(saveById).toHaveBeenCalledWith('students', 'school-live:STD-1', expect.objectContaining({ profilePhoto: updated.profilePhoto }), true);
+  expect(saveById).toHaveBeenCalledWith('users', 'school-live:student@live.test', expect.objectContaining({ profilePhoto: updated.profilePhoto }), true);
 });
 
 test('createSchool assigns a normalized, collision-safe subdomain and persists it', async () => {

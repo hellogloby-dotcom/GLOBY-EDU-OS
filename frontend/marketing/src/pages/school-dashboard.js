@@ -322,6 +322,7 @@ export function SchoolDashboardPage(summary = {}, section = 'overview', sectionD
         <div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-200/50 sm:p-8 lg:p-10">
           <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
+              ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(schoolName)} logo" class="mb-4 h-16 w-16 rounded-xl border border-slate-200 bg-white object-contain p-2" />` : ''}
               <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Authority Workspace</p>
               <h1 class="mt-4 text-3xl font-semibold text-slate-900">${escapeHtml(schoolName)}</h1>
               <p class="mt-3 text-slate-600">A focused operational view for school summaries, attendance, revenue, fees, activity, and upcoming events.</p>
@@ -1538,7 +1539,7 @@ export function StudentDashboard(section = 'overview', studentData = {}) {
             ${profilePhoto ? `<img src="${escapeHtml(profilePhoto)}" alt="${escapeHtml(studentName)}" class="mx-auto h-24 w-24 rounded-full object-cover" />` : `<div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-sky-100 text-2xl font-semibold text-sky-700">${escapeHtml((studentName || 'S').charAt(0).toUpperCase())}</div>`}
             <p class="mt-4 text-xl font-semibold text-slate-900">${escapeHtml(studentName)}</p>
             <p class="text-sm text-slate-600">${escapeHtml(studentId)}</p>
-            <input type="file" accept="image/*" capture="environment" data-student-profile-photo-input class="sr-only" />
+            <input type="file" accept="image/*" data-student-profile-photo-input class="sr-only" />
             <button type="button" data-student-profile-photo-upload class="mt-4 rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-50">${profilePhoto ? 'Change photo' : 'Upload photo'}</button>
           </div>
           <div class="grid gap-4 md:grid-cols-2">

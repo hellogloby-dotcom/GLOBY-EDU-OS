@@ -4493,8 +4493,8 @@ function attachSchoolHandlers() {
         const file = input.files && input.files[0];
         if (!file) return;
         try {
-          const dataUrl = await readFileAsDataUrl(file);
-          const result = await updateSchoolDetails(token, schoolId, { logo: dataUrl });
+          const remoteUrl = await uploadTenantAsset(file, 'school-logo');
+          const result = await updateSchoolDetails(token, schoolId, { logo: remoteUrl });
           if (!result.ok || result.data?.status !== 'ok') {
             alert(result.data?.message || 'Unable to update logo.');
             return;
@@ -4978,9 +4978,13 @@ function initializeTeacherWorkspaceHandlers() {
       alert(validationError);
       return;
     }
-    const dataUrl = await readFileAsDataUrl(file);
-    if (profileSaveButton) profileSaveButton.dataset.profilePhoto = dataUrl;
-    if (profilePhotoPreview) profilePhotoPreview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Profile preview" class="h-20 w-20 rounded-full object-cover" />`;
+    try {
+      const remoteUrl = await uploadTenantAsset(file, 'teacher-profile');
+      if (profileSaveButton) profileSaveButton.dataset.profilePhoto = remoteUrl;
+      if (profilePhotoPreview) profilePhotoPreview.innerHTML = `<img src="${escapeHtml(remoteUrl)}" alt="Profile preview" class="h-20 w-20 rounded-full object-cover" />`;
+    } catch (error) {
+      alert(error.message || 'Unable to upload the selected profile photo.');
+    }
   });
 
   document.querySelectorAll('[data-teacher-student-edit]').forEach((button) => {
@@ -6008,7 +6012,7 @@ function showAdminForm(title, fields) {
           return `
             <label class="block text-sm text-slate-700">
               ${field.label}
-              <input id="admin-form-${field.name}" type="file" accept="${field.accept || 'image/*'}" ${field.capture ? `capture="${field.capture}"` : ''} class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} />
+              <input id="admin-form-${field.name}" type="file" accept="${field.accept || 'image/*'}" class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} />
               <span id="admin-form-${field.name}-feedback" class="mt-2 block text-xs text-slate-500">Choose an image up to 2 MB.</span>
               <span id="admin-form-${field.name}-preview" class="mt-3 block"></span>
             </label>
@@ -6139,7 +6143,7 @@ function showAdminForm(title, fields) {
             result[field.name] = '';
             continue;
           }
-          result[field.name] = await readFileAsDataUrl(file);
+          result[field.name] = await uploadTenantAsset(file, field.name);
           continue;
         }
 

@@ -37,6 +37,11 @@ async function getTenant(schoolId) {
   return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
 }
 
+async function listTenants() {
+  const snapshot = await collectionRef(CORE_COLLECTIONS.tenants).get();
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+
 async function saveTenant(schoolId, data, merge = true) {
   const id = assertSchoolId(schoolId);
   const payload = { ...data, schoolId: id, updatedAt: new Date().toISOString() };
@@ -90,6 +95,7 @@ module.exports = {
   CORE_COLLECTIONS,
   isFirebaseCoreMode,
   getTenant,
+  listTenants,
   saveTenant,
   listBySchool,
   getById,
