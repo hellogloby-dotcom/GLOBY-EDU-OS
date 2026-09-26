@@ -1,4 +1,4 @@
-const CACHE_NAME = 'globyedu-pwa-v7';
+const CACHE_NAME = 'globyedu-pwa-v8';
 const DB_NAME = 'globyedu_pwa_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'offlineQueue';
@@ -7,8 +7,8 @@ const ASSETS_TO_CACHE = [
   '/index.html',
   '/offline.html',
   '/manifest.json',
-  '/marketing/src/main.js?v=20260923-pricing-fix',
-  '/marketing/src/styles.generated.css?v=20260923-pricing-fix',
+  '/marketing/src/main.js?v=20260926-router-fix',
+  '/marketing/src/styles.generated.css?v=20260926-router-fix',
   '/src/utils/school-dashboard-actions.js?v=20260718'
 ];
 
