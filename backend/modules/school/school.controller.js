@@ -250,6 +250,11 @@ router.put('/:schoolId', authMiddleware, tenantMiddleware, roleGuard(['school_he
   try {
     const schoolId = req.params.schoolId;
     const payload = req.body || {};
+    const roles = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    if (roles.some((role) => ['school_authority', 'school_head'].includes(String(role).toLowerCase())) &&
+        Object.prototype.hasOwnProperty.call(payload, 'attendanceRecords')) {
+      return res.status(403).json({ status: 'error', message: 'Attendance can only be recorded by authorized teachers.' });
+    }
     const school = await schoolService.getSchoolBySchoolId(schoolId);
     if (!school) return res.status(404).json({ status: 'error', message: 'School not found' });
     if (req.user?.roles?.includes('teacher')) {

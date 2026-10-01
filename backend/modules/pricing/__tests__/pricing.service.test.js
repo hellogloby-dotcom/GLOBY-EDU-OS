@@ -50,7 +50,9 @@ describe('authoritative pricing service', () => {
       json: async () => ({ status: true, data: { reference: 'paystack-ref', authorization_url: 'https://checkout.test' } }),
     });
     const originalSecret = process.env.PAYSTACK_SECRET_KEY;
+    const originalWebhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
     process.env.PAYSTACK_SECRET_KEY = 'server-only-test-secret';
+    process.env.PAYSTACK_WEBHOOK_SECRET = 'server-only-test-webhook-secret';
     try {
       const result = await pricingService.initializePaystackCheckout({ planSlug: 'starter', billingPeriod: 'monthly', email: 'school@example.test', amount: 1 });
       expect(result.amount).toBe(150);
@@ -110,7 +112,9 @@ describe('authoritative pricing service', () => {
       json: async () => ({ status: true, data: { reference: 'paystack-webhook-idempotent', authorization_url: 'https://checkout.test/webhook' } }),
     });
     const originalSecret = process.env.PAYSTACK_SECRET_KEY;
+    const originalWebhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
     process.env.PAYSTACK_SECRET_KEY = 'server-only-test-secret';
+    process.env.PAYSTACK_WEBHOOK_SECRET = 'server-only-test-webhook-secret';
     try {
       const checkout = await paymentService.initializeCheckout({
         schoolId: 'school-webhook-1',
@@ -135,7 +139,7 @@ describe('authoritative pricing service', () => {
         },
       };
       const rawBody = JSON.stringify(eventBody);
-      const signature = require('crypto').createHmac('sha512', 'server-only-test-secret').update(rawBody).digest('hex');
+      const signature = require('crypto').createHmac('sha512', 'server-only-test-webhook-secret').update(rawBody).digest('hex');
       const result = await paymentService.processWebhook(rawBody, signature, eventBody);
       const duplicate = await paymentService.processWebhook(rawBody, signature, eventBody);
       expect(result.processed).toBe(true);
@@ -145,6 +149,26 @@ describe('authoritative pricing service', () => {
       global.fetch = originalFetch;
       if (originalSecret === undefined) delete process.env.PAYSTACK_SECRET_KEY;
       else process.env.PAYSTACK_SECRET_KEY = originalSecret;
+      if (originalWebhookSecret === undefined) delete process.env.PAYSTACK_WEBHOOK_SECRET;
+      else process.env.PAYSTACK_WEBHOOK_SECRET = originalWebhookSecret;
+    }
+  });
+
+  it('rejects shell-command text as a webhook secret without falling back to the API secret', () => {
+    const originalSecret = process.env.PAYSTACK_SECRET_KEY;
+    const originalWebhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
+    const rawBody = '{"event":"charge.success"}';
+    process.env.PAYSTACK_SECRET_KEY = 'api-secret-test-value';
+    process.env.PAYSTACK_WEBHOOK_SECRET = 'cd "C:\\temporary path"';
+    const signature = require('crypto').createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET).update(rawBody).digest('hex');
+
+    try {
+      expect(paymentService.verifyWebhookSignature(rawBody, signature)).toBe(false);
+    } finally {
+      if (originalSecret === undefined) delete process.env.PAYSTACK_SECRET_KEY;
+      else process.env.PAYSTACK_SECRET_KEY = originalSecret;
+      if (originalWebhookSecret === undefined) delete process.env.PAYSTACK_WEBHOOK_SECRET;
+      else process.env.PAYSTACK_WEBHOOK_SECRET = originalWebhookSecret;
     }
   });
 });

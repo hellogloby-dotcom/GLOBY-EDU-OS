@@ -5,7 +5,8 @@ const { spawnSync } = require('child_process');
 describe('marketing frontend syntax', () => {
   it('parses the marketing entrypoint without syntax errors', () => {
     const entryPath = path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js');
-    const result = spawnSync(process.execPath, ['--check', entryPath], {
+    const result = spawnSync(process.execPath, ['--input-type=module', '--check'], {
+      input: fs.readFileSync(entryPath, 'utf8'),
       encoding: 'utf8',
     });
 

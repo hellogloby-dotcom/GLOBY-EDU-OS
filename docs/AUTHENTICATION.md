@@ -40,6 +40,21 @@ Security notes
 - `POST /api/v1/auth/firebase-login` verifies the Firebase ID token server-side, then maps the Firebase email to an existing active server-side user and its stored role. Firebase claims and frontend routes cannot grant Super Admin access.
 - Protected API routes continue to use JWT or development mock tokens, and now accept verified Firebase bearer tokens when Firebase Admin is configured.
 
+## One-time production Super Admin bootstrap
+
+The repository does not seed production Super Admins. To initialize the first Firebase-backed platform administrator, provide these backend environment variables through the deployment secret manager or a secured operator shell:
+
+- `DATA_STORE_MODE=firebase`
+- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` (or an explicitly provisioned Application Default Credential)
+- `INITIAL_SUPER_ADMIN_EMAIL`
+- `INITIAL_SUPER_ADMIN_PASSWORD` (at least 12 characters with uppercase, lowercase, number, and symbol)
+- `INITIAL_SUPER_ADMIN_BOOTSTRAP_SECRET` (at least 32 characters and different from the password)
+- Optional `INITIAL_SUPER_ADMIN_NAME`
+
+After checking that no Super Admin exists, an operator must manually run `npm run bootstrap:super-admin -- --confirm` from the project root. The command is not run at server startup and is not exposed over HTTP. It creates the Firebase Authentication account, assigns `super_admin` claims, writes the matching Firestore user and audit record in a transaction, and removes the Auth account on a failed Firestore commit when cleanup is possible. If rollback cannot be confirmed, it leaves a recovery lock and exits with an error. After successful initialization, remove the bootstrap variables from the environment and rotate/remove the bootstrap secret. The bootstrap cannot be repeated after completion.
+
+For one orphaned platform administrator, the separate `npm run recover:orphaned-super-admin -- --email=admin@example.com --confirm-orphan-recovery` command requires an authorized operator to configure `ORPHANED_SUPER_ADMIN_RECOVERY_SECRET` (at least 32 characters, distinct from the bootstrap secret and administrator password), `INITIAL_SUPER_ADMIN_PASSWORD`, and the Firebase production settings through the deployment secret manager. The email must exactly match the sole existing platform-level Firestore admin record, and the password must verify against its existing hash; recovery never changes that hash. It refuses ambiguous records, tenant-assigned records, conflicting Auth identities, other claimed Super Admins, and replay locks. It updates the existing record, repairs platform claims, writes an audit event, and rolls back or leaves a recovery-required lock on uncertain failures. It is operator-invoked only and is never run at server startup. Do not run it before an authorized operator verifies the target identity.
+
 Copy `.env.example` to `.env` and provide the Firebase values before enabling Firebase authentication. Leave them blank during local fallback development.
 
 Developer notes

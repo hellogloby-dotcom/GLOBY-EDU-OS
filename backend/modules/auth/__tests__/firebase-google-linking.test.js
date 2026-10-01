@@ -5,6 +5,14 @@ jest.mock('../../../firebase.admin', () => ({
 
 jest.mock('../../../firebase.data', () => ({
   isFirebaseDataConfigured: jest.fn(() => true),
+  getFirestore: () => ({
+    collection: () => ({ doc: (id) => ({ id, path: `mock/${id}` }) }),
+    runTransaction: async (callback) => callback({
+      get: async () => ({ exists: true, data: () => ({ status: 'active', activeSessionIds: [] }) }),
+      create: jest.fn(),
+      update: jest.fn(),
+    }),
+  }),
 }));
 
 jest.mock('../../../firebase.core', () => ({

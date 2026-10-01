@@ -3,10 +3,10 @@ node_modules/
 dist/
 build/
 .env
-.env.local
+.env.*
 !.env.example
 **/.env
-**/.env.local
+**/.env.*
 !**/.env.example
 
 # Logs
@@ -31,6 +31,17 @@ coverage/
 # Secrets (example)
 *.pem
 *.key
+*.p12
+*.pfx
+
+# Firebase and Google service-account credentials; firebase.json is application config.
+**/*service-account*.json
+**/*service_account*.json
+**/*serviceAccount*.json
+**/*serviceAccountKey*.json
+**/*firebase-adminsdk*.json
+**/*firebase-admin-credentials*.json
+**/*google-application-credentials*.json
 
 # Generated
 uploads/

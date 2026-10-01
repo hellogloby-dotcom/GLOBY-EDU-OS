@@ -73,7 +73,8 @@ describe('login experience', () => {
     expect(mainSource).toContain("if (role === 'teacher' || role === 'student') return `#/role/${role}`;");
     expect(mainSource).toContain("location.hash = getDashboardPathForRole(getUserRole(), getPlatformAdminFlag());");
     expect(mainSource).toContain("location.hash = getDashboardPathForRole(roleFromResponse, roleFromResponse === 'platform_admin');");
-    expect(routeSource).toContain('const { path: current, params } = parseHash();');
+    expect(routeSource).toContain('location.pathname.replace');
+    expect(routeSource).toContain("current === 'admin/login'");
     expect(routeSource).not.toContain('roleFromResponse');
   });
 });

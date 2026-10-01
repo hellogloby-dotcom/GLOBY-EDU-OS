@@ -164,7 +164,9 @@ async function verifyPayment(reference, expectedSchoolId = null) {
 }
 
 function getPaystackWebhookSecret() {
-  return String(process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY || '').trim();
+  const secret = String(process.env.PAYSTACK_WEBHOOK_SECRET || '').trim();
+  if (!secret || /^(?:[a-z][a-z0-9+.-]*:\\\\|(?:cd|set|export)\s)|[<>]|placeholder|xxxxx/i.test(secret)) return '';
+  return secret;
 }
 
 function verifyWebhookSignature(rawBody, signature) {

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const authRouter = require('../../../routes/auth');
 const apiRouter = require('../../../routes/api');
@@ -65,6 +66,7 @@ describe('backend audit logging', () => {
 
   test('school lifecycle and teacher/student management actions are audited', async () => {
     const port = apiServer.address().port;
+    const runId = crypto.randomUUID();
     const adminToken = token({ userId: 'globy-school:ataetabenjamin@gmail.com', tenantId: 'globy-school', roles: ['super_admin'], platformAdmin: true });
     const authorityToken = token({ userId: 'globy-school:authority@globyedu.test', tenantId: 'globy-school', roles: ['school_authority'] });
 
@@ -86,14 +88,14 @@ describe('backend audit logging', () => {
     const teacher = await fetch(`http://127.0.0.1:${port}/api/v1/schools/globy-school/entities/teachers`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${authorityToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName: 'Audited Teacher', email: 'audited-teacher@globy.test' }),
+      body: JSON.stringify({ fullName: 'Audited Teacher', email: `audited-teacher-${runId}@globy.test` }),
     });
     expect(teacher.status).toBe(201);
 
     const student = await fetch(`http://127.0.0.1:${port}/api/v1/schools/globy-school/entities/students`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${authorityToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName: 'Audited Student', email: 'audited-student@globy.test' }),
+      body: JSON.stringify({ fullName: 'Audited Student', email: `audited-student-${runId}@globy.test` }),
     });
     expect(student.status).toBe(201);
 
@@ -136,6 +138,18 @@ describe('backend audit logging', () => {
       expect(logs.some((entry) => entry.action === 'teacher.archived')).toBe(true);
       expect(logs.some((entry) => entry.action === 'student.archived')).toBe(true);
   }, 20000);
+
+  test('school authority cannot submit teacher attendance records', async () => {
+    const port = apiServer.address().port;
+    const authorityToken = token({ userId: 'globy-school:authority@globyedu.test', tenantId: 'globy-school', roles: ['school_authority'] });
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/schools/globy-school`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${authorityToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attendanceRecords: [{ studentId: 'STU001', status: 'present' }] }),
+    });
+
+    expect(response.status).toBe(403);
+  });
 
   test('only Super Admin can read audit logs and records never contain secrets', async () => {
     await recordAuditEvent({

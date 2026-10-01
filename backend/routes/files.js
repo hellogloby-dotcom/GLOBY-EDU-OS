@@ -42,16 +42,21 @@ router.post('/upload', authMiddleware, express.raw({ type: '*/*', limit: '20mb' 
       return res.status(400).json({ status: 'error', message: 'A non-empty file body and valid filename are required.' });
     }
 
-    if (firebaseData.isFirebaseDataConfigured()) {
+    if (process.env.NODE_ENV === 'production') {
+      if (!isR2Configured()) {
+        return res.status(503).json({ status: 'error', message: 'Cloudflare R2 is required for production file storage.' });
+      }
+      if (!getSchoolFilePublicUrl(scopedPath)) {
+        return res.status(503).json({ status: 'error', message: 'Configure CLOUDFLARE_R2_PUBLIC_URL so uploaded school images remain available after signed URLs expire.' });
+      }
+      await uploadSchoolFile(scopedPath, req.body, {
+        contentType: req.get('content-type') || 'application/octet-stream',
+        upsert: false,
+      });
+    } else if (firebaseData.isFirebaseDataConfigured()) {
       const file = firebaseData.getStorageBucket().file(`tenants/${scopedPath}`);
       await file.save(req.body, { contentType: req.get('content-type') || 'application/octet-stream', resumable: false, validation: 'md5' });
     } else {
-      if (process.env.NODE_ENV === 'production' && isR2Configured() && !getSchoolFilePublicUrl(scopedPath)) {
-        return res.status(503).json({ status: 'error', message: 'Configure CLOUDFLARE_R2_PUBLIC_URL so uploaded school images remain available after signed URLs expire.' });
-      }
-      if (process.env.NODE_ENV === 'production' && !isR2Configured()) {
-        return res.status(503).json({ status: 'error', message: 'Storage is not configured for production. Configure Firebase Storage or Cloudflare R2.' });
-      }
       await uploadSchoolFile(scopedPath, req.body, {
         contentType: req.get('content-type') || 'application/octet-stream',
         upsert: false,
@@ -79,13 +84,15 @@ router.get('/*', authMiddleware, async (req, res) => {
       Math.max(Number(req.query.expiresIn) || MAX_SIGNED_URL_SECONDS, 1),
       MAX_SIGNED_URL_SECONDS
     );
-    if (process.env.NODE_ENV === 'production' && !firebaseData.isFirebaseDataConfigured() && !isR2Configured()) {
-      return res.status(503).json({ status: 'error', message: 'Storage is not configured for production. Configure Firebase Storage or Cloudflare R2.' });
+    const production = process.env.NODE_ENV === 'production';
+    if (production && !isR2Configured()) {
+      return res.status(503).json({ status: 'error', message: 'Cloudflare R2 is required for production file storage.' });
     }
-    const publicUrl = !firebaseData.isFirebaseDataConfigured() ? getSchoolFilePublicUrl(scopedPath) : null;
-    const signedUrl = publicUrl || (firebaseData.isFirebaseDataConfigured()
-      ? (await firebaseData.getStorageBucket().file(`tenants/${scopedPath}`).getSignedUrl({ action: 'read', expires: Date.now() + expiresIn * 1000 }))[0]
-      : await createSchoolFileSignedUrl(scopedPath, expiresIn));
+    const useR2 = production || !firebaseData.isFirebaseDataConfigured();
+    const publicUrl = useR2 ? getSchoolFilePublicUrl(scopedPath) : null;
+    const signedUrl = publicUrl || (useR2
+      ? await createSchoolFileSignedUrl(scopedPath, expiresIn)
+      : (await firebaseData.getStorageBucket().file(`tenants/${scopedPath}`).getSignedUrl({ action: 'read', expires: Date.now() + expiresIn * 1000 }))[0]);
     return res.json({ status: 'ok', url: signedUrl, expiresIn: publicUrl ? null : expiresIn, persistent: Boolean(publicUrl) });
   } catch (error) {
     return res.status(500).json({ status: 'error', message: error.message });

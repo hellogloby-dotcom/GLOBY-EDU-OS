@@ -779,7 +779,7 @@ function renderSchoolDetailsModal(school) {
 function getWebsiteCMSSettings() {
   const defaultSettings = {
     companyName: 'GlobyEdu OS',
-    logoUrl: './src/assets/images/hero/hero-dashboard.svg',
+    logoUrl: '/src/assets/images/hero/hero-dashboard.svg',
     heroTitle: 'The premium operating system for modern schools.',
     heroSubtitle: 'Unify admissions, attendance, lesson planning, finance, messaging, and reporting in one elegant school operations experience built for growth.',
     contactEmail: 'hello@globyedu.com',

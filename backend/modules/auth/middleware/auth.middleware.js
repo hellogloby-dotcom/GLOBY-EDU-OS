@@ -97,14 +97,27 @@ async function resolveFirebaseUser(decodedToken) {
     const snapshot = await firebaseData.getFirestore().collection('users').where('email', '==', email).limit(1).get();
     if (snapshot.empty) return null;
     const user = snapshot.docs[0].data();
-    if (user.status !== 'active') return null;
+    const roles = (Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean))
+      .map((role) => String(role).trim().toLowerCase());
+    const claimRoles = Array.isArray(decodedToken.roles) ? decodedToken.roles : [];
+    const hasPlatformAdminClaims = decodedToken.role === 'super_admin' ||
+      decodedToken.platformAdmin === true || claimRoles.includes('super_admin');
+    if (user.status !== 'active' || !decodedToken.uid ||
+        ![user.firebaseUid, user.googleUid].filter(Boolean).includes(decodedToken.uid) ||
+        roles.some((role) => !claimRoles.includes(role)) ||
+        (user.tenantId || user.schoolId) !== decodedToken.tenantId) return null;
+    if (roles.includes('super_admin')) {
+      if (user.platformAdmin !== true || user.tenantId || user.schoolId ||
+          decodedToken.role !== 'super_admin' || decodedToken.platformAdmin !== true) return null;
+    } else if (hasPlatformAdminClaims) {
+      return null;
+    }
     const userId = snapshot.docs[0].id;
-    const roles = Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean);
     return {
-      userId: userId,
+      userId,
       tenantId: user.tenantId || user.schoolId,
       roles,
-      platformAdmin: roles.includes('super_admin'),
+      platformAdmin: user.platformAdmin === true && roles.includes('super_admin'),
       passwordNeedsReset: user.passwordNeedsReset === true,
     };
   }
@@ -150,6 +163,66 @@ async function authMiddleware(req, res, next) {
     const payload = verifyAccessToken(token);
     const fallbackLocalToken = isFallbackLocalToken(payload);
 
+    if (firebaseData.isFirebaseDataConfigured()) {
+      if (!payload.userId || !payload.sessionId) {
+        return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
+      }
+      const firestore = firebaseData.getFirestore();
+      const [userSnapshot, sessionSnapshot] = await Promise.all([
+        firestore.collection('users').doc(String(payload.userId)).get(),
+        firestore.collection('authSessions').doc(String(payload.sessionId)).get(),
+      ]);
+      if (!userSnapshot.exists || !sessionSnapshot.exists) {
+        return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
+      }
+      const user = userSnapshot.data();
+      const session = sessionSnapshot.data();
+      if (user.status !== 'active' || session.revoked === true || session.userId !== String(payload.userId) || Number(session.expiresAt) <= Date.now()) {
+        return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
+      }
+      const roles = (Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean))
+        .map((role) => String(role).trim().toLowerCase());
+      if (!roles.length) return res.status(403).json({ status: 'error', message: 'Access denied.' });
+      const isPlatformAdminRecord = roles.includes('super_admin') && user.platformAdmin === true && !user.tenantId && !user.schoolId;
+      if (roles.includes('super_admin') && !isPlatformAdminRecord) {
+        return res.status(403).json({ status: 'error', message: 'Platform administrator record is invalid.' });
+      }
+      if (user.firebaseUid) {
+        const firebaseUser = await firebaseAdmin.getUser(user.firebaseUid);
+        const claims = firebaseUser.customClaims || {};
+        const claimRoles = Array.isArray(claims.roles) ? claims.roles : [claims.role].filter(Boolean);
+        const hasValidPlatformAdminClaims = roles.includes('super_admin')
+          ? (claims.role === 'super_admin' && claims.platformAdmin === true && claimRoles.includes('super_admin'))
+          : true;
+        const hasUnexpectedPlatformAdminClaims = !roles.includes('super_admin') &&
+          (claims.role === 'super_admin' || claims.platformAdmin === true || claimRoles.includes('super_admin'));
+        if (firebaseUser.disabled || roles.some((role) => !claimRoles.includes(role)) ||
+            !hasValidPlatformAdminClaims || hasUnexpectedPlatformAdminClaims) {
+          if (isPlatformAdminRecord && typeof firebaseAdmin.setCustomUserClaims === 'function') {
+            await firebaseAdmin.setCustomUserClaims(user.firebaseUid, {
+              tenantId: user.tenantId || user.schoolId || null,
+              schoolId: user.schoolId || user.tenantId || null,
+              role: 'super_admin',
+              roles: ['super_admin'],
+              platformAdmin: true,
+            });
+          } else {
+            return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
+          }
+        }
+      }
+      req.user = {
+        ...payload,
+        tenantId: user.tenantId || user.schoolId || null,
+        roles,
+        platformAdmin: user.platformAdmin === true && roles.includes('super_admin'),
+        passwordNeedsReset: user.passwordNeedsReset === true,
+        status: user.status,
+      };
+      if (enforcePasswordChange(req, res, req.user)) return;
+      return next();
+    }
+
     if (prisma && !prisma.__stub && payload.userId && !fallbackLocalToken) {
       const user = await prisma.user.findUnique({ where: { id: payload.userId } });
       if (!user || user.status !== 'active') {
@@ -163,7 +236,9 @@ async function authMiddleware(req, res, next) {
     }
 
     req.user = payload; // minimal payload: { userId, roles, tenantId, passwordNeedsReset }
-    const fallbackUser = findFallbackUserByPayload(payload);
+    const fallbackUser = process.env.NODE_ENV !== 'production' && prisma?.__stub
+      ? findFallbackUserByPayload(payload)
+      : null;
     if (fallbackUser && enforceAccountStatus(req, res, fallbackUser)) return;
     if (payload.status && String(payload.status).toLowerCase() === 'suspended') {
       return res.status(403).json({
@@ -175,7 +250,7 @@ async function authMiddleware(req, res, next) {
     if (enforcePasswordChange(req, res, req.user)) return;
     return next();
   } catch (err) {
-    const mockPayload = parseMockToken(token);
+    const mockPayload = process.env.NODE_ENV !== 'production' ? parseMockToken(token) : null;
     if (mockPayload) {
       const fallbackUser = findFallbackUser(mockPayload.schoolId, mockPayload.username);
       if (!fallbackUser) {
@@ -186,6 +261,10 @@ async function authMiddleware(req, res, next) {
       if (enforceAccountStatus(req, res, req.user)) return;
       if (enforcePasswordChange(req, res, req.user)) return;
       return next();
+    }
+
+    if (firebaseData.isFirebaseDataConfigured()) {
+      return res.status(401).json({ status: 'error', message: 'Invalid or expired token.' });
     }
 
     if (!firebaseAdmin.isFirebaseConfigured()) {

@@ -6,6 +6,7 @@ const projectRoot = path.resolve(__dirname, '..');
 const marketingRoot = path.join(projectRoot, 'frontend', 'marketing');
 const outputRoot = path.join(projectRoot, 'dist', 'frontend');
 const generatedCssPath = path.join(outputRoot, 'src', 'styles.generated.css');
+const tailwindCliPath = path.join(projectRoot, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs');
 
 function removeOutput() {
   fs.rmSync(path.join(projectRoot, 'dist'), { recursive: true, force: true });
@@ -37,13 +38,12 @@ function writeFirebaseConfig() {
 }
 
 function buildCss() {
-  execFileSync('npx', [
-    '--yes',
-    '@tailwindcss/cli',
+  execFileSync(process.execPath, [
+    tailwindCliPath,
     '-i', 'src/styles.css',
     '-o', path.relative(marketingRoot, generatedCssPath),
     '--config', 'tailwind.config.js',
-  ], { cwd: marketingRoot, stdio: 'inherit', shell: true });
+  ], { cwd: marketingRoot, stdio: 'inherit' });
 }
 
 function validateOutput() {

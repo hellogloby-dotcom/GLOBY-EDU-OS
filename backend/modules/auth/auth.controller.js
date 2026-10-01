@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const config = require('../../config/auth.config');
+const { getAppUrl } = require('../../config/app-url.config');
 const firebaseAdmin = require('../../firebase.admin');
 const router = express.Router();
 const authService = require('./auth.service');
@@ -108,7 +109,7 @@ router.post('/register', async (req, res) => {
 
     const created = await schoolService.createSchool(schoolPayload);
 
-    const appUrl = process.env.APP_URL || 'http://localhost:4000';
+    const appUrl = getAppUrl();
     if (firebaseAdmin.isFirebaseConfigured()) {
       try {
         await firebaseAdmin.createUser({
@@ -147,8 +148,8 @@ router.post('/register', async (req, res) => {
     };
 
     if (loginResult) {
+      setRefreshCookie(res, loginResult.refreshToken);
       response.accessToken = loginResult.accessToken;
-      response.refreshToken = loginResult.refreshToken;
       response.user = { id: loginResult.user.id, email: loginResult.user.email, role: loginResult.user.roles?.[0] || 'school_authority' };
     }
 
@@ -209,7 +210,7 @@ router.post('/login', async (req, res) => {
     clearLoginFailures(loginAttemptKey);
     setRefreshCookie(res, result.refreshToken);
     await recordAuditEvent({ req, actorId: result.user.id, actorRole: result.user.roles?.[0], tenantId: result.user.tenantId || schoolId, action: 'auth.login_succeeded', resourceType: 'user', resourceId: result.user.id, metadata: { loginType: 'prisma' } });
-    return res.json({ status: 'ok', accessToken: result.accessToken, refreshToken: result.refreshToken, user: { id: result.user.id, email: result.user.email, roles: result.user.roles } });
+    return res.json({ status: 'ok', accessToken: result.accessToken, user: { id: result.user.id, email: result.user.email, roles: result.user.roles } });
   } catch (err) {
     recordLoginFailure(loginAttemptKey);
     await recordAuditEvent({ req, tenantId: schoolId || null, action: 'auth.login_failed', resourceType: 'user', success: false, metadata: { loginType: 'prisma' } });
@@ -228,7 +229,6 @@ router.post('/firebase-login', async (req, res) => {
     return res.json({
       status: 'ok',
       accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
       tenantId: result.tenantId,
       schoolId: result.schoolId,
       user: { id: result.user.id, email: result.user.email, displayName: result.user.displayName, roles: result.user.roles },
@@ -258,7 +258,7 @@ router.post('/refresh', async (req, res) => {
     if (!refreshToken) return res.status(400).json({ status: 'error', message: 'Missing refresh token' });
     const tokens = await authService.refresh(refreshToken);
     setRefreshCookie(res, tokens.refreshToken);
-    return res.json({ status: 'ok', accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+    return res.json({ status: 'ok', accessToken: tokens.accessToken });
   } catch (err) {
     return res.status(401).json({ status: 'error', message: err.message });
   }
@@ -285,7 +285,7 @@ router.post('/forgot-password', async (req, res) => {
     const token = await authService.forgotPassword(email);
     if (token) {
       // send email (stub)
-      const appUrl = process.env.APP_URL || 'http://localhost:4000';
+      const appUrl = getAppUrl();
       await sendEmail(email, 'Password reset', resetTemplate(token, appUrl));
     }
     return res.json({ status: 'ok' });
@@ -318,7 +318,7 @@ router.post('/change-password', authMiddleware, async (req, res) => {
     const session = await authService.changePassword(userId, oldPassword, newPassword);
     setRefreshCookie(res, session.refreshToken);
     await recordAuditEvent({ req, actorId: userId, actorRole: req.user?.roles?.[0], tenantId: req.user?.tenantId, action: 'auth.password_changed', resourceType: 'user', resourceId: userId });
-    return res.json({ status: 'ok', accessToken: session.accessToken, refreshToken: session.refreshToken, passwordNeedsReset: false });
+    return res.json({ status: 'ok', accessToken: session.accessToken, passwordNeedsReset: false });
   } catch (err) {
     await recordAuditEvent({ req, actorId: req.user?.userId, actorRole: req.user?.roles?.[0], tenantId: req.user?.tenantId, action: 'auth.password_change_failed', resourceType: 'user', resourceId: req.user?.userId, success: false });
     return res.status(400).json({ status: 'error', message: err.message });

@@ -16,7 +16,8 @@ async function tenantMiddleware(req, res, next) {
   try {
     const user = req.user;
     const requestedSchoolId = req.params.schoolId || req.body.schoolId;
-    const hostMatch = resolveTenantFromHostname(req.headers?.host || req.hostname || '', loadSchoolData());
+    const fallbackSchools = process.env.NODE_ENV !== 'production' && prisma?.__stub ? loadSchoolData() : [];
+    const hostMatch = resolveTenantFromHostname(req.headers?.host || req.hostname || '', fallbackSchools);
 
     if (!user) return res.status(401).json({ status: 'error', message: 'Authentication required' });
 
@@ -34,8 +35,12 @@ async function tenantMiddleware(req, res, next) {
         ? [user.roles]
         : [];
 
-    // Super admin bypass
-    if (roles.some((role) => String(role).trim().toLowerCase() === 'super_admin')) return next();
+    const hasSuperAdminRole = roles.some((role) => String(role).trim().toLowerCase() === 'super_admin');
+    const isPlatformAdmin = hasSuperAdminRole && user.platformAdmin === true && !user.tenantId && !user.schoolId;
+    if (hasSuperAdminRole && !isPlatformAdmin) {
+      return res.status(403).json({ status: 'error', message: 'Platform administrator record is invalid.' });
+    }
+    if (isPlatformAdmin) return next();
 
     if (!requestedSchoolId && hostMatch) {
       req.params = req.params || {};
@@ -51,7 +56,7 @@ async function tenantMiddleware(req, res, next) {
     if (firebaseData.isFirebaseDataConfigured()) {
       const tenant = await firebaseCore.getSchoolAggregate(resolvedSchoolId).catch(() => null);
       if (!tenant) return res.status(404).json({ status: 'error', message: 'School not found' });
-      if (user.tenantId && user.tenantId !== resolvedSchoolId) {
+      if (!user.tenantId || user.tenantId !== resolvedSchoolId) {
         return res.status(403).json({ status: 'error', message: 'Tenant mismatch' });
       }
       const resolved = schoolService.resolveSchoolLifecycleStatus(tenant);

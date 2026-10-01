@@ -18,20 +18,41 @@ function getR2Config() {
     accountId: String(process.env.CLOUDFLARE_R2_ACCOUNT_ID || '').trim(),
     accessKeyId: String(process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '').trim(),
     secretAccessKey: String(process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '').trim(),
-    bucket: String(process.env.CLOUDFLARE_R2_BUCKET || '').trim() || 'school-files',
+    bucket: String(process.env.CLOUDFLARE_R2_BUCKET || '').trim(),
     endpoint: String(process.env.CLOUDFLARE_R2_ENDPOINT || '').trim(),
     publicUrl: String(process.env.CLOUDFLARE_R2_PUBLIC_URL || '').trim(),
   };
 }
 
+function isR2PublicUrlConfigured() {
+  const { endpoint, publicUrl } = getR2Config();
+  if (!publicUrl || /[<>]|<[^>]+>|placeholder|your[-_ ]/i.test(publicUrl)) return false;
+
+  try {
+    const publicUrlParts = new URL(publicUrl);
+    const endpointParts = new URL(endpoint);
+    const publicHostname = publicUrlParts.hostname.toLowerCase();
+    return publicUrlParts.protocol === 'https:' &&
+      !publicUrlParts.username &&
+      !publicUrlParts.password &&
+      !publicUrlParts.search &&
+      !publicUrlParts.hash &&
+      publicHostname !== endpointParts.hostname.toLowerCase() &&
+      !publicHostname.endsWith('.r2.cloudflarestorage.com');
+  } catch {
+    return false;
+  }
+}
+
 function isR2Configured() {
-  const { endpoint, accessKeyId, secretAccessKey, bucket } = getR2Config();
-  return Boolean(endpoint && accessKeyId && secretAccessKey && bucket);
+  const { accountId, endpoint, accessKeyId, secretAccessKey, bucket } = getR2Config();
+  const endpointMatchesAccount = !accountId || endpoint === `https://${accountId}.r2.cloudflarestorage.com`;
+  return Boolean(accountId && endpointMatchesAccount && accessKeyId && secretAccessKey && bucket);
 }
 
 function getSchoolFilePublicUrl(filePath) {
   const { publicUrl } = getR2Config();
-  if (!publicUrl || !isR2Configured()) return null;
+  if (!isR2PublicUrlConfigured() || !isR2Configured()) return null;
   const encodedPath = String(filePath || '').split('/').map(encodeURIComponent).join('/');
   return `${publicUrl.replace(/\/$/, '')}/${encodedPath}`;
 }
@@ -144,6 +165,7 @@ module.exports = {
   getSupabaseClient,
   getR2Client,
   isR2Configured,
+  isR2PublicUrlConfigured,
   getSchoolFilePublicUrl,
   getR2Config,
   uploadSchoolFile,

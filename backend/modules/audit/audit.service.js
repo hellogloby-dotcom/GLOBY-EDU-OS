@@ -8,16 +8,12 @@ const AUDIT_FILE = path.join(__dirname, '../../data/audit-logs.json');
 const SENSITIVE_KEY = /password|hash|token|secret|api[_-]?key|oauth|credential|private/i;
 const SENSITIVE_VALUE = /^\$2[aby]\$|^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
+function isProductionRuntime() {
+  return process.env.NODE_ENV === 'production' || Boolean(String(process.env.RENDER_SERVICE_ID || '').trim());
+}
+
 function assertFallbackAuditAllowed() {
-  if (process.env.NODE_ENV === 'production' && String(process.env.DATABASE_URL || '').trim().length > 0) {
-    return;
-  }
-  if (process.env.NODE_ENV === 'production' && String(process.env.DATA_STORE_MODE || '').trim().toLowerCase() === 'firebase') {
-    return;
-  }
-  if (process.env.NODE_ENV === 'production') {
-    console.warn('[audit.service] No DATABASE_URL or Firebase mode configured; using JSON fallback audit log storage in production.');
-  }
+  if (isProductionRuntime()) throw new Error('[audit.service] JSON audit storage is disabled in production.');
 }
 
 function sanitizeValue(value, key = '') {
@@ -109,6 +105,10 @@ async function recordAuditEvent(event = {}) {
     saveFallbackLogs([...loadFallbackLogs(), record]);
     return record;
   } catch (error) {
+    if (isProductionRuntime()) {
+      console.error('[audit.service] Durable audit event was not persisted.');
+      return record;
+    }
     try {
       saveFallbackLogs([...loadFallbackLogs(), record]);
     } catch (persistError) {
@@ -146,6 +146,7 @@ async function listAuditEvents({ tenantId, isSuperAdmin = false, limit = 100, ac
       }));
       return rows;
     } catch (error) {
+      if (isProductionRuntime()) throw error;
       return loadFallbackLogs()
         .filter((entry) => isSuperAdmin || entry.tenantId === tenantId)
         .filter((entry) => !actorRole || entry.actorRole === actorRole)

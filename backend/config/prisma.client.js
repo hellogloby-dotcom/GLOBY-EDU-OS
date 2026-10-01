@@ -5,15 +5,15 @@
 let prisma = null;
 const hasDatabaseUrl = String(process.env.DATABASE_URL || '').trim().length > 0;
 const firebaseDataMode = String(process.env.DATA_STORE_MODE || '').trim().toLowerCase() === 'firebase';
-const firebaseConfigured = String(process.env.FIREBASE_PROJECT_ID || '').trim().length > 0;
 const isJestTest = String(process.env.NODE_ENV || '').toLowerCase() === 'test';
+const isProductionRuntime = process.env.NODE_ENV === 'production' || Boolean(String(process.env.RENDER_SERVICE_ID || '').trim());
 const forceRealDatabase = String(process.env.USE_REAL_DATABASE || '').trim().toLowerCase() === 'true';
 
-if (process.env.NODE_ENV === 'production' && !hasDatabaseUrl && !firebaseDataMode && !forceRealDatabase) {
-  console.warn('[prisma.client] No DATABASE_URL configured and DATA_STORE_MODE is not firebase. Falling back to the JSON-backed local store.');
+if (isProductionRuntime && (process.env.NODE_ENV !== 'production' || !firebaseDataMode)) {
+  throw new Error('[prisma.client] Production requires DATA_STORE_MODE=firebase; SQL and JSON fallback are disabled.');
 }
 
-if (firebaseDataMode && firebaseConfigured) {
+if (firebaseDataMode) {
   prisma = null;
 } else if (isJestTest && !forceRealDatabase) {
   prisma = {

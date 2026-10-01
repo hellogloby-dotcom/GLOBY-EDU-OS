@@ -8,7 +8,11 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const config = require('../config/auth.config');
+const { getAppUrl } = require('../config/app-url.config');
 const { signAccessToken } = require('../modules/auth/utils/token');
+const authService = require('../modules/auth/auth.service');
+const firebaseData = require('../firebase.data');
+const firebaseCore = require('../firebase.core');
 const schoolService = require('../modules/school/school.service');
 const { sendEmail, resetTemplate, welcomeTemplate } = require('../modules/auth/utils/email');
 const {
@@ -28,6 +32,19 @@ const {
 } = require('../modules/auth/utils/login-rate-limiter');
 const { recordAuditEvent } = require('../modules/audit/audit.service');
 const router = express.Router();
+
+function setRefreshCookie(res, refreshToken) {
+  if (!refreshToken) return;
+  const production = process.env.NODE_ENV === 'production' || Boolean(String(process.env.RENDER_SERVICE_ID || '').trim());
+  res.cookie('globyedu_refresh_token', refreshToken, {
+    httpOnly: true,
+    secure: production,
+    sameSite: production ? 'strict' : 'lax',
+    path: '/api/v1/auth',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+  });
+}
 
 const DEV_TENANT_ID = 'globy-school';
 const DEV_TENANT_NAME = 'Globy School';
@@ -192,9 +209,10 @@ if (!useFallbackAuth) {
 // compatibility with the existing marketing SPA routes.
 
 // Endpoint: GET /api/v1/auth/schools
-// Returns a simple list of available tenant schools for the frontend dropdown.
-router.get('/schools', (req, res) => {
-    const schools = loadSchoolData();
+// Returns the authoritative school list for the frontend dropdown.
+router.get('/schools', async (req, res) => {
+  try {
+    const schools = await schoolService.listSchools('');
     const response = schools
       .filter((school) => school && typeof school === 'object')
       .map((school) => ({
@@ -203,11 +221,14 @@ router.get('/schools', (req, res) => {
       }))
       .filter((school) => school.schoolId || school.name);
 
-    res.json({
+    return res.json({
       status: 'ok',
       schools: response,
     });
-  });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: 'Unable to load schools.' });
+  }
+});
 
   // Endpoint: POST /api/v1/auth/register
   // Create a new school account for marketing signup.
@@ -499,6 +520,58 @@ router.get('/schools', (req, res) => {
 
   router.post('/school-login', async (req, res) => {
     const { schoolId, username, password, schoolName, studentName, className, teacherName, loginType } = req.body || {};
+    const firebaseMode = firebaseData.isFirebaseDataConfigured();
+    const realDatabaseMode = firebaseMode || (prismaClient && !prismaClient.__stub);
+    if (realDatabaseMode) {
+      const loginAttemptKey = getLoginAttemptKey({ schoolId, username, platformAdminMode: false });
+      if (isLoginRateLimited(loginAttemptKey)) {
+        return res.status(429).json({ status: 'error', message: 'Too many failed sign-in attempts. Please try again later.' });
+      }
+
+      try {
+        const session = await authService.login(schoolId, username, password, { loginType });
+        setRefreshCookie(res, session.refreshToken);
+        const tenant = firebaseMode
+          ? await firebaseCore.getTenant(schoolId)
+          : await schoolService.getSchoolBySchoolId(schoolId);
+        clearLoginFailures(loginAttemptKey);
+        await recordAuditEvent({
+          req,
+          actorId: session.user.id,
+          actorRole: session.user.roles?.[0],
+          tenantId: schoolId,
+          action: 'auth.login_succeeded',
+          resourceType: 'user',
+          resourceId: session.user.id,
+          metadata: { loginType: loginType || 'school', dataStore: firebaseMode ? 'firebase' : 'prisma' },
+        });
+        return res.json({
+          status: 'ok',
+          accessToken: session.accessToken,
+          token: session.accessToken,
+          role: session.user.roles?.[0] || session.user.role,
+          username: session.user.username || username,
+          fullName: session.user.fullName || username,
+          schoolId,
+          schoolName: tenant?.name || schoolName || schoolId,
+          emailVerified: true,
+          passwordNeedsReset: session.user.passwordNeedsReset === true,
+        });
+      } catch (error) {
+        recordLoginFailure(loginAttemptKey);
+        await recordAuditEvent({
+          req,
+          tenantId: schoolId || null,
+          action: 'auth.login_failed',
+          resourceType: 'user',
+          success: false,
+          metadata: { loginType: loginType || 'school', dataStore: firebaseMode ? 'firebase' : 'prisma' },
+        });
+        const statusCode = error.message === 'Tenant not found' ? 404 : 401;
+        return res.status(statusCode).json({ status: 'error', message: error.message || 'Unable to sign in. Please check your details.' });
+      }
+    }
+
     const result = await executeLogin({
       schoolId,
       username,
@@ -516,6 +589,45 @@ router.get('/schools', (req, res) => {
 
   router.post('/platform-login', async (req, res) => {
     const { username, password } = req.body || {};
+    if (firebaseData.isFirebaseDataConfigured()) {
+      const loginAttemptKey = getLoginAttemptKey({ username, platformAdminMode: true });
+      if (isLoginRateLimited(loginAttemptKey)) {
+        return res.status(429).json({ status: 'error', message: 'Too many failed sign-in attempts. Please try again later.' });
+      }
+      try {
+        const session = await authService.loginPlatformAdmin(username, password);
+        setRefreshCookie(res, session.refreshToken);
+        clearLoginFailures(loginAttemptKey);
+        await recordAuditEvent({
+          req,
+          actorId: session.user.id,
+          actorRole: 'super_admin',
+          action: 'auth.login_succeeded',
+          resourceType: 'user',
+          resourceId: session.user.id,
+          metadata: { loginType: 'platform', dataStore: 'firebase' },
+        });
+        return res.json({
+          status: 'ok',
+          accessToken: session.accessToken,
+          token: session.accessToken,
+          role: 'super_admin',
+          fullName: session.user.fullName || username,
+          email: session.user.email || username,
+          platformAdmin: true,
+        });
+      } catch (error) {
+        recordLoginFailure(loginAttemptKey);
+        await recordAuditEvent({
+          req,
+          action: 'auth.login_failed',
+          resourceType: 'user',
+          success: false,
+          metadata: { loginType: 'platform', dataStore: 'firebase' },
+        });
+        return res.status(401).json({ status: 'error', message: 'Unable to sign in. Please check your details.' });
+      }
+    }
     const result = await executeLogin({ username, password, platformAdminMode: true });
     await auditFallbackLogin(req, result, true);
     return res.status(result.statusCode).json(result.body);
@@ -524,6 +636,31 @@ router.get('/schools', (req, res) => {
   router.post('/login', async (req, res) => {
     const { loginType = 'school', schoolId, username, password } = req.body || {};
     if (loginType === 'platform_admin') {
+      if (firebaseData.isFirebaseDataConfigured()) {
+        const loginAttemptKey = getLoginAttemptKey({ username, platformAdminMode: true });
+        if (isLoginRateLimited(loginAttemptKey)) {
+          return res.status(429).json({ status: 'error', message: 'Too many failed sign-in attempts. Please try again later.' });
+        }
+        try {
+          const session = await authService.loginPlatformAdmin(username, password);
+          setRefreshCookie(res, session.refreshToken);
+          clearLoginFailures(loginAttemptKey);
+          await recordAuditEvent({
+            req,
+            actorId: session.user.id,
+            actorRole: 'super_admin',
+            action: 'auth.login_succeeded',
+            resourceType: 'user',
+            resourceId: session.user.id,
+            metadata: { loginType: 'platform', dataStore: 'firebase' },
+          });
+          return res.json({ status: 'ok', accessToken: session.accessToken, role: 'super_admin', fullName: session.user.fullName || username, platformAdmin: true });
+        } catch (error) {
+          recordLoginFailure(loginAttemptKey);
+          await recordAuditEvent({ req, action: 'auth.login_failed', resourceType: 'user', success: false, metadata: { loginType: 'platform', dataStore: 'firebase' } });
+          return res.status(401).json({ status: 'error', message: 'Unable to sign in. Please check your details.' });
+        }
+      }
       const result = await executeLogin({ username, password, platformAdminMode: true });
       return res.status(result.statusCode).json(result.body);
     }
@@ -553,7 +690,7 @@ router.get('/schools', (req, res) => {
 
       if (exists) {
         const token = storePasswordResetToken(email);
-        const appUrl = process.env.APP_URL || 'http://localhost:4000';
+        const appUrl = getAppUrl();
         await sendEmail(email, 'Reset your GlobyEdu password', resetTemplate(token, appUrl));
       }
 

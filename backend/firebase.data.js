@@ -10,11 +10,13 @@ function isFirebaseDataConfigured() {
 
 function getFirestore() {
   if (!isFirebaseDataConfigured()) throw new Error('Firebase Firestore data mode is not configured. Set DATA_STORE_MODE=firebase.');
+  firebaseAdmin.assertFirebaseConfiguration();
   return firebaseAdmin.getFirebaseAdmin().firestore();
 }
 
 function getStorageBucket() {
   if (!isFirebaseDataConfigured()) throw new Error('Firebase Storage data mode is not configured. Set DATA_STORE_MODE=firebase.');
+  firebaseAdmin.assertFirebaseConfiguration();
   return firebaseAdmin.getFirebaseAdmin().storage().bucket();
 }
 

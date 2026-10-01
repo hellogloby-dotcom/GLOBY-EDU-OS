@@ -14,7 +14,12 @@ function roleGuard(allowedRoles = []) {
       return res.status(403).json({ status: 'error', message: 'Access denied.' });
     }
 
-    const has = normalizedRoles.some((r) => allowedRoles.includes(String(r).trim().toLowerCase()));
+    const has = normalizedRoles.some((role) => {
+      const normalizedRole = String(role).trim().toLowerCase();
+      if (!allowedRoles.includes(normalizedRole)) return false;
+      if (normalizedRole !== 'super_admin') return true;
+      return user.platformAdmin === true && !user.tenantId && !user.schoolId;
+    });
     if (!has) {
       return res.status(403).json({ status: 'error', message: 'Insufficient role.' });
     }

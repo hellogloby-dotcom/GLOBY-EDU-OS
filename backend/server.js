@@ -7,8 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
 
-// Load environment variables from .env file if available.
-dotenv.config();
+// Load backend configuration consistently for both workspace-root and backend launches.
+dotenv.config({ path: path.join(__dirname, '.env') });
+
+require('./firebase.admin').assertFirebaseConfiguration();
 
 const apiRoutes = require('./routes/api');
 
@@ -78,9 +80,14 @@ app.use(express.json({
   },
 }));
 
-// Basic request logging middleware for development.
+// Log safe request metadata only; never record query strings or request credentials.
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  const startedAt = process.hrtime.bigint();
+  const pathname = req.path;
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${pathname} ${res.statusCode} ${durationMs.toFixed(1)}ms`);
+  });
   next();
 });
 
@@ -132,6 +139,12 @@ app.use('/src/assets/images', express.static(marketingAssetsPath));
 app.use('/src/assets/images', express.static(rootAssetsPath));
 app.use('/root-assets/images', express.static(rootAssetsPath));
 app.use('/images', express.static(path.join(publicPath, 'images')));
+
+app.get(/^\/admin(?:\/(.*))?\/?$/, (req, res) => {
+  const route = String(req.params[0] || '').trim();
+  const target = route === 'login' ? '/#/platform-admin' : `/#/admin${route ? `/${route}` : ''}`;
+  return res.redirect(302, target);
+});
 
 // Fallback route for client-side routing to load index.html.
 // When a URL does not match any API or static file, the client-side router in app.js

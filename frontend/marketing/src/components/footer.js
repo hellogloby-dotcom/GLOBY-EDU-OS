@@ -3,7 +3,7 @@
 
 export function Footer(cms = {}) {
   const companyName = cms.companyName || 'GlobyEdu OS';
-  const logoUrl = cms.logoUrl || './src/assets/images/ui/globyedu-logo.jpg';
+  const logoUrl = cms.logoUrl || '/src/assets/images/ui/globyedu-logo.jpg';
   const contactEmail = cms.contactEmail || 'hello@globyedu.com';
   const contactPhone = cms.contactPhone || '+1 (555) 123-4567';
   const website = cms.website || 'https://globyedu.com';

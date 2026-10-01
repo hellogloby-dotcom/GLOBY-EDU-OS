@@ -5142,6 +5142,10 @@ function redirectAuthenticatedUser() {
 
 function requireAuth() {
   if (!isAuthenticated()) {
+    if (location.pathname.startsWith('/admin/')) {
+      location.replace('/login');
+      return false;
+    }
     location.hash = '#/login';
     return false;
   }
@@ -5749,7 +5753,9 @@ function attachChangePasswordHandlers() {
 
 async function route() {
   const navigationId = ++routeGeneration;
-  const { path: current, params } = parseHash();
+  const parsed = parseHash();
+  const current = parsed.path || location.pathname.replace(/^\/+|\/+$/g, '');
+  const params = parsed.params;
 
   if (!current || current === 'home' || LANDING_ROUTES.includes(current)) {
     return renderLanding(current || 'home');
@@ -5759,6 +5765,9 @@ async function route() {
     return renderLoginPage();
   }
   if (current === 'platform-admin') {
+    return renderPlatformAdminPage();
+  }
+  if (current === 'admin/login') {
     if (redirectAuthenticatedUser()) return;
     return renderPlatformAdminPage();
   }

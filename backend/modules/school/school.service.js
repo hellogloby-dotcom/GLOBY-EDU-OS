@@ -211,15 +211,25 @@ function resolveTeacherAuthorization(school, actor = {}, classId = '') {
 
   if (!teacher) return false;
   const classKey = String(classId || '').trim().toLowerCase();
-  const assignedClasses = normalizeArray(teacher.assignedClasses || teacher.classes || teacher.className || teacher.assignedClass);
-  const normalizedCandidates = assignedClasses.map((value) => String(value).trim().toLowerCase());
+  const teacherIdentifiers = [teacher.id, teacher.teacherId, teacher.username, teacher.email, teacher.userId]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+  const assignedClasses = normalizeArray(teacher.assignedClasses || teacher.classes || teacher.className || teacher.assignedClass)
+    .map((value) => String(value).trim().toLowerCase());
   const classMatches = (Array.isArray(school.classes) ? school.classes : []).some((entry) => {
-    const currentClassId = String(entry.classId || entry.id || '').trim().toLowerCase();
-    const currentName = String(entry.name || entry.className || '').trim().toLowerCase();
-    return currentClassId === classKey || currentName === classKey || normalizedCandidates.includes(currentClassId) || normalizedCandidates.includes(currentName);
+    const classValues = [entry.classId, entry.id, entry.name, entry.className, entry.grade]
+      .filter(Boolean)
+      .map((value) => String(value).trim().toLowerCase());
+    if (classKey && !classValues.includes(classKey)) return false;
+    const assignedToTeacher = [entry.teacherId, entry.teacher, entry.classTeacher]
+      .filter(Boolean)
+      .some((value) => teacherIdentifiers.includes(String(value).trim().toLowerCase()));
+    return assignedToTeacher || classValues.some((value) => assignedClasses.includes(value));
   });
-  if (!classKey) return true;
-  return classMatches || normalizedCandidates.includes(classKey) || String(teacher.teacherId || teacher.username || '').trim().toLowerCase() === classKey;
+  if (!classKey) return assignedClasses.length > 0 || (Array.isArray(school.classes) ? school.classes : []).some((entry) =>
+    [entry.teacherId, entry.teacher, entry.classTeacher].filter(Boolean).some((value) => teacherIdentifiers.includes(String(value).trim().toLowerCase()))
+  );
+  return classMatches || assignedClasses.includes(classKey);
 }
 
 function resolveAssignmentOwnership(school, assignment, actor = {}) {
@@ -830,11 +840,14 @@ function getStudentSchoolView(school, user = {}) {
     const includesStudent = classMembership.some((item) => String(item).trim().toLowerCase() === studentId);
     return (!classId && !className) || entryClassId === classId || entryName === className || entryGrade === className || includesStudent || entryName.includes(className) || entryGrade.includes(className);
   });
+  const studentClasses = relevantClasses.map((entry) => ({
+    ...entry,
+    ...(Array.isArray(entry.students) ? { students: entry.students.filter((item) => String(item).trim().toLowerCase() === studentId) } : {}),
+  }));
 
   const attendanceRecords = (Array.isArray(school.attendanceRecords) ? school.attendanceRecords : []).filter((entry) => {
     const recordStudentId = String(entry.studentId || '').trim().toLowerCase();
-    const recordClassName = String(entry.className || '').trim().toLowerCase();
-    return recordStudentId === studentId || (recordClassName && className && recordClassName === className);
+    return recordStudentId === studentId;
   });
 
   const examResults = (Array.isArray(school.examResults) ? school.examResults : []).filter((entry) => {
@@ -855,9 +868,8 @@ function getStudentSchoolView(school, user = {}) {
 
   const payments = (Array.isArray(school.payments) ? school.payments : []).filter((entry) => {
     const ownerId = String(entry.studentId || entry.student || entry.userId || '').trim().toLowerCase();
-    const ownerName = String(entry.studentName || entry.studentFullName || entry.fullName || '').trim().toLowerCase();
-    const studentName = String(student.fullName || '').trim().toLowerCase();
-    return ownerId === studentId || ownerName === studentName || String(entry.email || '').trim().toLowerCase() === String(student.email || '').trim().toLowerCase();
+    const studentEmail = String(student.email || '').trim().toLowerCase();
+    return ownerId === studentId || (studentEmail && String(entry.email || '').trim().toLowerCase() === studentEmail);
   });
 
   const sanitizedStudent = sanitizeStudentRecord(student);
@@ -869,12 +881,11 @@ function getStudentSchoolView(school, user = {}) {
     students: [],
     student: sanitizedStudent,
     profile: sanitizedStudent,
-    classes: relevantClasses,
+    classes: studentClasses,
     attendanceRecords,
     examRecords: (Array.isArray(school.examRecords) ? school.examRecords : []).filter((entry) => {
-      const entryClass = String(entry.className || entry.class || '').trim().toLowerCase();
       const entryStudent = String(entry.studentId || entry.student || '').trim().toLowerCase();
-      return entryStudent === studentId || (entryClass && className && entryClass === className);
+      return entryStudent === studentId;
     }),
     examResults,
     announcements,
@@ -1372,48 +1383,48 @@ function buildPlatformAnalytics(schools, days) {
   };
 }
 
+function buildPlatformSummaryFromSchools(schools, analyticsDays) {
+  const normalized = schools.map((school) => resolveSchoolLifecycleStatus(school));
+  const activeSchools = normalized.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase()));
+  const schoolSummaries = normalized.map((school) => ({
+    schoolId: school.schoolId,
+    name: school.name,
+    subscriptionPlan: school.subscriptionPlan,
+    subscriptionStatus: school.subscriptionStatus,
+    schoolStatus: school.schoolStatus || school.status,
+    userCount: Array.isArray(school.users) ? school.users.length : (school.teachers || []).length + (school.students || []).length,
+    studentCount: countSchoolUsers(school, 'student'),
+    teacherCount: countSchoolUsers(school, 'teacher'),
+    createdAt: school.createdAt || null,
+    reports: Array.isArray(school.reports) ? school.reports : [],
+  }));
+
+  return {
+    totalSchools: normalized.length,
+    activeSchools: activeSchools.length,
+    trialSchools: normalized.filter((school) => String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase() === 'trial').length,
+    expiredSchools: normalized.filter((school) => ['expired', 'inactive', 'blocked'].includes(String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase())).length,
+    totalStudents: normalized.reduce((sum, school) => sum + countSchoolUsers(school, 'student'), 0),
+    totalTeachers: normalized.reduce((sum, school) => sum + countSchoolUsers(school, 'teacher'), 0),
+    suspendedSchools: normalized.filter((school) => ['suspended', 'inactive', 'blocked'].includes(String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase())).length,
+    activeSubscriptions: normalized.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || '').toLowerCase())).length,
+    revenue: null,
+    schools: schoolSummaries,
+    analytics: buildPlatformAnalytics(normalized, analyticsDays),
+  };
+}
+
 async function getPlatformSummary({ days = 365 } = {}) {
   const analyticsDays = [7, 30, 90, 365].includes(Number(days)) ? Number(days) : 365;
   const fallbackSummary = () => {
-    const schools = loadSchoolData().map((school) => resolveSchoolLifecycleStatus(school));
-    const totalSchools = schools.length;
-    const activeSchools = schools.filter((school) => ['active', 'paid'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
-    const trialSchools = schools.filter(
-      (school) =>
-        (school.subscriptionStatus || '').toLowerCase() === 'trial' ||
-        (school.schoolStatus || '').toLowerCase() === 'trial'
-    ).length;
-    const expiredSchools = schools.filter((school) => ['expired', 'inactive', 'blocked'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
-    const suspendedSchools = schools.filter((school) => ['suspended', 'inactive', 'blocked'].includes((school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
-    const totalStudents = schools.reduce((sum, school) => sum + countSchoolUsers(school, 'student'), 0);
-    const totalTeachers = schools.reduce((sum, school) => sum + countSchoolUsers(school, 'teacher'), 0);
-    const schoolSummaries = schools.map((school) => ({
-      schoolId: school.schoolId,
-      name: school.name,
-      subscriptionPlan: school.subscriptionPlan,
-      subscriptionStatus: school.subscriptionStatus,
-      schoolStatus: school.schoolStatus,
-      userCount: (school.users || []).length,
-      studentCount: countSchoolUsers(school, 'student'),
-      teacherCount: countSchoolUsers(school, 'teacher'),
-      createdAt: school.createdAt || null,
-      reports: Array.isArray(school.reports) ? school.reports : [],
-    }));
-
-    return {
-      totalSchools,
-      activeSchools,
-      trialSchools,
-      expiredSchools,
-      totalStudents,
-      totalTeachers,
-      suspendedSchools,
-      activeSubscriptions: schools.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || '').toLowerCase())).length,
-      revenue: null,
-      schools: schoolSummaries,
-      analytics: buildPlatformAnalytics(schools, analyticsDays),
-    };
+    return buildPlatformSummaryFromSchools(loadSchoolData(), analyticsDays);
   };
+
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const tenants = await firebaseCore.listTenants();
+    const schools = await Promise.all(tenants.map((tenant) => firebaseCore.getSchoolAggregate(tenant.schoolId || tenant.id)));
+    return buildPlatformSummaryFromSchools(schools.filter(Boolean), analyticsDays);
+  }
 
   if (prisma && prisma.__stub) {
     return fallbackSummary();
@@ -1823,11 +1834,25 @@ async function searchEntities(schoolId, query, scope = '') {
 }
 
 async function findUserByIdentifier(identifier, tenantId) {
-  if (!identifier) return null;
-  if (identifier.includes('@')) {
-    return prisma.user.findUnique({ where: { email: String(identifier).toLowerCase() } });
-  }
-  return prisma.user.findUnique({ where: { id: identifier } });
+  if (!identifier || !tenantId) return null;
+  const normalizedIdentifier = String(identifier).trim();
+  const directMatch = await prisma.user.findFirst({
+    where: {
+      tenantId,
+      OR: [
+        { id: normalizedIdentifier },
+        { email: normalizedIdentifier.toLowerCase() },
+      ],
+    },
+  });
+  if (directMatch) return directMatch;
+
+  const [students, teachers] = await Promise.all([
+    fetchUsersByRole(tenantId, 'student'),
+    fetchUsersByRole(tenantId, 'teacher'),
+  ]);
+  return [...students, ...teachers].find((user) => [user.metadata?.studentId, user.metadata?.teacherId]
+    .some((value) => String(value || '').trim().toLowerCase() === normalizedIdentifier.toLowerCase())) || null;
 }
 
 async function attachUserRole(userId, roleName) {
@@ -1966,12 +1991,15 @@ async function createEntity(schoolId, entityType, payload, actor = {}) {
         email: created.email || null,
         fullName: created.fullName || payload.fullName || payload.name || 'User',
         role: field === 'teachers' ? 'teacher' : 'student',
+        roles: [field === 'teachers' ? 'teacher' : 'student'],
         teacherId: created.teacherId || null,
         studentId: created.studentId || null,
         classId: created.classId || null,
         className: created.className || null,
         passwordHash,
         passwordNeedsReset: !payload.password,
+        isVerified: created.emailVerified !== false,
+        emailVerified: created.emailVerified !== false,
         status: created.status || 'active',
       }, false);
       await firebaseCore.saveById('roles', `${schoolId}:${field === 'teachers' ? 'teacher' : 'student'}`, { schoolId, name: field === 'teachers' ? 'teacher' : 'student' }, true);
@@ -2067,6 +2095,19 @@ async function createEntity(schoolId, entityType, payload, actor = {}) {
   if (field === 'students' && payload.classId) {
     const classRecord = await prisma.class.findFirst({ where: { id: payload.classId, tenantId: tenant.id } });
     if (!classRecord) throw new Error('Class does not belong to this school');
+    if (actorRoles.includes('teacher')) {
+      const actorIdentifier = actor.username || actor.email || String(actor.userId || '').split(':').pop();
+      const teacher = await findUserByIdentifier(actorIdentifier, tenant.id);
+      const teacherSchool = {
+        users: teacher ? [mapUserEntity(teacher, 'teacher')] : [],
+        classes: [classRecord],
+      };
+      if (!teacher || teacher.tenantId !== tenant.id || !resolveTeacherAuthorization(teacherSchool, actor, payload.classId)) {
+        throw new Error('Teacher is not authorized for this class');
+      }
+    }
+  } else if (actorRoles.includes('teacher')) {
+    throw new Error('Class is required for teacher student creation');
   }
 
   if (field === 'teachers') {
@@ -2261,7 +2302,11 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
       if (studentIndex !== -1) school.students[studentIndex] = { ...school.students[studentIndex], ...updated };
     }
     saveSchoolData(schools);
-    return updated;
+    return field === 'students'
+      ? sanitizeStudentRecord(updated)
+      : field === 'teachers'
+        ? sanitizeTeacherRecord(updated)
+        : updated;
   }
 
   const tenant = await prisma.tenant.findUnique({ where: { schoolId } });
@@ -2272,6 +2317,19 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     const user = await findUserByIdentifier(entityId, tenant.id);
     if (!user || user.tenantId !== tenant.id) {
       throw new Error('Entity not found');
+    }
+    if (actorRoles.includes('teacher') && field === 'students') {
+      const actorIdentifier = actor.username || actor.email || String(actor.userId || '').split(':').pop();
+      const teacher = await findUserByIdentifier(actorIdentifier, tenant.id);
+      const classes = await prisma.class.findMany({ where: { tenantId: tenant.id } });
+      const teacherSchool = {
+        users: teacher ? [mapUserEntity(teacher, 'teacher')] : [],
+        classes,
+      };
+      const studentClass = updates.classId || updates.className || user.metadata?.classId || user.metadata?.className || user.metadata?.gradeLevel;
+      if (!teacher || teacher.tenantId !== tenant.id || !resolveTeacherAuthorization(teacherSchool, actor, studentClass)) {
+        throw new Error('Teacher is not authorized for this class');
+      }
     }
     if (getUserRoleList(actor).includes('student') && field === 'students') {
       const selfStudentId = String(user.studentId || user.email || user.id || '').trim().toLowerCase();

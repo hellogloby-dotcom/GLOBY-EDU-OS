@@ -345,16 +345,20 @@ describe('workspace messaging and support', () => {
 
     school.teachers = [{ teacherId: 'T001', username: 'T001', fullName: 'Test Teacher', passwordHash: 'teacher-secret' }];
     school.classes = [
-      { classId: 'JHS-3A', name: 'JHS 3A', grade: 'JHS 3', teacher: 'T001', status: 'active' },
+      { classId: 'JHS-3A', name: 'JHS 3A', grade: 'JHS 3', teacher: 'T001', students: ['STU001', 'STU002'], status: 'active' },
       { classId: 'JHS-2A', name: 'JHS 2A', grade: 'JHS 2', teacher: 'T002', status: 'active' },
     ];
     school.students = [
       { studentId: 'STU001', fullName: 'Test Student', className: 'JHS 3', email: 'student@globy.test', studentPasswordHash: 'student-secret' },
-      { studentId: 'STU002', fullName: 'Other Student', className: 'JHS 2', email: 'other@globy.test' },
+      { studentId: 'STU002', fullName: 'Test Student', className: 'JHS 3', email: 'other@globy.test' },
     ];
     school.attendanceRecords = [
       { date: '2026-09-05', className: 'JHS 3', studentId: 'STU001', status: 'present' },
-      { date: '2026-09-05', className: 'JHS 2', studentId: 'STU002', status: 'absent' },
+      { date: '2026-09-05', className: 'JHS 3', studentId: 'STU002', status: 'absent' },
+    ];
+    school.examRecords = [
+      { studentId: 'STU001', className: 'JHS 3', subject: 'Math', mark: 90 },
+      { studentId: 'STU002', className: 'JHS 3', subject: 'Math', mark: 25 },
     ];
     school.examResults = [
       { studentId: 'STU001', student: 'Test Student', className: 'JHS 3', subject: 'Math', exam: 'Quiz 1', mark: 82, maxMarks: 100 },
@@ -372,6 +376,7 @@ describe('workspace messaging and support', () => {
     school.payments = [
       { studentId: 'STU001', amount: 100, status: 'paid' },
       { studentId: 'STU002', amount: 200, status: 'paid' },
+      { studentName: 'Test Student', amount: 300, status: 'paid' },
     ];
     global.__workspaceSnapshot = snapshot;
 
@@ -382,10 +387,12 @@ describe('workspace messaging and support', () => {
 
     expect(studentView.student.studentId).toBe('STU001');
     expect(studentView.classes.map((entry) => entry.classId)).toEqual(['JHS-3A']);
+    expect(studentView.classes[0].students).toEqual(['STU001']);
     expect(studentView.students).toEqual([]);
     expect(studentView.teachers).toEqual([]);
     expect(studentView.attendanceRecords).toHaveLength(1);
     expect(studentView.attendanceRecords[0].studentId).toBe('STU001');
+    expect(studentView.examRecords).toEqual([{ studentId: 'STU001', className: 'JHS 3', subject: 'Math', mark: 90 }]);
     expect(studentView.examResults).toHaveLength(1);
     expect(studentView.examResults[0].studentId).toBe('STU001');
     expect(studentView.announcements.map((entry) => entry.title)).toEqual(['Student notice', 'Everyone notice']);

@@ -76,7 +76,47 @@ async function createSessionForUser(user) {
   if (!user) throw new Error('Invalid user');
   if (user.status !== 'active') throw new Error('User account is not active');
 
-  const payload = { userId: user.id, tenantId: user.tenantId || user.schoolId, roles: Array.isArray(user.roles) ? user.roles : [], passwordNeedsReset: user.passwordNeedsReset === true };
+  const payload = {
+    userId: user.id,
+    tenantId: user.tenantId || user.schoolId || null,
+    roles: normalizeRoles(user),
+    platformAdmin: user.platformAdmin === true,
+    passwordNeedsReset: user.passwordNeedsReset === true,
+  };
+  if (firebaseData.isFirebaseDataConfigured()) {
+    const sessionId = crypto.randomUUID();
+    const firestore = firebaseData.getFirestore();
+    const userRef = firestore.collection('users').doc(String(user.id));
+    const sessions = firestore.collection('authSessions');
+    const sessionRef = sessions.doc(sessionId);
+    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
+    const now = Date.now();
+    const expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+
+    await firestore.runTransaction(async (transaction) => {
+      const userSnapshot = await transaction.get(userRef);
+      if (!userSnapshot.exists || userSnapshot.data()?.status !== 'active') throw new Error('User account is not active');
+      const activeIds = Array.isArray(userSnapshot.data()?.activeSessionIds) ? userSnapshot.data().activeSessionIds : [];
+      const activeReferences = activeIds.map((id) => sessions.doc(String(id)));
+      const activeSnapshots = await Promise.all(activeReferences.map((reference) => transaction.get(reference)));
+      const activeSessions = activeSnapshots
+        .map((snapshot, index) => ({ snapshot, reference: activeReferences[index], data: snapshot.exists ? snapshot.data() : null }))
+        .filter(({ data }) => data && data.revoked !== true && Number(data.expiresAt) > now)
+        .sort((left, right) => Number(left.data.createdAt) - Number(right.data.createdAt));
+
+      while (activeSessions.length >= 2) {
+        const oldest = activeSessions.shift();
+        transaction.update(oldest.reference, { revoked: true, revokedAt: now });
+      }
+      transaction.create(sessionRef, { userId: String(user.id), tokenHash: hashToken(refreshToken), createdAt: now, expiresAt, revoked: false });
+      transaction.update(userRef, { activeSessionIds: [...activeSessions.map(({ snapshot }) => snapshot.id), sessionId] });
+    });
+
+    payload.sessionId = sessionId;
+    user.roles = payload.roles;
+    return { accessToken: signAccessToken(payload), refreshToken, user };
+  }
+
   if (prisma && !prisma.__stub) {
     const roles = await prisma.userRole.findMany({ where: { userId: user.id }, include: { role: true } }).catch(() => []);
     payload.roles = roles.map((r) => r.role.name);
@@ -152,6 +192,11 @@ function normalizeRoles(user = {}) {
   return Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean);
 }
 
+function isPlatformAdminIdentity(user = {}) {
+  return user.platformAdmin === true || normalizeRoles(user)
+    .some((role) => String(role).trim().toLowerCase() === 'super_admin');
+}
+
 function identifierMatchesUser(user = {}, identifier = '') {
   const normalized = String(identifier || '').trim().toLowerCase();
   return [user.email, user.teacherId, user.studentId, user.username]
@@ -169,14 +214,29 @@ function roleMatchesLoginType(user = {}, loginType = '') {
   return type === 'platform_admin' ? roles.includes('super_admin') : true;
 }
 
-async function syncFirebaseClaims(user, uid) {
-  if (!firebaseAdmin?.setCustomUserClaims || !uid) return;
+async function syncFirebaseClaims(user, uid, options = {}) {
+  if (!uid || typeof firebaseAdmin?.setCustomUserClaims !== 'function') return;
   const roles = normalizeRoles(user).map((role) => String(role).trim().toLowerCase()).filter(Boolean);
-  await firebaseAdmin.setCustomUserClaims(uid, {
-    tenantId: user.schoolId || user.tenantId,
+  const hasSuperAdminRole = roles.includes('super_admin');
+  const isTrustedPlatformAdmin = options.allowPlatformAdmin === true &&
+    hasSuperAdminRole && user.platformAdmin === true && !user.tenantId && !user.schoolId;
+  if (isPlatformAdminIdentity(user) && !isTrustedPlatformAdmin) {
+    throw new Error('Platform administrator claims can only be synchronized through the dedicated platform login.');
+  }
+  if (options.allowPlatformAdmin === true && !isTrustedPlatformAdmin) {
+    throw new Error('The existing record is not an eligible platform administrator.');
+  }
+  const sync = {
+    tenantId: user.schoolId || user.tenantId || null,
+    schoolId: user.schoolId || user.tenantId || null,
     role: roles[0] || null,
     roles,
-  });
+    platformAdmin: isTrustedPlatformAdmin,
+  };
+  if (isTrustedPlatformAdmin) {
+    sync.role = 'super_admin';
+  }
+  await firebaseAdmin.setCustomUserClaims(uid, sync);
 }
 
 async function findFirebaseUserForLogin(tenantId, decoded, options = {}) {
@@ -192,6 +252,9 @@ async function findFirebaseUserForLogin(tenantId, decoded, options = {}) {
     String(candidate.email || '').trim().toLowerCase() === email
   ));
   if (!matched) return null;
+  if (isPlatformAdminIdentity(matched)) {
+    throw new Error('Platform administrators cannot be linked through tenant Firebase login.');
+  }
   const linkedUser = await firebaseCore.saveById('users', matched.id, {
     firebaseUid: decoded.uid,
     googleEmail: email,
@@ -209,6 +272,9 @@ async function linkFirebaseIdentity(idToken, userId, tenantId) {
   if (!decoded?.uid || !user || user.status !== 'active' || String(user.schoolId || user.tenantId) !== String(tenantId)) {
     throw new Error('User account was not found in the requested tenant.');
   }
+  if (isPlatformAdminIdentity(user)) {
+    throw new Error('Platform administrators cannot link identities through a tenant account.');
+  }
   const users = await firebaseCore.listBySchool('users', tenantId);
   if (users.some((candidate) => candidate.id !== user.id && (candidate.firebaseUid === decoded.uid || candidate.googleUid === decoded.uid))) {
     throw new Error('That Google account is already linked to another user.');
@@ -222,15 +288,67 @@ async function linkFirebaseIdentity(idToken, userId, tenantId) {
   return linkedUser;
 }
 
-async function login(tenantId, identifier, password) {
+async function login(tenantId, identifier, password, options = {}) {
+  if (firebaseData.isFirebaseDataConfigured()) {
+    const tenant = await findTenantBySchoolId(tenantId);
+    if (!tenant) throw new Error('Tenant not found');
+    const schoolStatus = String(tenant.schoolStatus || tenant.status || 'active').trim().toLowerCase();
+    const subscriptionStatus = String(tenant.subscriptionStatus || 'active').trim().toLowerCase();
+    const trialEndsAt = tenant.trialEndsAt ? new Date(tenant.trialEndsAt) : null;
+    if (['suspended', 'inactive', 'blocked', 'disabled', 'expired'].includes(schoolStatus) ||
+        ['suspended', 'inactive', 'blocked', 'disabled', 'expired'].includes(subscriptionStatus) ||
+        (trialEndsAt && !Number.isNaN(trialEndsAt.getTime()) && trialEndsAt.getTime() <= Date.now())) {
+      throw new Error('School account is not active');
+    }
+  }
+
   const user = await validateUserByEmail(tenantId, identifier, password);
   if (!user) throw new Error('Invalid credentials');
-  if (!user.isVerified) throw new Error('Email must be verified before signing in.');
+  if (user.status !== 'active' || !roleMatchesLoginType(user, options.loginType)) throw new Error('Invalid credentials');
+  if (user.isVerified !== true) throw new Error('Email must be verified before signing in.');
+  user.roles = normalizeRoles(user);
 
   return createSessionForUser(user);
 }
 
+async function loginPlatformAdmin(identifier, password) {
+  if (!firebaseData.isFirebaseDataConfigured()) throw new Error('Firebase platform login is not configured.');
+  const email = String(identifier || '').trim().toLowerCase();
+  const user = await findUserByEmail(email);
+  if (!user || user.status !== 'active' || user.isVerified !== true || user.platformAdmin !== true ||
+      !normalizeRoles(user).includes('super_admin') || user.tenantId || user.schoolId ||
+      !(await bcrypt.compare(String(password || ''), user.passwordHash || ''))) {
+    throw new Error('Invalid credentials');
+  }
+
+  const firebaseUser = await firebaseAdmin.getUserByEmail(email);
+  const existingFirebaseUid = String(user.firebaseUid || '').trim();
+  if (existingFirebaseUid && existingFirebaseUid !== String(firebaseUser.uid || '').trim()) {
+    throw new Error('Platform administrator identity does not match.');
+  }
+
+  if (existingFirebaseUid) {
+    await syncFirebaseClaims(user, existingFirebaseUid, { allowPlatformAdmin: true });
+  }
+
+  const refreshedUser = existingFirebaseUid && typeof firebaseAdmin.getUser === 'function'
+    ? await firebaseAdmin.getUser(existingFirebaseUid)
+    : firebaseUser;
+  const claims = refreshedUser.customClaims || {};
+  const claimRoles = Array.isArray(claims.roles) ? claims.roles : [];
+  if (refreshedUser.disabled || claims.role !== 'super_admin' || !claimRoles.includes('super_admin') || claims.platformAdmin !== true) {
+    throw new Error('Platform administrator claims are not valid.');
+  }
+
+  user.roles = ['super_admin'];
+  user.platformAdmin = true;
+  return createSessionForUser(user);
+}
+
 async function loginWithFirebaseIdToken(idToken, tenantId, options = {}) {
+  if (options.platformAdminMode === true) {
+    throw new Error('Use the dedicated platform administrator login.');
+  }
   if (!firebaseAdmin || !firebaseAdmin.isFirebaseConfigured()) {
     throw new Error('Firebase authentication is not configured.');
   }
@@ -259,11 +377,10 @@ async function loginWithFirebaseIdToken(idToken, tenantId, options = {}) {
     ? normalizeRoles(user)
     : (await prisma.userRole.findMany({ where: { userId: user.id }, include: { role: true } }).catch(() => [])).map((entry) => entry.role.name);
   user.roles = roles;
-  if (firebaseMode && user.firebaseUid) await syncFirebaseClaims(user, user.firebaseUid);
-  const hasSuperAdminRole = roles.some((role) => String(role).toLowerCase() === 'super_admin');
-  if (options.platformAdminMode === true && !hasSuperAdminRole) {
-    throw new Error('Google account is not authorized for platform administration.');
+  if (isPlatformAdminIdentity(user)) {
+    throw new Error('Platform administrators cannot use tenant Firebase login.');
   }
+  if (firebaseMode && user.firebaseUid) await syncFirebaseClaims(user, user.firebaseUid);
 
   if (!firebaseMode && !user.isVerified && decoded.email_verified) {
     await prisma.user.update({ where: { id: user.id }, data: { isVerified: true } }).catch(() => null);
@@ -287,6 +404,39 @@ async function refresh(refreshToken) {
     verifyRefreshToken(refreshToken);
   } catch (err) {
     throw new Error('Invalid or expired refresh token');
+  }
+
+  if (firebaseData.isFirebaseDataConfigured()) {
+    const decoded = verifyRefreshToken(refreshToken);
+    if (!decoded.userId || !decoded.sessionId) throw new Error('Invalid refresh token');
+    const firestore = firebaseData.getFirestore();
+    const userRef = firestore.collection('users').doc(String(decoded.userId));
+    const sessionRef = firestore.collection('authSessions').doc(String(decoded.sessionId));
+    const nextRefreshToken = signRefreshToken({ userId: decoded.userId, sessionId: decoded.sessionId });
+    const nextHash = hashToken(nextRefreshToken);
+    let accessToken;
+
+    await firestore.runTransaction(async (transaction) => {
+      const [sessionSnapshot, userSnapshot] = await Promise.all([transaction.get(sessionRef), transaction.get(userRef)]);
+      const session = sessionSnapshot.exists ? sessionSnapshot.data() : null;
+      const user = userSnapshot.exists ? userSnapshot.data() : null;
+      if (!session || session.revoked || session.userId !== String(decoded.userId) || session.tokenHash !== hashToken(refreshToken) || Number(session.expiresAt) <= Date.now() || !user || user.status !== 'active') {
+        throw new Error('Invalid refresh token');
+      }
+      const roles = normalizeRoles(user).map((role) => String(role).trim().toLowerCase()).filter(Boolean);
+      if (!roles.length) throw new Error('User roles are no longer active');
+      accessToken = signAccessToken({
+        userId: String(decoded.userId),
+        tenantId: user.tenantId || user.schoolId || null,
+        roles,
+        platformAdmin: user.platformAdmin === true,
+        passwordNeedsReset: user.passwordNeedsReset === true,
+        sessionId: String(decoded.sessionId),
+      });
+      transaction.update(sessionRef, { tokenHash: nextHash, refreshedAt: Date.now() });
+    });
+
+    return { accessToken, refreshToken: nextRefreshToken };
   }
 
   if (!prisma || prisma.__stub) {
@@ -330,6 +480,31 @@ async function refresh(refreshToken) {
 }
 
 async function logout(userId, refreshToken) {
+  if (firebaseData.isFirebaseDataConfigured()) {
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch {
+      return true;
+    }
+    if (String(decoded.userId) !== String(userId) || !decoded.sessionId) return true;
+    const firestore = firebaseData.getFirestore();
+    const userRef = firestore.collection('users').doc(String(userId));
+    const sessionRef = firestore.collection('authSessions').doc(String(decoded.sessionId));
+    await firestore.runTransaction(async (transaction) => {
+      const [sessionSnapshot, userSnapshot] = await Promise.all([transaction.get(sessionRef), transaction.get(userRef)]);
+      if (!sessionSnapshot.exists) return;
+      const session = sessionSnapshot.data();
+      if (session.userId !== String(userId) || session.tokenHash !== hashToken(refreshToken)) return;
+      transaction.update(sessionRef, { revoked: true, revokedAt: Date.now() });
+      if (userSnapshot.exists) {
+        const activeIds = Array.isArray(userSnapshot.data()?.activeSessionIds) ? userSnapshot.data().activeSessionIds : [];
+        transaction.update(userRef, { activeSessionIds: activeIds.filter((id) => String(id) !== String(decoded.sessionId)) });
+      }
+    });
+    return true;
+  }
+
   if (!prisma || prisma.__stub) return true;
   const tokenHash = hashToken(refreshToken);
   await prisma.refreshToken.updateMany({ where: { userId, tokenHash }, data: { revoked: true } }).catch((err) => {
@@ -389,4 +564,4 @@ async function resetPassword(token, newPassword) {
   return true;
 }
 
-module.exports = { validateUserByEmail, login, refresh, logout, changePassword, forgotPassword, resetPassword, loginWithFirebaseIdToken, verifyFirebaseIdToken, linkFirebaseIdentity };
+module.exports = { validateUserByEmail, login, loginPlatformAdmin, refresh, logout, changePassword, forgotPassword, resetPassword, loginWithFirebaseIdToken, verifyFirebaseIdToken, linkFirebaseIdentity };

@@ -51,7 +51,7 @@ describe('Firebase login account-linking policy', () => {
 
   test('rejects a linked non-super-admin account for platform login', async () => {
     await expect(authService.loginWithFirebaseIdToken('firebase-token', 'globy-school', { platformAdminMode: true }))
-      .rejects.toThrow(/not authorized for platform administration/i);
+      .rejects.toThrow(/dedicated platform administrator login/i);
   });
 
   test('returns explicit tenant and school identifiers for linked accounts', async () => {
