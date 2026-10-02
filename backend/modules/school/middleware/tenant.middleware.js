@@ -59,6 +59,9 @@ async function tenantMiddleware(req, res, next) {
       if (!user.tenantId || user.tenantId !== resolvedSchoolId) {
         return res.status(403).json({ status: 'error', message: 'Tenant mismatch' });
       }
+      if (tenant.archivedAt) {
+        return res.status(403).json({ status: 'error', code: 'SCHOOL_ARCHIVED', message: 'This school has been archived.' });
+      }
       const resolved = schoolService.resolveSchoolLifecycleStatus(tenant);
       if (resolved.schoolStatus !== 'active') {
         return res.status(403).json({ status: 'error', message: 'This school is suspended or its trial has expired.' });
@@ -73,6 +76,9 @@ async function tenantMiddleware(req, res, next) {
       if (!school) return res.status(404).json({ status: 'error', message: 'School not found' });
       if (schoolIdMismatch(user, resolvedSchoolId)) {
         return res.status(403).json({ status: 'error', message: 'Tenant mismatch' });
+      }
+      if (school.archivedAt) {
+        return res.status(403).json({ status: 'error', code: 'SCHOOL_ARCHIVED', message: 'This school has been archived.' });
       }
       const resolved = schoolService.resolveSchoolLifecycleStatus(school);
       if (resolved.schoolStatus !== 'active') {
@@ -90,6 +96,9 @@ async function tenantMiddleware(req, res, next) {
       return res.status(403).json({ status: 'error', message: 'Tenant mismatch' });
     }
 
+    if (tenant.archivedAt) {
+      return res.status(403).json({ status: 'error', code: 'SCHOOL_ARCHIVED', message: 'This school has been archived.' });
+    }
     const resolvedTenant = schoolService.resolveSchoolLifecycleStatus(tenant);
     if (resolvedTenant.schoolStatus !== 'active') {
       return res.status(403).json({ status: 'error', message: 'This school is suspended or its trial has expired.' });

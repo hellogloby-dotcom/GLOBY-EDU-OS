@@ -8,7 +8,7 @@ const pricingFile = path.join(__dirname, '../../../data/pricing-plans.json');
 const originalPricing = fs.readFileSync(pricingFile, 'utf8');
 
 function createToken(roles, platformAdmin = false) {
-  return signAccessToken({ userId: 'pricing-test-user', tenantId: 'globy-school', roles, platformAdmin, passwordNeedsReset: false });
+  return signAccessToken({ userId: 'pricing-test-user', tenantId: platformAdmin ? null : 'globy-school', roles, platformAdmin, passwordNeedsReset: false });
 }
 
 describe('pricing API permissions', () => {

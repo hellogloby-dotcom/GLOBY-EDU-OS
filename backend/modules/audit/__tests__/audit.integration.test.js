@@ -67,7 +67,7 @@ describe('backend audit logging', () => {
   test('school lifecycle and teacher/student management actions are audited', async () => {
     const port = apiServer.address().port;
     const runId = crypto.randomUUID();
-    const adminToken = token({ userId: 'globy-school:ataetabenjamin@gmail.com', tenantId: 'globy-school', roles: ['super_admin'], platformAdmin: true });
+    const adminToken = token({ userId: 'ataetabenjamin@gmail.com', tenantId: null, roles: ['super_admin'], platformAdmin: true });
     const authorityToken = token({ userId: 'globy-school:authority@globyedu.test', tenantId: 'globy-school', roles: ['school_authority'] });
 
     const activate = await fetch(`http://127.0.0.1:${port}/api/v1/schools/globy-school/activate`, {
@@ -174,7 +174,7 @@ describe('backend audit logging', () => {
       const authorityDenied = await fetch(`http://127.0.0.1:${port}/api/v1/audit-logs`, { headers: { Authorization: `Bearer ${authorityToken}` } });
       expect(authorityDenied.status).toBe(403);
 
-    const adminToken = token({ userId: 'globy-school:ataetabenjamin@gmail.com', tenantId: 'globy-school', roles: ['super_admin'], platformAdmin: true });
+    const adminToken = token({ userId: 'ataetabenjamin@gmail.com', tenantId: null, roles: ['super_admin'], platformAdmin: true });
     const allowed = await fetch(`http://127.0.0.1:${port}/api/v1/audit-logs`, { headers: { Authorization: `Bearer ${adminToken}` } });
     const body = await allowed.json();
     expect(allowed.status).toBe(200);

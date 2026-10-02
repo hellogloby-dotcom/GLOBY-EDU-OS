@@ -50,9 +50,13 @@ async function queueRequest(method, url, body) {
 async function getJson(url, token) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, { method: 'GET', headers });
-  const data = await res.json().catch(() => null);
-  return handleUnauthorized({ ok: res.ok, status: res.status, data });
+  try {
+    const res = await fetch(url, { method: 'GET', headers });
+    const data = await res.json().catch(() => null);
+    return handleUnauthorized({ ok: res.ok, status: res.status, data });
+  } catch (error) {
+    return { ok: false, status: 0, data: { status: 'error', message: error.message || 'Network request failed.' } };
+  }
 }
 
 async function postJson(url, body, token) {
@@ -67,7 +71,8 @@ async function postJson(url, body, token) {
     const data = await res.json().catch(() => null);
     return handleUnauthorized({ ok: res.ok, status: res.status, data });
   } catch (error) {
-    return queueRequest('POST', url, body);
+    const queued = await queueRequest('POST', url, body);
+    return queued || { ok: false, status: 0, data: { status: 'error', message: error.message || 'Network request failed.' } };
   }
 }
 
@@ -83,7 +88,8 @@ async function putJson(url, body, token) {
     const data = await res.json().catch(() => null);
     return handleUnauthorized({ ok: res.ok, status: res.status, data });
   } catch (error) {
-    return queueRequest('PUT', url, body);
+    const queued = await queueRequest('PUT', url, body);
+    return queued || { ok: false, status: 0, data: { status: 'error', message: error.message || 'Network request failed.' } };
   }
 }
 
@@ -141,6 +147,26 @@ export async function fetchAdminSchoolList(token, search = '') {
   if (search) params.set('search', search);
   const query = params.toString();
   return getJson(`/api/v1/schools${query ? `?${query}` : ''}`, token);
+}
+
+export async function fetchArchivedAdminSchools(token, search = '', status = '') {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (status) params.set('status', status);
+  const query = params.toString();
+  return getJson(`/api/v1/schools/archived${query ? `?${query}` : ''}`, token);
+}
+
+export async function archiveAdminSchool(token, schoolId) {
+  return postJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/archive`, {}, token);
+}
+
+export async function restoreAdminSchool(token, schoolId) {
+  return postJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/restore`, {}, token);
+}
+
+export async function permanentlyDeleteArchivedSchool(token, schoolId) {
+  return deleteJson(`/api/v1/schools/${encodeURIComponent(schoolId)}/permanent`, token);
 }
 
 export async function createAdminSchool(token, payload) {

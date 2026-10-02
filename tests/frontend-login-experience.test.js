@@ -10,7 +10,8 @@ describe('login experience', () => {
     expect(loginSource).toContain('School Authority');
     expect(loginSource).toContain('Teacher');
     expect(loginSource).toContain('Student');
-    expect(loginSource).toContain('id="super-admin-portal"');
+    expect(loginSource).not.toContain('super-admin-portal');
+    expect(loginSource).not.toContain('Super Admin Login');
     expect(loginSource).toContain('School ID');
     expect(loginSource).toContain('Teacher ID');
     expect(loginSource).toContain('Student ID');
@@ -39,8 +40,8 @@ describe('login experience', () => {
     expect(mainSource).toContain("localStorage.removeItem('globyedu_accessToken');");
     expect(mainSource).toContain("localStorage.removeItem('globyedu_userRole');");
     expect(mainSource).toContain("profile.email = localStorage.getItem('globyedu_userEmail') || profile.email || '';");
-    expect(serviceWorkerSource).toContain("const CACHE_NAME = 'globyedu-pwa-v8';");
-    expect(serviceWorkerSource).toContain('/marketing/src/main.js?v=20260926-router-fix');
+    expect(serviceWorkerSource).toContain("const CACHE_NAME = 'globyedu-pwa-v9';");
+    expect(serviceWorkerSource).toContain('/marketing/src/main.js?v=20260926-teacher-student-fix');
     expect(serviceWorkerSource).not.toContain('20260923-pricing-fix');
     expect(serviceWorkerSource).toContain("if (/\\.(?:css|js)$/.test(requestUrl.pathname))");
   });

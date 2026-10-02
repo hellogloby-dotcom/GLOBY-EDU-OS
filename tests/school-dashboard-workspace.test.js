@@ -107,6 +107,21 @@ describe('school authority workspace', () => {
     expect(mainSource).not.toContain('payload.nationalId =');
   });
 
+  it('surfaces teacher student create/edit failures and uses CRUD action labels', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+    const apiSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'api', 'school.js'), 'utf8');
+
+    expect(mainSource).toContain('teacherData.schoolDataLoadError');
+    expect(mainSource).toContain('No classes are assigned to your teacher account.');
+    expect(mainSource).toContain('Student record was not found in your assigned classes.');
+    expect(mainSource).toContain("{ submitLabel: 'Create Student' }");
+    expect(mainSource).toContain("submitLabel: 'Save Changes'");
+    expect(mainSource).toContain('initializeTeacherWorkspaceHandlers(teacherData)');
+    expect(mainSource).toContain('Array.isArray(teacherData.classes)');
+    expect(mainSource).toContain('Array.isArray(teacherData.students)');
+    expect(apiSource).toContain("message: error.message || 'Network request failed.'");
+  });
+
   it('stores a workspace notification when a teacher creates an assignment', () => {
     const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
 

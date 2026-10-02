@@ -20,7 +20,7 @@ import { matchesAdminSchoolFilter } from './utils/school-management-filters.mjs'
 import { getAdminState } from './pages/admin-state.js';
 import { PlatformAdminPage } from './pages/platform-admin.js';
 import { SchoolDashboardPage, SchoolAuthorityDashboard, TeacherDashboard, StudentDashboard } from './pages/school-dashboard.js';
-import { fetchSchoolSummary, fetchSchoolDetails, updateSchoolDetails, createFeePayment, searchSchoolData, fetchSchoolEntities, createSchoolEntity, updateSchoolEntity, deleteSchoolEntity, fetchAdminDashboardSummary, fetchPlatformAuditLogs, fetchAdminSchoolList, createAdminSchool, updateAdminSchool, deleteAdminSchool, activateAdminSchool, fetchWorkspaceMessages, fetchMessageRecipients, createWorkspaceMessage, updateWorkspaceMessage, deleteWorkspaceMessage, fetchSupportTickets, createSupportTicket, updateSupportTicket, deleteSupportTicket, fetchAssignments, fetchLessons, createAssignment, createLesson, submitAssignment } from './api/school.js';
+import { fetchSchoolSummary, fetchSchoolDetails, updateSchoolDetails, createFeePayment, searchSchoolData, fetchSchoolEntities, createSchoolEntity, updateSchoolEntity, deleteSchoolEntity, fetchAdminDashboardSummary, fetchPlatformAuditLogs, fetchAdminSchoolList, fetchArchivedAdminSchools, createAdminSchool, updateAdminSchool, deleteAdminSchool, activateAdminSchool, fetchWorkspaceMessages, fetchMessageRecipients, createWorkspaceMessage, updateWorkspaceMessage, deleteWorkspaceMessage, fetchSupportTickets, createSupportTicket, updateSupportTicket, deleteSupportTicket, fetchAssignments, fetchLessons, createAssignment, createLesson, submitAssignment } from './api/school.js';
 import { studentLogin, teacherLogin, schoolAuthorityLogin, schoolLogin as apiLogin, firebaseLogin as apiFirebaseLogin, linkFirebaseIdentity, platformAdminLogin, forgotPassword as apiForgot, register as apiRegister, confirmFirebasePasswordReset, changePassword as apiChangePassword } from './api/auth.js';
 import { isFirebaseConfigured, firebaseSignInWithGoogle, firebaseLinkGoogle, firebaseSendPasswordResetEmail, firebaseApplyActionCode, firebaseConfirmPasswordReset as firebaseConfirmPasswordResetClient } from './firebase/firebase-client.js';
 import { buildChangedFieldsPayload, buildSchoolCollectionPayload, buildSchoolEntityPayload, buildAttendanceRoster, replaceAttendanceSession } from './utils/school-dashboard-actions.js?v=20260718';
@@ -1637,7 +1637,7 @@ async function renderAdminPage(section = 'overview', navigationId = routeGenerat
   if (token) {
     const [summaryResult, schoolListResult, pricingResult, auditResult] = await Promise.all([
       fetchAdminDashboardSummary(token, days),
-      fetchAdminSchoolList(token),
+      section === 'archived-schools' ? fetchArchivedAdminSchools(token) : fetchAdminSchoolList(token),
       fetchAdminPricing(),
       fetchPlatformAuditLogs(token, { limit: section === 'audit-logs' ? 100 : 4 }),
     ]);
@@ -1647,8 +1647,8 @@ async function renderAdminPage(section = 'overview', navigationId = routeGenerat
     }
     if (schoolListResult.ok && schoolListResult.data?.status === 'ok') {
       schools = schoolListResult.data.schools || [];
-      localStorage.setItem('globyedu_schoolDirectory', JSON.stringify(schools));
-    } else {
+      if (section !== 'archived-schools') localStorage.setItem('globyedu_schoolDirectory', JSON.stringify(schools));
+    } else if (section !== 'archived-schools') {
       localStorage.removeItem('globyedu_schoolDirectory');
     }
     if (pricingResult.ok && pricingResult.data?.status === 'ok') pricingPlans = pricingResult.data.pricingPlans || [];
@@ -1697,8 +1697,10 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
   const schoolId = localStorage.getItem('globyedu_schoolId') || '';
   
   if (navigationId !== routeGeneration) return;
+  let schoolDataLoadError = '';
 
   let dashboardContent = '';
+  let teacherData = null;
   let assignments = [];
   let lessons = [];
   let schoolData = { schoolName, schoolId, announcements: [], messages: [], students: [], teachers: [], classes: [] };
@@ -1725,17 +1727,24 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
         examRecords: Array.isArray(school.examRecords) ? school.examRecords : [],
         examResults: Array.isArray(school.examResults) ? school.examResults : [],
       };
+    } else {
+      schoolDataLoadError = result.data?.message || `Unable to load school data (HTTP ${result.status || 'network error'}).`;
     }
     const academicQuery = role === 'student'
       ? { studentId: localStorage.getItem('globyedu_studentId') || '' }
       : { teacherId: localStorage.getItem('globyedu_userEmail') || userName };
-    const [assignmentResult, lessonResult] = await Promise.all([fetchAssignments(token, schoolId, academicQuery), fetchLessons(token, schoolId, academicQuery)]);
-    assignments = assignmentResult.ok && assignmentResult.data?.status === 'ok' ? assignmentResult.data.items || [] : [];
-    lessons = lessonResult.ok && lessonResult.data?.status === 'ok' ? lessonResult.data.items || [] : [];
+    const needsAssignments = section === 'assignments' || role === 'student' && section === 'overview';
+    const needsLessons = section === 'lessons' || role === 'student' && section === 'overview';
+    const [assignmentResult, lessonResult] = await Promise.all([
+      needsAssignments ? fetchAssignments(token, schoolId, academicQuery) : Promise.resolve(null),
+      needsLessons ? fetchLessons(token, schoolId, academicQuery) : Promise.resolve(null),
+    ]);
+    assignments = assignmentResult?.ok && assignmentResult.data?.status === 'ok' ? assignmentResult.data.items || [] : [];
+    lessons = lessonResult?.ok && lessonResult.data?.status === 'ok' ? lessonResult.data.items || [] : [];
   }
   
   if (role === 'teacher') {
-    const teacherData = {
+    teacherData = {
       teacherName: userName,
       schoolName: schoolData.schoolName,
       classes: schoolData.classes,
@@ -1743,6 +1752,7 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
       messages: schoolData.messages,
       announcements: schoolData.announcements,
       teacherProfile: schoolData.teachers[0] || null,
+      schoolDataLoadError,
       examRecords: schoolData.examRecords || [],
       examResults: schoolData.examResults || [],
       assignments,
@@ -1786,7 +1796,7 @@ async function renderRolePage(role = 'super_admin', section = 'overview', naviga
 
   renderAuthenticatedAppShell(section, role, dashboardContent);
   attachSchoolHandlers();
-  if (role === 'teacher') initializeTeacherWorkspaceHandlers();
+  if (role === 'teacher') initializeTeacherWorkspaceHandlers(teacherData);
 }
 
 function normalizeSchoolSection(section = 'overview') {
@@ -2095,9 +2105,9 @@ async function handleQuickAction(action) {
 
     const formData = await showAdminForm('Register student', [
       { name: 'fullName', label: 'Student full name', placeholder: 'Student name', required: true },
-      { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*', capture: 'environment' },
+      { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*' },
       { name: 'className', label: 'Class', type: 'select', options: classOptions, required: true },
-    ]);
+    ], { submitLabel: 'Create Student' });
     if (!formData) return;
     const result = await createSchoolEntity(token, schoolId, 'students', buildSchoolEntityPayload('students', {
       fullName: formData.fullName || '',
@@ -2144,7 +2154,7 @@ async function handleQuickAction(action) {
       { name: 'assignedClasses', label: 'Assigned class', type: 'select', options: TEACHER_ASSIGNABLE_CLASS_OPTIONS, required: true },
       { name: 'assignedSubjects', label: 'Assigned subjects', placeholder: 'Comma-separated values' },
       { name: 'employeeNumber', label: 'Employee number', placeholder: 'e.g. EMP-5482' },
-      { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+      { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
     ]);
     if (!formData) return;
     const result = await createSchoolEntity(token, schoolId, 'teachers', buildSchoolEntityPayload('teachers', {
@@ -2225,7 +2235,7 @@ async function handleQuickAction(action) {
       { name: 'channel', label: 'Channel', placeholder: 'Email / SMS / WhatsApp / All' },
       { name: 'priority', label: 'Priority', placeholder: 'Normal / High / Urgent' },
       { name: 'attachments', label: 'Attachments', placeholder: 'Comma-separated URLs' },
-    ]);
+    ], { submitLabel: 'Publish Announcement' });
     if (!formData) return;
     const result = await appendSchoolCollectionData(token, schoolId, 'announcements', buildSchoolCollectionPayload('announcements', {
       title: formData.title || '',
@@ -2991,10 +3001,11 @@ function attachSchoolHandlers() {
             .map((entry) => ({ label: entry.name || entry.classId, value: entry.classId || entry.id || entry.name || '' }))
             .filter((entry) => entry.value)
           : [];
+        let createResponse = null;
         const formData = await showAdminForm('Create student', [
           { name: 'fullName', label: 'Full name', placeholder: 'First and last name', required: true },
           { name: 'email', label: 'Email', type: 'email', placeholder: 'student@example.com', required: true },
-          { name: 'profilePhoto', label: 'Profile photo or camera capture', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
           { name: 'gender', label: 'Gender', type: 'select', options: [
             { label: 'Male', value: 'male' },
             { label: 'Female', value: 'female' },
@@ -3010,7 +3021,7 @@ function attachSchoolHandlers() {
           { name: 'parentEmail', label: 'Guardian email', type: 'email' },
           { name: 'medical', label: 'Medical notes', type: 'textarea', placeholder: 'e.g. Allergies, conditions, etc.' },
           { name: 'documents', label: 'Documents', placeholder: 'Comma-separated URLs or file names' },
-        ]);
+        ], { submitLabel: 'Create Student' });
         if (!formData) return;
         
         const studentData = {
@@ -3084,7 +3095,7 @@ function attachSchoolHandlers() {
         const formData = await showAdminForm('Create teacher', [
           { name: 'fullName', label: 'Full name', placeholder: 'First and last name', required: true },
           { name: 'email', label: 'Email', type: 'email', placeholder: 'teacher@example.com', required: true },
-          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
           { name: 'gender', label: 'Gender', type: 'select', options: [
             { label: 'Male', value: 'male' },
             { label: 'Female', value: 'female' },
@@ -3107,7 +3118,7 @@ function attachSchoolHandlers() {
             { label: 'Contract', value: 'contract' },
             { label: 'Part-time', value: 'part-time' },
           ] },
-        ]);
+        ], { submitLabel: 'Create Teacher' });
         if (!formData) return;
 
         const normalizedAssignedClasses = formData.assignedClasses ? [formData.assignedClasses] : [];
@@ -3331,7 +3342,7 @@ function attachSchoolHandlers() {
           { name: 'title', label: 'Title', required: true },
           { name: 'detail', label: 'Message', type: 'textarea', required: true },
           { name: 'audience', label: 'Audience', type: 'select', options: [{ value: 'students', label: 'Students' }, { value: 'teachers', label: 'Teachers' }, { value: 'parents', label: 'Parents' }, { value: 'all', label: 'Everyone' }] },
-        ]);
+        ], { submitLabel: 'Publish Announcement' });
         if (!formData) return;
         const result = await appendSchoolCollectionData(token, schoolId, 'announcements', buildSchoolCollectionPayload('announcements', formData), 'Announcement created', 'A new school announcement was posted.');
         if (!result.ok || result.data?.status !== 'ok') {
@@ -3546,7 +3557,7 @@ function attachSchoolHandlers() {
           { name: 'fullName', label: 'Full name', value: studentRecord.fullName || studentRecord.name || '', required: true },
           { name: 'email', label: 'Email', value: studentRecord.email || '', type: 'email', required: true },
           { name: 'studentIdDisplay', label: 'Student ID (auto-generated)', value: studentRecord.studentId || studentRecord.admissionNumber || '', type: 'text', disabled: true, placeholder: 'Auto-generated - cannot be changed' },
-          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
           { name: 'gender', label: 'Gender', value: studentRecord.gender || '', type: 'select', options: [
             { label: 'Male', value: 'male' },
             { label: 'Female', value: 'female' },
@@ -3561,33 +3572,33 @@ function attachSchoolHandlers() {
           { name: 'parentPhone', label: 'Guardian phone', value: studentRecord.parentPhone || '', placeholder: '+233000000000' },
           { name: 'parentEmail', label: 'Guardian email', value: studentRecord.parentEmail || '', type: 'email' },
           { name: 'medical', label: 'Medical notes', type: 'textarea', value: studentRecord.medical || '', placeholder: 'Allergies, conditions, special care' },
-        ]);
-        if (!formData) return;
-        const payload = buildSchoolEntityPayload('students', {
-          fullName: formData.fullName || '',
-          email: formData.email || '',
-          phone: formData.phone || null,
-          gender: formData.gender || null,
-          dateOfBirth: formData.dateOfBirth || null,
-          gradeLevel: formData.gradeLevel || null,
-          className: formData.className || null,
-          section: formData.className || null,
-          house: formData.house || null,
-          studentId: studentRecord.studentId || null,
-          admissionNumber: studentRecord.admissionNumber || null,
-          guardian: formData.guardian || null,
-          parentPhone: formData.parentPhone || null,
-          parentEmail: formData.parentEmail || null,
-          medical: formData.medical || null,
-          profilePhoto: formData.profilePhoto || studentRecord.profilePhoto || null,
-          status: studentRecord.status || 'active',
+        ], {
+          submitLabel: 'Save Changes',
+          onSave: async (values) => {
+            const payload = buildSchoolEntityPayload('students', {
+              fullName: values.fullName || '',
+              email: values.email || '',
+              phone: values.phone || null,
+              gender: values.gender || null,
+              dateOfBirth: values.dateOfBirth || null,
+              gradeLevel: values.gradeLevel || null,
+              className: values.className || null,
+              section: values.className || null,
+              house: values.house || null,
+              studentId: studentRecord.studentId || null,
+              admissionNumber: studentRecord.admissionNumber || null,
+              guardian: values.guardian || null,
+              parentPhone: values.parentPhone || null,
+              parentEmail: values.parentEmail || null,
+              medical: values.medical || null,
+              profilePhoto: values.profilePhoto || studentRecord.profilePhoto || null,
+              status: studentRecord.status || 'active',
+            });
+            const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
+            return updateSchoolEntity(token, schoolId, 'students', studentIdentifier, payload);
+          },
         });
-        const studentIdentifier = studentRecord.id || studentRecord.studentId || studentRecord.email;
-        const result = await updateSchoolEntity(token, schoolId, 'students', studentIdentifier, payload);
-        if (!result.ok || result.data?.status !== 'ok') {
-          alert(result.data?.message || 'Unable to update student record.');
-          return;
-        }
+        if (!formData) return;
         alert('Student record updated successfully.');
         renderSchoolDashboardPage('students');
         return;
@@ -3708,7 +3719,7 @@ function attachSchoolHandlers() {
           ] },
           { name: 'dateOfBirth', label: 'Date of birth (optional)', type: 'date', value: teacherRecord.dateOfBirth || '' },
           { name: 'phone', label: 'Phone number', value: teacherRecord.phone || '' },
-          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
           { name: 'department', label: 'Department', value: teacherRecord.department || '' },
           { name: 'position', label: 'Position', type: 'select', value: teacherRecord.position || '', options: positionOptions, required: true },
           { name: 'qualification', label: 'Qualification', value: teacherRecord.qualification || '' },
@@ -3719,7 +3730,7 @@ function attachSchoolHandlers() {
             { label: 'No', value: 'false' },
             { label: 'Yes', value: 'true' },
           ] },
-        ]);
+        ], { submitLabel: 'Save Changes' });
         if (!formData) return;
         const normalizedAssignedClasses = formData.assignedClasses ? [formData.assignedClasses] : [];
         const normalizedAssignedSubjects = Array.isArray(formData.assignedSubjects) ? formData.assignedSubjects : formData.assignedSubjects ? [formData.assignedSubjects] : [];
@@ -4637,7 +4648,7 @@ function attachSchoolHandlers() {
           { name: 'fullName', label: 'Full name', value: entity.fullName || entity.name || '', placeholder: 'e.g. Jane Doe', required: true },
           { name: 'email', label: 'Email', value: entity.email || '', placeholder: 'teacher@example.com', type: 'email', required: true },
           { name: 'phone', label: 'Phone', value: entity.phone || '', placeholder: '+1234567890' },
-          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
           ...baseFields,
         ];
       case 'students':
@@ -4779,7 +4790,7 @@ function attachSchoolHandlers() {
   initializeStudentImportExport();
 }
 
-function initializeTeacherWorkspaceHandlers() {
+function initializeTeacherWorkspaceHandlers(teacherData = {}) {
   document.querySelectorAll('[data-teacher-workspace-action]').forEach((button) => {
     if (button.dataset.teacherWorkspaceBound === 'true') return;
     button.dataset.teacherWorkspaceBound = 'true';
@@ -4802,7 +4813,7 @@ function initializeTeacherWorkspaceHandlers() {
           { name: 'subject', label: 'Subject', required: true },
           { name: action === 'create-assignment' ? 'instructions' : 'content', label: action === 'create-assignment' ? 'Instructions' : 'Content', type: 'textarea', required: true },
           ...(action === 'create-assignment' ? [{ name: 'dueDate', label: 'Due date', type: 'datetime-local', required: true }] : []),
-        ]);
+        ], { submitLabel: action === 'create-assignment' ? 'Publish Assignment' : 'Publish Lesson' });
         if (!formData) return;
         const selectedClass = classOptions.find((entry) => entry.value === formData.classId);
         const payload = {
@@ -4837,19 +4848,26 @@ function initializeTeacherWorkspaceHandlers() {
       }
 
       if (action === 'create-student') {
-        const schoolResult = await fetchSchoolDetails(token, schoolId);
-        const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school || {} : {};
-        const classOptions = (Array.isArray(school.classes) ? school.classes : [])
+        if (teacherData.schoolDataLoadError) {
+          alert(teacherData.schoolDataLoadError);
+          return;
+        }
+        const classOptions = (Array.isArray(teacherData.classes) ? teacherData.classes : [])
           .filter((entry) => String(entry.status || 'active').toLowerCase() !== 'archived')
           .map((entry) => ({
             label: entry.name || entry.className || entry.classId || 'Class',
             value: entry.classId || entry.id || entry.name || '',
           }))
           .filter((entry) => entry.value);
+        if (classOptions.length === 0) {
+          alert('No classes are assigned to your teacher account. Ask your School Authority to assign you to a class before creating a student.');
+          return;
+        }
+        let createResponse = null;
         const formData = await showAdminForm('Create student', [
           { name: 'fullName', label: 'Full name', placeholder: 'First and last name', required: true },
           { name: 'email', label: 'Email', type: 'email', placeholder: 'student@example.com', required: true },
-          { name: 'profilePhoto', label: 'Profile photo or camera capture', type: 'file', accept: 'image/*', capture: 'environment' },
+          { name: 'profilePhoto', label: 'Profile photo', type: 'file', accept: 'image/*' },
           { name: 'gender', label: 'Gender', type: 'select', options: [
             { label: 'Male', value: 'male' },
             { label: 'Female', value: 'female' },
@@ -4865,20 +4883,21 @@ function initializeTeacherWorkspaceHandlers() {
           { name: 'parentEmail', label: 'Guardian email', type: 'email' },
           { name: 'medical', label: 'Medical notes', type: 'textarea', placeholder: 'e.g. Allergies, conditions, etc.' },
           { name: 'documents', label: 'Documents', placeholder: 'Comma-separated URLs or file names' },
-        ]);
+        ], {
+          submitLabel: 'Create Student',
+          onSave: async (values) => {
+            const selectedClass = classOptions.find((entry) => entry.value === values.classId);
+            createResponse = await createSchoolEntity(token, schoolId, 'students', buildSchoolEntityPayload('students', {
+              ...values,
+              className: selectedClass?.label || null,
+              status: 'active',
+            }));
+            return createResponse;
+          },
+        });
         if (!formData) return;
-        const selectedClass = classOptions.find((entry) => entry.value === formData.classId);
-        const studentData = {
-          ...formData,
-          className: selectedClass?.label || null,
-          status: 'active',
-        };
-        const result = await createSchoolEntity(token, schoolId, 'students', buildSchoolEntityPayload('students', studentData));
-        if (!result.ok || result.data?.status !== 'ok') {
-          alert(result.data?.message || 'Unable to create student.');
-          return;
-        }
-        alert('Student created successfully. The generated Student ID is available in the student list.');
+        const createdStudent = createResponse.data.entity || {};
+        alert(`Student created successfully. Student ID: ${createdStudent.studentId || 'Generated'}.`);
         renderRolePage('teacher', 'students');
         return;
       }
@@ -4993,25 +5012,28 @@ function initializeTeacherWorkspaceHandlers() {
       const studentId = button.getAttribute('data-teacher-student-edit');
       const schoolId = localStorage.getItem('globyedu_schoolId');
       const token = getAccessToken();
-      const schoolResult = await fetchSchoolDetails(token, schoolId);
-      const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school || {} : {};
-      const student = (school.students || []).find((entry) => String(entry.studentId || entry.id || entry.email) === studentId);
-      if (!student) return;
-      const formData = await showAdminForm('Edit student', [
-        { name: 'fullName', label: 'Student full name', value: student.fullName || '', required: true },
-        { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*', capture: 'environment' },
-        { name: 'className', label: 'Class', value: student.className || '', required: true },
-      ]);
-      if (!formData) return;
-      const result = await updateSchoolEntity(token, schoolId, 'students', studentId, {
-        fullName: formData.fullName,
-        profilePhoto: formData.profilePhoto || student.profilePhoto || null,
-        className: formData.className,
-      });
-      if (!result.ok || result.data?.status !== 'ok') {
-        alert(result.data?.message || 'Unable to edit student.');
+      if (teacherData.schoolDataLoadError) {
+        alert(teacherData.schoolDataLoadError);
         return;
       }
+      const student = (Array.isArray(teacherData.students) ? teacherData.students : []).find((entry) => String(entry.studentId || entry.id || entry.email) === studentId);
+      if (!student) {
+        alert('Student record was not found in your assigned classes. Refresh the list and try again.');
+        return;
+      }
+      const formData = await showAdminForm('Edit student', [
+        { name: 'fullName', label: 'Student full name', value: student.fullName || '', required: true },
+        { name: 'profilePhoto', label: 'Student photo', type: 'file', accept: 'image/*' },
+        { name: 'className', label: 'Assigned class', value: student.className || '', disabled: true },
+      ], {
+        submitLabel: 'Save Changes',
+        onSave: (values) => updateSchoolEntity(token, schoolId, 'students', studentId, {
+          fullName: values.fullName,
+          profilePhoto: values.profilePhoto || student.profilePhoto || null,
+          className: values.className,
+        }),
+      });
+      if (!formData) return;
       alert('Student updated successfully.');
       renderRolePage('teacher', 'students');
     });
@@ -5907,13 +5929,16 @@ function attachAdminHandlers() {
 }
 
 function attachAdminPageActions(section, summary, schools) {
-  if (section !== 'schools') return;
+  if (section !== 'schools' && section !== 'archived-schools') return;
 
-  const searchInput = document.getElementById('school-search-input');
-  const statusFilter = document.getElementById('school-status-filter');
-  const rows = Array.from(document.querySelectorAll('#school-directory-rows [data-school-id]'));
-  const emptyState = document.getElementById('school-directory-empty');
-  const count = document.getElementById('school-directory-count');
+  const isArchivedSection = section === 'archived-schools';
+  const searchInput = document.getElementById(isArchivedSection ? 'archived-school-search-input' : 'school-search-input');
+  const statusFilter = document.getElementById(isArchivedSection ? 'archived-school-status-filter' : 'school-status-filter');
+  const rows = Array.from(document.querySelectorAll(isArchivedSection
+    ? '#archived-school-directory-rows [data-archived-school-row]'
+    : '#school-directory-rows [data-school-id]'));
+  const emptyState = document.getElementById(isArchivedSection ? 'archived-school-directory-empty' : 'school-directory-empty');
+  const count = document.getElementById(isArchivedSection ? 'archived-school-directory-count' : 'school-directory-count');
   const applySchoolFilters = () => {
     const visibleRows = rows.filter((row) => {
       const matches = matchesAdminSchoolFilter(
@@ -6008,7 +6033,7 @@ function showAdminConfirmation(message) {
   });
 }
 
-function showAdminForm(title, fields) {
+function showAdminForm(title, fields, { submitLabel = 'Save Changes', onSave } = {}) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-3 sm:items-center sm:p-6';
@@ -6062,7 +6087,7 @@ function showAdminForm(title, fields) {
         return `
           <label class="block text-sm text-slate-700">
             ${field.label}
-            <input id="admin-form-${field.name}" type="${field.type || 'text'}" value="${field.value || ''}" placeholder="${field.placeholder || ''}" class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} />
+            <input id="admin-form-${field.name}" type="${field.type || 'text'}" value="${field.value || ''}" placeholder="${field.placeholder || ''}" class="mt-3 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" ${field.required ? 'required' : ''} ${field.disabled ? 'disabled' : ''} />
           </label>
         `;
       })
@@ -6078,8 +6103,9 @@ function showAdminForm(title, fields) {
           <div class="grid gap-4 sm:grid-cols-2">${formFields}</div>
           <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
             <button type="button" data-modal="cancel" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Cancel</button>
-            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Submit</button>
+            <button type="submit" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">${escapeHtml(submitLabel)}</button>
           </div>
+          <p data-form-error class="hidden text-sm text-rose-700" role="alert" aria-live="polite"></p>
         </form>
       </div>
     `;
@@ -6136,43 +6162,81 @@ function showAdminForm(title, fields) {
     document.addEventListener('keydown', handleKeydown);
 
     const form = overlay.querySelector('#admin-modal-form');
+    form.noValidate = true;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const errorMessage = form.querySelector('[data-form-error]');
+    let submitting = false;
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (settled) return;
-      const result = {};
-      for (const field of fields) {
-        const input = overlay.querySelector(`#admin-form-${field.name}`);
-        if (!input) {
-          result[field.name] = '';
-          continue;
+      if (settled || submitting) return;
+      const invalidInput = form.querySelector(':invalid');
+      if (invalidInput) {
+        if (errorMessage) {
+          errorMessage.textContent = invalidInput.validationMessage || 'Check the highlighted fields and try again.';
+          errorMessage.classList.remove('hidden');
         }
-
-        if (field.type === 'file') {
-          const file = input.files?.[0];
-          if (!file) {
-            result[field.name] = '';
-            continue;
-          }
-
-          const validationError = validateSchoolImage(file);
-          if (validationError) {
-            result[field.name] = '';
-            continue;
-          }
-          result[field.name] = await uploadTenantAsset(file, field.name);
-          continue;
-        }
-
-        if (field.type === 'select' && field.multiple) {
-          result[field.name] = Array.from(input.selectedOptions || []).map((option) => option.value).filter(Boolean);
-          continue;
-        }
-
-        result[field.name] = input.value.trim();
+        invalidInput.focus();
+        return;
       }
-      settled = true;
-      cleanup();
-      resolve(result);
+      submitting = true;
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Saving...';
+      }
+      if (errorMessage) {
+        errorMessage.textContent = '';
+        errorMessage.classList.add('hidden');
+      }
+      try {
+        const result = {};
+        for (const field of fields) {
+          const input = overlay.querySelector(`#admin-form-${field.name}`);
+          if (!input) {
+            result[field.name] = '';
+            continue;
+          }
+
+          if (field.type === 'file') {
+            const file = input.files?.[0];
+            if (!file) {
+              result[field.name] = '';
+              continue;
+            }
+
+            const validationError = validateSchoolImage(file);
+            if (validationError) throw new Error(validationError);
+            result[field.name] = await uploadTenantAsset(file, field.name);
+            continue;
+          }
+
+          if (field.type === 'select' && field.multiple) {
+            result[field.name] = Array.from(input.selectedOptions || []).map((option) => option.value).filter(Boolean);
+            continue;
+          }
+
+          result[field.name] = input.value.trim();
+        }
+        if (onSave) {
+          const saveResponse = await onSave(result);
+          if (!saveResponse?.ok || saveResponse.data?.status !== 'ok') {
+            throw new Error(saveResponse?.data?.message || 'Unable to save this record.');
+          }
+        }
+        settled = true;
+        cleanup();
+        resolve(result);
+      } catch (error) {
+        submitting = false;
+        console.error('Form submission failed:', error);
+        if (errorMessage) {
+          errorMessage.textContent = error.message || 'Unable to save this record.';
+          errorMessage.classList.remove('hidden');
+        }
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = submitLabel;
+        }
+      }
     });
   });
 }

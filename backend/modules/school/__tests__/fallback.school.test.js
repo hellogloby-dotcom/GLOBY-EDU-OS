@@ -180,6 +180,44 @@ test('teachers can create, update, and delete students within their own school',
   expect(deleted.studentId).toBe(created.studentId);
 });
 
+test('assigned teacher can create and update students using an assigned class grade', async () => {
+  fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
+  const school = ensureDemoSchool();
+  const actor = {
+    userId: `${school.schoolId}:T001`,
+    username: 'T001',
+    roles: ['teacher'],
+    schoolId: school.schoolId,
+    tenantId: school.schoolId,
+  };
+
+  const created = await schoolService.createEntity(school.schoolId, 'students', {
+    fullName: 'Teacher Created Student',
+    email: 'teacher-created@globy.test',
+    classId: 'JHS-3A',
+    className: 'JHS 3A',
+    profilePhoto: 'https://images.example.test/teacher-created.png',
+  }, actor);
+  const updated = await schoolService.updateEntity(school.schoolId, 'students', created.studentId, {
+    fullName: 'Teacher Updated Student',
+    className: 'JHS 3',
+  }, actor);
+  const reloaded = await schoolService.getSchoolBySchoolId(school.schoolId);
+  const persistedUser = reloaded.users.find((entry) => entry.email === 'teacher-created@globy.test');
+
+  expect(created.studentId).toMatch(/^STD-/);
+  expect(created.passwordHash).toBeUndefined();
+  expect(updated.fullName).toBe('Teacher Updated Student');
+  expect(updated.passwordHash).toBeUndefined();
+  expect(reloaded.students.find((entry) => entry.studentId === created.studentId)).toMatchObject({
+    fullName: 'Teacher Updated Student',
+    className: 'JHS 3A',
+    profilePhoto: 'https://images.example.test/teacher-created.png',
+  });
+  expect(persistedUser.passwordHash).toMatch(/^\$2[aby]\$/);
+  expect(persistedUser.passwordNeedsReset).toBe(true);
+});
+
 test('teacher access is denied to another school tenant', async () => {
   fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
 

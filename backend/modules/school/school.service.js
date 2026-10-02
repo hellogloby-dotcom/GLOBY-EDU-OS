@@ -20,6 +20,7 @@ const {
   searchSchoolEntities,
   createTeacherRecord,
   createStudentRecord,
+  createStudentIdentifier,
   ensureWorkspaceCollections,
   normalizeWorkspaceMessage,
   normalizeSupportTicket,
@@ -316,6 +317,143 @@ function resolveSchoolLifecycleStatus(school = {}) {
   return normalized;
 }
 
+function createSchoolArchiveError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function isArchivedSchool(school) {
+  return Boolean(school?.archivedAt);
+}
+
+function matchesSchoolSearch(school, search = '') {
+  const searchLower = String(search || '').trim().toLowerCase();
+  return !searchLower || [school.name, school.schoolName, school.schoolId, school.description]
+    .some((value) => String(value || '').toLowerCase().includes(searchLower));
+}
+
+async function getAllSchools() {
+  if (firebaseCore.isFirebaseCoreMode()) {
+    return (await firebaseCore.listTenants()).map(resolveSchoolLifecycleStatus);
+  }
+  if (prisma && prisma.__stub) return loadSchoolData().map(resolveSchoolLifecycleStatus);
+
+  try {
+    return (await prisma.tenant.findMany()).map(resolveSchoolLifecycleStatus);
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (!/(Can't reach database server|database server|ECONNREFUSED|timeout|connect)/i.test(message)) throw error;
+    return loadSchoolData().map(resolveSchoolLifecycleStatus);
+  }
+}
+
+async function archiveSchool(schoolId) {
+  const school = await getSchoolBySchoolId(schoolId);
+  if (!school) throw createSchoolArchiveError('SCHOOL_NOT_FOUND', 'School not found');
+  if (isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_ALREADY_ARCHIVED', 'School is already archived');
+
+  const archivedAt = new Date().toISOString();
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const updated = await firebaseCore.saveTenant(school.schoolId, { archivedAt });
+    return resolveSchoolLifecycleStatus({ ...school, ...updated });
+  }
+  if (prisma && prisma.__stub) {
+    const schools = loadSchoolData();
+    const index = schools.findIndex((entry) => entry.schoolId === school.schoolId || entry.id === school.id);
+    if (index < 0) throw createSchoolArchiveError('SCHOOL_NOT_FOUND', 'School not found');
+    schools[index] = { ...schools[index], archivedAt, updatedAt: new Date().toISOString() };
+    saveSchoolData(schools);
+    return schools[index];
+  }
+
+  return prisma.tenant.update({ where: { id: school.id }, data: { archivedAt: new Date(archivedAt) } });
+}
+
+async function restoreSchool(schoolId) {
+  const school = await getSchoolBySchoolId(schoolId);
+  if (!school) throw createSchoolArchiveError('SCHOOL_NOT_FOUND', 'School not found');
+  if (!isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_NOT_ARCHIVED', 'School is not archived');
+
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const updated = await firebaseCore.saveTenant(school.schoolId, { archivedAt: null });
+    return resolveSchoolLifecycleStatus({ ...school, ...updated });
+  }
+  if (prisma && prisma.__stub) {
+    const schools = loadSchoolData();
+    const index = schools.findIndex((entry) => entry.schoolId === school.schoolId || entry.id === school.id);
+    if (index < 0) throw createSchoolArchiveError('SCHOOL_NOT_FOUND', 'School not found');
+    schools[index] = { ...schools[index], archivedAt: null, updatedAt: new Date().toISOString() };
+    saveSchoolData(schools);
+    return schools[index];
+  }
+
+  return prisma.tenant.update({ where: { id: school.id }, data: { archivedAt: null } });
+}
+
+function getEmbeddedSchoolDependencyCount(school) {
+  const collections = [
+    'users', 'teachers', 'students', 'classes', 'departments', 'streams', 'subjects',
+    'academicYears', 'terms', 'semesters', 'enrollments', 'assignments', 'lessons',
+    'payments', 'subscriptions', 'refundRequests', 'messages', 'supportTickets',
+    'attendanceRecords', 'examResults', 'reports', 'announcements', 'events',
+  ];
+  return collections.reduce((count, key) => count + (Array.isArray(school[key]) ? school[key].length : 0), 0);
+}
+
+async function assertPrismaSchoolHasNoDependencies(tenantId) {
+  const checks = [
+    ['users', prisma.user.count({ where: { tenantId } })],
+    ['departments', prisma.department.count({ where: { tenantId } })],
+    ['streams', prisma.stream.count({ where: { tenantId } })],
+    ['subjects', prisma.subject.count({ where: { tenantId } })],
+    ['academic years', prisma.academicYear.count({ where: { tenantId } })],
+    ['terms', prisma.term.count({ where: { tenantId } })],
+    ['semesters', prisma.semester.count({ where: { tenantId } })],
+    ['classes', prisma.class.count({ where: { tenantId } })],
+    ['enrollments', prisma.enrollment.count({ where: { OR: [{ academicYear: { tenantId } }, { class: { tenantId } }] } })],
+  ];
+  const counts = await Promise.all(checks.map(async ([name, count]) => [name, await count]));
+  const populated = counts.filter(([, count]) => count > 0).map(([name]) => name);
+  if (populated.length) {
+    throw createSchoolArchiveError('SCHOOL_HAS_DEPENDENCIES', `Permanent deletion is blocked while related records exist: ${populated.join(', ')}.`);
+  }
+}
+
+async function permanentlyDeleteArchivedSchool(schoolId) {
+  const school = await getSchoolBySchoolId(schoolId);
+  if (!school) throw createSchoolArchiveError('SCHOOL_NOT_FOUND', 'School not found');
+  if (!isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_NOT_ARCHIVED', 'Only archived schools can be permanently deleted');
+
+  const auditDetails = { schoolId: school.schoolId, name: school.name || school.schoolName || null };
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const deleted = await firebaseCore.deleteArchivedTenantIfEmpty(school.schoolId);
+    return { ...auditDetails, ...deleted };
+  }
+  if (prisma && prisma.__stub) {
+    const schools = loadSchoolData();
+    const index = schools.findIndex((entry) => entry.schoolId === school.schoolId || entry.id === school.id);
+    if (index < 0) throw createSchoolArchiveError('SCHOOL_NOT_FOUND', 'School not found');
+    if (getEmbeddedSchoolDependencyCount(schools[index]) > 0) {
+      throw createSchoolArchiveError('SCHOOL_HAS_DEPENDENCIES', 'Permanent deletion is blocked while related school records exist.');
+    }
+    schools.splice(index, 1);
+    saveSchoolData(schools);
+    return auditDetails;
+  }
+
+  await assertPrismaSchoolHasNoDependencies(school.id);
+  try {
+    await prisma.tenant.delete({ where: { id: school.id } });
+  } catch (error) {
+    if (error?.code === 'P2003') {
+      throw createSchoolArchiveError('SCHOOL_HAS_DEPENDENCIES', 'Permanent deletion is blocked while related school records exist.');
+    }
+    throw error;
+  }
+  return auditDetails;
+}
+
 function buildDefaultSchoolSettings(data = {}) {
   return {
     attendanceEnabled: true,
@@ -424,6 +562,17 @@ function mapUserEntity(user, roleName) {
     profilePhoto: user.profilePhoto || metadata.profilePhoto || null,
     signature: metadata.signature || null,
     teacherId: metadata.teacherId || null,
+    studentId: metadata.studentId || null,
+    admissionNumber: metadata.admissionNumber || null,
+    className: metadata.className || null,
+    gradeLevel: metadata.gradeLevel || null,
+    guardian: metadata.guardian || null,
+    parentPhone: metadata.parentPhone || null,
+    parentEmail: metadata.parentEmail || null,
+    medical: metadata.medical || null,
+    house: metadata.house || null,
+    transportMode: metadata.transportMode || null,
+    enrollmentDate: metadata.enrollmentDate || null,
     employeeNumber: metadata.employeeNumber || null,
     employmentDate: metadata.employmentDate || null,
     employmentType: metadata.employmentType || null,
@@ -1267,6 +1416,17 @@ async function deleteSchool(id) {
 }
 
 async function activateSchool(id) {
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const school = await firebaseCore.getTenant(id);
+    if (!school) throw new Error('School not found');
+    if (isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_ARCHIVED', 'Archived schools must be restored before activation.');
+    return firebaseCore.saveTenant(id, {
+      status: 'active',
+      schoolStatus: 'active',
+      subscriptionStatus: ['expired', 'suspended'].includes(String(school.subscriptionStatus || '').toLowerCase()) ? 'trial' : school.subscriptionStatus || 'active',
+    });
+  }
+
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const index = schools.findIndex((entry) => entry.id === id || entry.schoolId === id);
@@ -1274,6 +1434,7 @@ async function activateSchool(id) {
       throw new Error('School not found');
     }
     const school = schools[index];
+    if (isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_ARCHIVED', 'Archived schools must be restored before activation.');
     const updated = {
       ...school,
       schoolStatus: 'active',
@@ -1290,6 +1451,9 @@ async function activateSchool(id) {
     return updated;
   }
 
+  const school = await prisma.tenant.findUnique({ where: { id } });
+  if (!school) throw new Error('School not found');
+  if (isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_ARCHIVED', 'Archived schools must be restored before activation.');
   const updated = await prisma.tenant.update({ where: { id }, data: { status: 'active', subscriptionStatus: 'active' } }).catch((err) => {
     throw new Error('Failed to activate school: ' + (err.message || err));
   });
@@ -1297,51 +1461,17 @@ async function activateSchool(id) {
 }
 
 async function listSchools(search) {
-  const fallbackSchools = () => {
-    const schools = loadSchoolData().map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
-    if (!search) return schools;
-    const searchLower = String(search || '').toLowerCase();
-    return schools.filter(
-      (school) =>
-        (school.name || '').toLowerCase().includes(searchLower) ||
-        (school.schoolId || '').toLowerCase().includes(searchLower) ||
-        (school.description || '').toLowerCase().includes(searchLower)
-    );
-  };
+  return (await getAllSchools())
+    .filter((school) => !isArchivedSchool(school) && matchesSchoolSearch(school, search))
+    .map(sanitizeSchoolResponse);
+}
 
-  if (firebaseCore.isFirebaseCoreMode()) {
-    const tenants = (await firebaseCore.listTenants()).map((school) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(school)));
-    if (!search) return tenants;
-    const searchLower = String(search || '').toLowerCase();
-    return tenants.filter((school) =>
-      (school.name || '').toLowerCase().includes(searchLower) ||
-      (school.schoolId || '').toLowerCase().includes(searchLower) ||
-      (school.description || '').toLowerCase().includes(searchLower)
-    );
-  }
-
-  if (prisma && prisma.__stub) {
-    return fallbackSchools();
-  }
-
-  try {
-    const tenants = await prisma.tenant.findMany();
-    const mapped = tenants.map((tenant) => sanitizeSchoolResponse(resolveSchoolLifecycleStatus(tenant)));
-    if (!search) return mapped;
-    const searchLower = String(search || '').toLowerCase();
-    return mapped.filter(
-      (tenant) =>
-        (tenant.name || '').toLowerCase().includes(searchLower) ||
-        (tenant.schoolId || '').toLowerCase().includes(searchLower) ||
-        (tenant.description || '').toLowerCase().includes(searchLower)
-    );
-  } catch (error) {
-    const message = String(error?.message || '');
-    if (!/(Can't reach database server|database server|ECONNREFUSED|timeout|connect)/i.test(message)) {
-      throw error;
-    }
-    return fallbackSchools();
-  }
+async function listArchivedSchools(search = '', status = '') {
+  const selectedStatus = String(status || '').trim().toLowerCase();
+  return (await getAllSchools())
+    .filter((school) => isArchivedSchool(school) && matchesSchoolSearch(school, search))
+    .filter((school) => !selectedStatus || String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase() === selectedStatus)
+    .map(sanitizeSchoolResponse);
 }
 
 function countSchoolUsers(school, role) {
@@ -1417,11 +1547,11 @@ function buildPlatformSummaryFromSchools(schools, analyticsDays) {
 async function getPlatformSummary({ days = 365 } = {}) {
   const analyticsDays = [7, 30, 90, 365].includes(Number(days)) ? Number(days) : 365;
   const fallbackSummary = () => {
-    return buildPlatformSummaryFromSchools(loadSchoolData(), analyticsDays);
+    return buildPlatformSummaryFromSchools(loadSchoolData().filter((school) => !isArchivedSchool(school)), analyticsDays);
   };
 
   if (firebaseCore.isFirebaseCoreMode()) {
-    const tenants = await firebaseCore.listTenants();
+    const tenants = (await firebaseCore.listTenants()).filter((school) => !isArchivedSchool(school));
     const schools = await Promise.all(tenants.map((tenant) => firebaseCore.getSchoolAggregate(tenant.schoolId || tenant.id)));
     return buildPlatformSummaryFromSchools(schools.filter(Boolean), analyticsDays);
   }
@@ -1431,7 +1561,9 @@ async function getPlatformSummary({ days = 365 } = {}) {
   }
 
   try {
-    const tenants = (await prisma.tenant.findMany({ include: { users: true } })).map((tenant) => resolveSchoolLifecycleStatus(tenant));
+    const tenants = (await prisma.tenant.findMany({ include: { users: true } }))
+      .filter((tenant) => !isArchivedSchool(tenant))
+      .map((tenant) => resolveSchoolLifecycleStatus(tenant));
     const totalSchools = tenants.length;
     const activeSchools = tenants.filter((tenant) => ['active', 'paid'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
     const trialSchools = tenants.filter(
@@ -1904,6 +2036,17 @@ async function createRoleLinkedUser(tenantId, roleName, payload) {
       signature: roleName === 'teacher' ? null : payload.signature || (payload.metadata && payload.metadata.signature) || null,
       teacherId: payload.teacherId || (payload.metadata && payload.metadata.teacherId) || generateTeacherId(),
       studentId: payload.studentId || (payload.metadata && payload.metadata.studentId) || null,
+      admissionNumber: payload.admissionNumber || (payload.metadata && payload.metadata.admissionNumber) || null,
+      classId: payload.classId || (payload.metadata && payload.metadata.classId) || null,
+      className: payload.className || (payload.metadata && payload.metadata.className) || null,
+      gradeLevel: payload.gradeLevel || payload.grade || (payload.metadata && payload.metadata.gradeLevel) || null,
+      guardian: payload.guardian || (payload.metadata && payload.metadata.guardian) || null,
+      parentPhone: payload.parentPhone || (payload.metadata && payload.metadata.parentPhone) || null,
+      parentEmail: payload.parentEmail || (payload.metadata && payload.metadata.parentEmail) || null,
+      medical: payload.medical || (payload.metadata && payload.metadata.medical) || null,
+      house: payload.house || (payload.metadata && payload.metadata.house) || null,
+      transportMode: payload.transportMode || (payload.metadata && payload.metadata.transportMode) || null,
+      enrollmentDate: payload.enrollmentDate || (payload.metadata && payload.metadata.enrollmentDate) || null,
       employeeNumber: payload.employeeNumber || (payload.metadata && payload.metadata.employeeNumber) || `EMP-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
       employmentDate: payload.employmentDate || (payload.metadata && payload.metadata.employmentDate) || null,
       employmentType: payload.employmentType || (payload.metadata && payload.metadata.employmentType) || null,
@@ -2115,7 +2258,18 @@ async function createEntity(schoolId, entityType, payload, actor = {}) {
   }
   if (field === 'students') {
     await enforceStudentLimit(tenant, schoolId);
-    return createRoleLinkedUser(tenant.id, 'student', payload);
+    const existingStudents = await fetchUsersByRole(tenant.id, 'student');
+    const normalizedEmail = String(payload.email || '').trim().toLowerCase();
+    if (existingStudents.some((user) => String(user.email || '').trim().toLowerCase() === normalizedEmail && normalizedEmail)) {
+      throw new Error('Student with that email already exists');
+    }
+    const studentId = payload.studentId || createStudentIdentifier({
+      students: existingStudents.map((user) => ({ studentId: user.metadata?.studentId })),
+    }, payload.fullName || payload.name || 'student');
+    if (existingStudents.some((user) => String(user.metadata?.studentId || '').trim().toLowerCase() === String(studentId).trim().toLowerCase())) {
+      throw new Error('Student with that ID already exists');
+    }
+    return createRoleLinkedUser(tenant.id, 'student', { ...payload, studentId });
   }
 
   const model = getEntityModel(entityType);
@@ -2377,16 +2531,24 @@ async function updateEntity(schoolId, entityType, entityId, updates, actor = {})
     }
 
     if (field === 'students') {
-      if (updatesWithEmail.studentId) metadata.studentId = updatesWithEmail.studentId;
-      if (updatesWithEmail.admissionNumber) metadata.admissionNumber = updatesWithEmail.admissionNumber;
-      if (updatesWithEmail.className) metadata.className = updatesWithEmail.className;
+      if (updatesWithEmail.studentId !== undefined) metadata.studentId = updatesWithEmail.studentId;
+      if (updatesWithEmail.admissionNumber !== undefined) metadata.admissionNumber = updatesWithEmail.admissionNumber;
+      if (updatesWithEmail.className !== undefined) metadata.className = updatesWithEmail.className;
       if (updatesWithEmail.classId !== undefined) metadata.classId = updatesWithEmail.classId;
-      if (updatesWithEmail.gradeLevel) metadata.gradeLevel = updatesWithEmail.gradeLevel;
-      if (updatesWithEmail.currentAcademicYear) metadata.currentAcademicYear = updatesWithEmail.currentAcademicYear;
-      if (updatesWithEmail.currentTerm) metadata.currentTerm = updatesWithEmail.currentTerm;
-      if (updatesWithEmail.guardian) metadata.guardian = updatesWithEmail.guardian;
-      if (updatesWithEmail.medical) metadata.medical = updatesWithEmail.medical;
-      if (updatesWithEmail.documents) metadata.documents = normalizeArray(updatesWithEmail.documents);
+      if (updatesWithEmail.gradeLevel !== undefined) metadata.gradeLevel = updatesWithEmail.gradeLevel;
+      if (updatesWithEmail.currentAcademicYear !== undefined) metadata.currentAcademicYear = updatesWithEmail.currentAcademicYear;
+      if (updatesWithEmail.currentTerm !== undefined) metadata.currentTerm = updatesWithEmail.currentTerm;
+      if (updatesWithEmail.guardian !== undefined) metadata.guardian = updatesWithEmail.guardian;
+      if (updatesWithEmail.parentPhone !== undefined) metadata.parentPhone = updatesWithEmail.parentPhone;
+      if (updatesWithEmail.parentEmail !== undefined) metadata.parentEmail = updatesWithEmail.parentEmail;
+      if (updatesWithEmail.medical !== undefined) metadata.medical = updatesWithEmail.medical;
+      if (updatesWithEmail.house !== undefined) metadata.house = updatesWithEmail.house;
+      if (updatesWithEmail.transportMode !== undefined) metadata.transportMode = updatesWithEmail.transportMode;
+      if (updatesWithEmail.enrollmentDate !== undefined) metadata.enrollmentDate = updatesWithEmail.enrollmentDate;
+      if (updatesWithEmail.gender !== undefined) metadata.gender = updatesWithEmail.gender;
+      if (updatesWithEmail.dateOfBirth !== undefined) metadata.dateOfBirth = updatesWithEmail.dateOfBirth;
+      if (updatesWithEmail.address !== undefined) metadata.address = updatesWithEmail.address;
+      if (updatesWithEmail.documents !== undefined) metadata.documents = normalizeArray(updatesWithEmail.documents);
     }
 
     if (field === 'teachers') {
@@ -3227,7 +3389,11 @@ module.exports = {
   updateSchoolCredentials,
   deleteSchool,
   activateSchool,
+  archiveSchool,
+  restoreSchool,
+  permanentlyDeleteArchivedSchool,
   listSchools,
+  listArchivedSchools,
   getPlatformSummary,
   getDashboardSummary,
   createWorkspaceMessage,

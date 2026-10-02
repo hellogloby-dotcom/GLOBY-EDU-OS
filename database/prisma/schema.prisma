@@ -32,6 +32,7 @@ model Tenant {
   timezone         String?
   subscriptionPlan String?  // e.g. monthly, termly, yearly
   subscriptionStatus String @default("trial") // active | suspended | expired | trial
+  archivedAt       DateTime?
   trialEndsAt      DateTime?
   expiresAt        DateTime?
   branding         Json?    // store logo urls, colors, theme preferences

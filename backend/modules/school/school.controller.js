@@ -19,6 +19,12 @@ async function auditSchoolAction(req, event) {
   });
 }
 
+function schoolArchiveErrorStatus(error) {
+  if (error?.code === 'SCHOOL_NOT_FOUND') return 404;
+  if (['SCHOOL_ALREADY_ARCHIVED', 'SCHOOL_NOT_ARCHIVED', 'SCHOOL_HAS_DEPENDENCIES', 'SCHOOL_ARCHIVED'].includes(error?.code)) return 409;
+  return 500;
+}
+
 // POST /api/v1/schools - Super Admin only
 router.post('/', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
   try {
@@ -51,6 +57,67 @@ router.get('/summary', authMiddleware, roleGuard(['super_admin']), async (req, r
     return res.json({ status: 'ok', summary });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// GET /api/v1/schools/archived - Super Admin only
+router.get('/archived', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
+  try {
+    const schools = await schoolService.listArchivedSchools(req.query.search || '', req.query.status || '');
+    return res.json({ status: 'ok', schools });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// POST /api/v1/schools/:schoolId/archive - Super Admin only
+router.post('/:schoolId/archive', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
+  try {
+    const school = await schoolService.archiveSchool(req.params.schoolId);
+    await auditSchoolAction(req, {
+      action: 'school.archived',
+      resourceType: 'school',
+      resourceId: school.schoolId,
+      tenantId: school.schoolId,
+      metadata: { schoolName: school.name || school.schoolName || null, archivedAt: school.archivedAt },
+    });
+    return res.json({ status: 'ok', school: schoolService.sanitizeSchoolResponse(school) });
+  } catch (err) {
+    return res.status(schoolArchiveErrorStatus(err)).json({ status: 'error', code: err.code, message: err.message });
+  }
+});
+
+// POST /api/v1/schools/:schoolId/restore - Super Admin only
+router.post('/:schoolId/restore', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
+  try {
+    const school = await schoolService.restoreSchool(req.params.schoolId);
+    await auditSchoolAction(req, {
+      action: 'school.restored',
+      resourceType: 'school',
+      resourceId: school.schoolId,
+      tenantId: school.schoolId,
+      metadata: { schoolName: school.name || school.schoolName || null },
+    });
+    return res.json({ status: 'ok', school: schoolService.sanitizeSchoolResponse(school) });
+  } catch (err) {
+    return res.status(schoolArchiveErrorStatus(err)).json({ status: 'error', code: err.code, message: err.message });
+  }
+});
+
+// DELETE /api/v1/schools/:schoolId/permanent - archived schools only, Super Admin only
+router.delete('/:schoolId/permanent', authMiddleware, roleGuard(['super_admin']), async (req, res) => {
+  try {
+    const deleted = await schoolService.permanentlyDeleteArchivedSchool(req.params.schoolId);
+    await auditSchoolAction(req, {
+      action: 'school.permanently_deleted',
+      resourceType: 'school',
+      resourceId: deleted.schoolId,
+      tenantId: deleted.schoolId,
+      metadata: { schoolName: deleted.name || null },
+    });
+    return res.json({ status: 'ok', school: deleted });
+  } catch (err) {
+    return res.status(schoolArchiveErrorStatus(err)).json({ status: 'error', code: err.code, message: err.message });
   }
 });
 

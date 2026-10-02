@@ -56,9 +56,10 @@ describe('Super Admin school directory filters', () => {
     const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
     const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
 
-    expect(mainSource).toContain("document.querySelectorAll('#school-directory-rows [data-school-id]')");
+    expect(mainSource).toContain('document.querySelectorAll(isArchivedSection');
+    expect(mainSource).toContain("'#school-directory-rows [data-school-id]'");
     expect(mainSource).toContain('matchesAdminSchoolFilter(');
-    expect(mainSource).toContain("document.getElementById('school-directory-empty')");
+    expect(mainSource).toContain("'archived-school-directory-empty' : 'school-directory-empty'");
     expect(adminSource).toContain('getAdminSchoolStatuses(schools)');
     expect(adminSource).toContain('data-school-status="${status}"');
   });
@@ -67,7 +68,7 @@ describe('Super Admin school directory filters', () => {
     const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
     const viewHandler = adminSource.match(/if \(action === 'view'\) \{([\s\S]*?)\n      \} else if \(action === 'edit'\)/)?.[1] || '';
 
-    expect(adminSource).toContain('fetchSchoolDetails } from \'../api/school.js\'');
+    expect(adminSource).toMatch(/import \{[^}]*fetchSchoolDetails[^}]*\} from '\.\.\/api\/school\.js'/);
     expect(viewHandler).toContain('const schoolResult = await fetchSchoolDetails(token, schoolId);');
     expect(viewHandler).toContain('schoolResult.data?.status === \'ok\' ? schoolResult.data.school : null');
     expect(viewHandler).toContain("document.getElementById('school-details-content').innerHTML = renderSchoolDetailsModal(school);");
@@ -104,5 +105,64 @@ describe('Super Admin school directory filters', () => {
     expect(editHandler).toContain("method: 'PUT'");
     expect(schoolActions.match(/addEventListener\('click', closeModal\)/g).length).toBeGreaterThanOrEqual(2);
     expect(schoolActions).toContain("if (document.getElementById('school-modal-cancel'))");
+  });
+
+  it('uses the existing Super Admin archive endpoints through the school API service', () => {
+    const apiSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'api', 'school.js'), 'utf8');
+
+    expect(apiSource).toContain("export async function fetchArchivedAdminSchools(token, search = '', status = '')");
+    expect(apiSource).toContain("/api/v1/schools/archived${query ? `?${query}` : ''}");
+    expect(apiSource).toContain("/api/v1/schools/${encodeURIComponent(schoolId)}/archive");
+    expect(apiSource).toContain("/api/v1/schools/${encodeURIComponent(schoolId)}/restore");
+    expect(apiSource).toContain("/api/v1/schools/${encodeURIComponent(schoolId)}/permanent");
+  });
+
+  it('loads archived records only in the archived section and filters its own directory', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
+
+    expect(mainSource).toContain("section === 'archived-schools' ? fetchArchivedAdminSchools(token) : fetchAdminSchoolList(token)");
+    expect(mainSource).toContain("'#archived-school-directory-rows [data-archived-school-row]'");
+    expect(mainSource).toContain("'archived-school-search-input'");
+    expect(adminSource).toContain('if (normalizedSection === \'archived-schools\') return renderArchivedSchools(schools);');
+    expect(adminSource).toContain('data-admin-nav="archived-schools"');
+  });
+
+  it('keeps permanent delete off normal rows and exposes archive plus archived school details', () => {
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
+    const normalRow = adminSource.match(/function renderSchoolRow\(school\) \{([\s\S]*?)\n\}/)?.[1] || '';
+    const archivedView = adminSource.match(/function renderArchivedSchools\(schools = \[\]\) \{([\s\S]*?)\n\}/)?.[1] || '';
+    const detailRenderer = adminSource.match(/function renderSchoolDetailsModal\(school, isArchived = false\) \{([\s\S]*?)\n\}/)?.[1] || '';
+    const archivedHandlers = adminSource.match(/function attachArchivedSchoolHandlers\(token\) \{([\s\S]*?)\n\}/)?.[1] || '';
+
+    expect(normalRow).toContain('data-action="archive"');
+    expect(normalRow).not.toContain('data-action="delete"');
+    expect(archivedView).toContain('data-archived-school-action="view"');
+    expect(archivedView).toContain('data-archived-school-action="restore"');
+    expect(archivedView).toContain('data-archived-school-action="permanent-delete"');
+    expect(archivedView).toContain('Archived Date');
+    expect(detailRenderer).toContain('school.archivedAt');
+    expect(archivedHandlers).toContain('fetchSchoolDetails(token, schoolId)');
+    expect(archivedHandlers).toContain('renderSchoolDetailsModal(school, true)');
+  });
+
+  it('requires confirmation for archive and restore and typed irreversible-delete confirmation in archive view', () => {
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
+    const archiveStart = adminSource.indexOf("} else if (action === 'archive') {");
+    const suspendStart = adminSource.indexOf("} else if (action === 'suspend')", archiveStart);
+    const archiveHandler = adminSource.slice(archiveStart, suspendStart);
+    const archivedHandler = adminSource.match(/function attachArchivedSchoolHandlers\(token\) \{([\s\S]*?)\n\}/)?.[1] || '';
+    const restoreStart = archivedHandler.indexOf("if (action === 'restore') {");
+    const deleteStart = archivedHandler.indexOf("if (action === 'permanent-delete') {");
+    const restoreHandler = archivedHandler.slice(restoreStart, deleteStart);
+    const deleteHandler = archivedHandler.slice(deleteStart);
+
+    expect(archiveHandler.indexOf('confirm(')).toBeGreaterThanOrEqual(0);
+    expect(archiveHandler.indexOf('confirm(')).toBeLessThan(archiveHandler.indexOf('archiveAdminSchool('));
+    expect(restoreHandler.indexOf('confirm(')).toBeGreaterThanOrEqual(0);
+    expect(restoreHandler.indexOf('confirm(')).toBeLessThan(restoreHandler.indexOf('restoreAdminSchool('));
+    expect(deleteHandler).toContain('This cannot be undone');
+    expect(deleteHandler).toContain('if (confirmation !== `DELETE ${schoolId}`) return;');
+    expect(deleteHandler.indexOf('window.prompt(')).toBeLessThan(deleteHandler.indexOf('permanentlyDeleteArchivedSchool('));
   });
 });

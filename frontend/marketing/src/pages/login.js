@@ -17,10 +17,7 @@ export function LoginPage() {
           ${renderRoleCard('student', 'Student', 'Open learning activities, grades, and assignments.')}
         </div>
 
-        <div class="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
-          <a href="#/platform-admin" id="super-admin-portal" class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100">Super Admin Login</a>
-          <span class="text-sm text-slate-500">Open the secure Super Admin authentication page.</span>
-        </div>
+        <p class="mt-5 text-center text-sm text-slate-600">Super Admin? <a href="#/platform-admin" class="font-semibold text-sky-700 underline underline-offset-4 hover:text-sky-800">Sign in here</a></p>
 
         <div id="role-login-panel" class="mt-8 rounded-[2rem] border border-slate-200 bg-slate-50 p-6 shadow-sm">
           <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

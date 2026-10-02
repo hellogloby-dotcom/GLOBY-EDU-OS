@@ -49,6 +49,57 @@ async function saveTenant(schoolId, data, merge = true) {
   return { id, ...payload };
 }
 
+async function deleteArchivedTenantIfEmpty(schoolId) {
+  const id = assertSchoolId(schoolId);
+  const firestore = firebaseData.getFirestore();
+  const tenantDocument = tenantRef(id);
+  const schoolScopedCollections = [
+    CORE_COLLECTIONS.users,
+    CORE_COLLECTIONS.teachers,
+    CORE_COLLECTIONS.students,
+    CORE_COLLECTIONS.classes,
+    CORE_COLLECTIONS.enrollments,
+    CORE_COLLECTIONS.payments,
+    CORE_COLLECTIONS.subscriptions,
+    CORE_COLLECTIONS.refundRequests,
+  ];
+
+  return firestore.runTransaction(async (transaction) => {
+    const tenantSnapshot = await transaction.get(tenantDocument);
+    if (!tenantSnapshot.exists) {
+      const error = new Error('School not found');
+      error.code = 'SCHOOL_NOT_FOUND';
+      throw error;
+    }
+
+    const tenant = tenantSnapshot.data() || {};
+    if (!tenant.archivedAt) {
+      const error = new Error('Only archived schools can be permanently deleted');
+      error.code = 'SCHOOL_NOT_ARCHIVED';
+      throw error;
+    }
+
+    const tenantSubcollections = await tenantDocument.listCollections();
+    if (tenantSubcollections.length) {
+      const error = new Error(`Permanent deletion is blocked while tenant subcollections exist: ${tenantSubcollections.map((collection) => collection.id).join(', ')}.`);
+      error.code = 'SCHOOL_HAS_DEPENDENCIES';
+      throw error;
+    }
+
+    const snapshots = await Promise.all(schoolScopedCollections.map((name) =>
+      transaction.get(collectionRef(name).where('schoolId', '==', id).limit(1))
+    ));
+    if (snapshots.some((snapshot) => !snapshot.empty)) {
+      const error = new Error('Permanent deletion is blocked while related school records exist.');
+      error.code = 'SCHOOL_HAS_DEPENDENCIES';
+      throw error;
+    }
+
+    transaction.delete(tenantDocument);
+    return { schoolId: id, name: tenant.name || null, archivedAt: tenant.archivedAt };
+  });
+}
+
 async function listBySchool(collectionName, schoolId) {
   const snapshot = await collectionRef(collectionName).where('schoolId', '==', assertSchoolId(schoolId)).get();
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -97,6 +148,7 @@ module.exports = {
   getTenant,
   listTenants,
   saveTenant,
+  deleteArchivedTenantIfEmpty,
   listBySchool,
   getById,
   saveById,

@@ -4,12 +4,12 @@
 // separate from the landing site and to preserve the existing marketing architecture.
 
 import { appendAuditLog, encryptSecret, getAdminState, maskAuditValue, recordNotification, saveAdminState, setSessionActivity } from './admin-state.js';
-import { activateAdminSchool, deleteAdminSchool, fetchMessageRecipients, createWorkspaceMessage, fetchSchoolDetails } from '../api/school.js';
+import { activateAdminSchool, archiveAdminSchool, deleteAdminSchool, fetchArchivedAdminSchools, fetchMessageRecipients, createWorkspaceMessage, fetchSchoolDetails, permanentlyDeleteArchivedSchool, restoreAdminSchool } from '../api/school.js';
 import { updatePricingPlan } from '../api/pricing.js';
 import { getAdminSchoolStatus, getAdminSchoolStatuses } from '../utils/school-management-filters.mjs';
 
 const WEBSITE_CMS_STORAGE_KEY = 'globyedu_websiteCms';
-const SUPER_ADMIN_ONLY_SECTIONS = new Set(['pricing', 'payments', 'features', 'website-cms', 'ai-settings', 'analytics', 'reports', 'messages', 'announcements', 'support', 'plugins', 'audit-logs', 'system-settings', 'settings', 'backups', 'security', 'subscriptions']);
+const SUPER_ADMIN_ONLY_SECTIONS = new Set(['pricing', 'payments', 'features', 'website-cms', 'ai-settings', 'analytics', 'reports', 'messages', 'announcements', 'support', 'plugins', 'audit-logs', 'system-settings', 'settings', 'backups', 'security', 'subscriptions', 'archived-schools']);
 const ADMIN_NAV_ITEMS = [
   { id: 'overview', label: 'Dashboard', icon: 'chart-square-bar' },
   { id: 'schools', label: 'Schools', icon: 'office-building' },
@@ -53,6 +53,7 @@ function renderTopbarTitle(section) {
   const lookup = {
     overview: 'Platform Overview',
     schools: 'School Management',
+    'archived-schools': 'Archived Schools',
     subscriptions: 'Subscription Analytics',
     users: 'User Directory',
     payments: 'Payments',
@@ -222,6 +223,7 @@ function renderSectionContent(activeSection, userFullName, summary = {}, schools
   }
 
   if (normalizedSection === 'schools') return renderSchoolManagement(schools);
+  if (normalizedSection === 'archived-schools') return renderArchivedSchools(schools);
   if (normalizedSection === 'website-cms') return renderWebsiteCMS();
   if (normalizedSection === 'ai-settings') return renderAISettings();
   if (normalizedSection === 'features') return renderFeatureManager();
@@ -466,7 +468,10 @@ function renderSchoolManagement(schools = []) {
               <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Management</p>
               <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage tenant schools</h2>
             </div>
-            <button id="create-school-button" class="inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">+ Create School</button>
+            <div class="flex flex-wrap gap-3">
+              <button id="create-school-button" class="inline-flex items-center justify-center rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">+ Create School</button>
+              <button type="button" data-admin-nav="archived-schools" class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Archived Schools</button>
+            </div>
           </div>
           <div class="mt-6 grid gap-4 sm:grid-cols-2">
             <input type="text" id="school-search-input" placeholder="Search schools..." class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
@@ -569,10 +574,84 @@ function renderSchoolRow(school) {
         <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="view" data-school-id="${schoolId}" title="View details">👁</button>
         <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="edit" data-school-id="${schoolId}" title="Edit school">✏</button>
         ${statusButton}
-        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100" data-action="delete" data-school-id="${schoolId}" title="Suspend school">🗑</button>
+        <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100" data-action="archive" data-school-id="${schoolId}" title="Archive school">Archive</button>
       </td>
     </tr>
   `;
+}
+
+function renderArchivedSchools(schools = []) {
+  const statusOptions = getAdminSchoolStatuses(schools).map((status) => {
+    const safeStatus = escapeSchoolDirectoryText(status);
+    const label = status.split(/[-_]/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    return `<option value="${safeStatus}">${escapeSchoolDirectoryText(label)}</option>`;
+  }).join('');
+  const rows = schools.map((school) => {
+    const name = escapeSchoolDirectoryText(school.name || school.schoolName || 'Unknown school');
+    const schoolId = escapeSchoolDirectoryText(school.schoolId || school.id || '');
+    const status = escapeSchoolDirectoryText(getAdminSchoolStatus(school));
+    const plan = escapeSchoolDirectoryText(school.subscriptionPlan || 'trial');
+    const archivedAt = school.archivedAt && !Number.isNaN(new Date(school.archivedAt).getTime())
+      ? new Date(school.archivedAt).toLocaleString()
+      : '—';
+    const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
+    const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
+    return `
+      <tr data-archived-school-row data-school-id="${schoolId}" data-school-status="${status}" class="border-t border-slate-200 hover:bg-slate-50 transition">
+        <td class="px-5 py-4 font-semibold text-slate-900">${name}</td>
+        <td class="px-5 py-4 font-mono text-xs text-slate-600">${schoolId}</td>
+        <td class="px-5 py-4 capitalize text-slate-600">${plan}</td>
+        <td class="px-5 py-4">${renderStatusBadge(status)}</td>
+        <td class="px-5 py-4 text-sm text-slate-600">${escapeSchoolDirectoryText(archivedAt)}</td>
+        <td class="px-5 py-4 text-slate-600">${studentCount} students / ${teacherCount} teachers</td>
+        <td class="px-5 py-4 flex flex-wrap gap-2">
+          <button type="button" data-archived-school-action="view" data-school-id="${schoolId}" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">View</button>
+          <button type="button" data-archived-school-action="restore" data-school-id="${schoolId}" class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">Restore</button>
+          <button type="button" data-archived-school-action="permanent-delete" data-school-id="${schoolId}" class="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">Delete permanently</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <section class="space-y-6">
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Management</p>
+            <h2 class="mt-2 text-2xl font-semibold text-slate-900">Archived Schools</h2>
+          </div>
+          <button type="button" data-admin-nav="schools" class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Back to Schools</button>
+        </div>
+        <div class="mt-6 grid gap-4 sm:grid-cols-2">
+          <input id="archived-school-search-input" type="search" placeholder="Search archived schools..." class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+          <select id="archived-school-status-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+            <option value="">All Previous Statuses</option>${statusOptions}
+          </select>
+        </div>
+        <div id="archived-school-message" class="mt-4 hidden rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700" role="status" aria-live="polite"></div>
+      </div>
+      <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-6 flex items-center justify-between">
+          <h3 class="text-xl font-semibold text-slate-900">Archived directory</h3>
+          <span id="archived-school-directory-count" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">${schools.length} ${schools.length === 1 ? 'school' : 'schools'}</span>
+        </div>
+        <div class="overflow-x-auto rounded-[1.75rem] border border-slate-200">
+          <table class="w-full border-collapse text-left text-sm text-slate-700">
+            <thead class="bg-slate-50 text-slate-500"><tr><th class="px-5 py-4">School Name</th><th class="px-5 py-4">School ID</th><th class="px-5 py-4">Subscription</th><th class="px-5 py-4">Previous Status</th><th class="px-5 py-4">Archived Date</th><th class="px-5 py-4">Users</th><th class="px-5 py-4">Actions</th></tr></thead>
+            <tbody id="archived-school-directory-rows">
+              ${rows}
+              <tr id="archived-school-directory-empty" class="${schools.length ? 'hidden' : ''}"><td colspan="7" class="px-5 py-8 text-center text-sm text-slate-500">No archived schools found.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="school-details-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+        <div class="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+          <button id="school-details-modal-close" class="absolute right-6 top-6 rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" aria-label="Close details">✕</button>
+          <div id="school-details-content"></div>
+        </div>
+      </div>
+    </section>`;
 }
 
 function escapeSchoolDirectoryText(value) {
@@ -723,7 +802,7 @@ function renderEditSchoolModal(school) {
   `;
 }
 
-function renderSchoolDetailsModal(school) {
+function renderSchoolDetailsModal(school, isArchived = false) {
   const name = school.name || school.schoolName || 'Unknown';
   const schoolId = school.schoolId || '—';
   const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
@@ -734,6 +813,7 @@ function renderSchoolDetailsModal(school) {
   const headEmail = school.headEmail || school.email || '—';
   const createdAt = school.createdAt || null;
   const expiresAt = school.expiresAt || '—';
+  const archivedAt = school.archivedAt || null;
   
   return `
     <div>
@@ -775,6 +855,7 @@ function renderSchoolDetailsModal(school) {
           <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Created</p>
           <p class="mt-2 text-sm text-slate-900">${createdAt ? new Date(createdAt).toLocaleDateString() : '—'}</p>
         </div>
+        ${isArchived ? `<div class="rounded-3xl border border-amber-200 bg-amber-50 p-4"><p class="text-xs uppercase tracking-[0.2em] text-amber-800">Archived</p><p class="mt-2 text-sm text-amber-900">${archivedAt && !Number.isNaN(new Date(archivedAt).getTime()) ? new Date(archivedAt).toLocaleString() : '—'}</p></div>` : ''}
         <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
           <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Subscription Expires</p>
           <p class="mt-2 text-sm text-slate-900">${expiresAt === '—' ? expiresAt : new Date(expiresAt).toLocaleDateString()}</p>
@@ -782,7 +863,7 @@ function renderSchoolDetailsModal(school) {
       </div>
       
       <div class="mt-6 flex gap-3">
-        <button class="school-action-quick flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="edit" data-school-id="${schoolId}">Edit School</button>
+        ${isArchived ? '' : `<button class="school-action-quick flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="edit" data-school-id="${schoolId}">Edit School</button>`}
         <button class="school-action-quick flex-1 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" data-action="close-modal">Close</button>
       </div>
     </div>
@@ -1759,6 +1840,11 @@ export function attachAdminSectionHandlers(section) {
     attachSchoolManagementHandlers(token);
   }
 
+  if (normalizedSection === 'archived-schools') {
+    const token = getAccessToken ? getAccessToken() : localStorage.getItem('globyedu_accessToken');
+    attachArchivedSchoolHandlers(token);
+  }
+
   if (normalizedSection === 'analytics') {
     document.querySelectorAll('[data-analytics-days]').forEach((button) => {
       button.addEventListener('click', () => { location.hash = `#/admin/analytics?days=${button.getAttribute('data-analytics-days')}`; });
@@ -1919,11 +2005,19 @@ function attachSchoolManagementHandlers(token) {
         if (confirm('Activate this school? It will regain platform access.')) {
           await activateSchool(token, schoolId, messageDiv);
         }
-      } else if (action === 'delete') {
-        // The API performs a reversible soft suspension rather than physical deletion.
-        if (confirm('Suspend this school? Its data will be retained and the school can be activated again later.')) {
-          await deleteSchool(token, schoolId, messageDiv);
+      } else if (action === 'archive') {
+        const school = await fetchSchoolDetails(token, schoolId);
+        const name = school?.data?.school?.name || school?.data?.school?.schoolName || schoolId;
+        if (!confirm(`Archive ${name}? The school will leave the active directory, but its users, subscriptions, and records will be retained.`)) return;
+        const result = await archiveAdminSchool(token, schoolId);
+        if (!result.ok || result.data?.status !== 'ok') {
+          if (messageDiv) {
+            messageDiv.textContent = result.data?.message || 'Unable to archive school.';
+            messageDiv.classList.remove('hidden');
+          }
+          return;
         }
+        window.location.hash = '#/admin/archived-schools';
       } else if (action === 'close-modal') {
         closeDetailsModal();
       }
@@ -1947,6 +2041,70 @@ function attachSchoolManagementHandlers(token) {
   });
 
 
+}
+
+function attachArchivedSchoolHandlers(token) {
+  const detailsModal = document.getElementById('school-details-modal');
+  const detailsContent = document.getElementById('school-details-content');
+  const closeButton = document.getElementById('school-details-modal-close');
+  const message = document.getElementById('archived-school-message');
+  const closeDetails = () => detailsModal?.classList.add('hidden');
+
+  closeButton?.addEventListener('click', closeDetails);
+  detailsModal?.addEventListener('click', (event) => {
+    if (event.target === detailsModal) closeDetails();
+  });
+
+  const showMessage = (text, isError = false) => {
+    if (!message) return;
+    message.textContent = text;
+    message.className = `mt-4 rounded-3xl border p-4 text-sm ${isError ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-slate-200 bg-slate-50 text-slate-700'}`;
+    message.classList.remove('hidden');
+  };
+
+  document.querySelectorAll('[data-archived-school-action]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const action = button.dataset.archivedSchoolAction;
+      const schoolId = button.dataset.schoolId;
+      const schoolName = button.closest('tr')?.querySelector('td')?.textContent?.trim() || schoolId;
+
+      if (action === 'view') {
+        const result = await fetchSchoolDetails(token, schoolId);
+        const school = result.ok && result.data?.status === 'ok' ? result.data.school : null;
+        if (!school || !detailsContent || !detailsModal) {
+          showMessage(result.data?.message || 'Unable to load archived school details.', true);
+          return;
+        }
+        detailsContent.innerHTML = renderSchoolDetailsModal(school, true);
+        detailsModal.classList.remove('hidden');
+        return;
+      }
+
+      if (action === 'restore') {
+        if (!confirm(`Restore ${schoolName} to the normal School Management directory?`)) return;
+        const result = await restoreAdminSchool(token, schoolId);
+        if (!result.ok || result.data?.status !== 'ok') {
+          showMessage(result.data?.message || 'Unable to restore school.', true);
+          return;
+        }
+        window.location.hash = '#/admin/schools';
+        return;
+      }
+
+      if (action === 'permanent-delete') {
+        const confirmation = window.prompt(`Permanently delete ${schoolName}? This cannot be undone and is blocked while related records exist. Type DELETE ${schoolId} to continue.`);
+        if (confirmation !== `DELETE ${schoolId}`) return;
+        const result = await permanentlyDeleteArchivedSchool(token, schoolId);
+        if (!result.ok || result.data?.status !== 'ok') {
+          showMessage(result.data?.message || 'Unable to permanently delete archived school.', true);
+          return;
+        }
+        window.location.reload();
+      }
+    });
+  });
+}
 // Create school form handler
 function attachSchoolCreateForm(token, onSuccess) {
   const form = document.getElementById('school-create-form');
