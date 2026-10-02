@@ -4,8 +4,9 @@
 // separate from the landing site and to preserve the existing marketing architecture.
 
 import { appendAuditLog, encryptSecret, getAdminState, maskAuditValue, recordNotification, saveAdminState, setSessionActivity } from './admin-state.js';
-import { activateAdminSchool, deleteAdminSchool, fetchMessageRecipients, createWorkspaceMessage } from '../api/school.js';
+import { activateAdminSchool, deleteAdminSchool, fetchMessageRecipients, createWorkspaceMessage, fetchSchoolDetails } from '../api/school.js';
 import { updatePricingPlan } from '../api/pricing.js';
+import { getAdminSchoolStatus, getAdminSchoolStatuses } from '../utils/school-management-filters.mjs';
 
 const WEBSITE_CMS_STORAGE_KEY = 'globyedu_websiteCms';
 const SUPER_ADMIN_ONLY_SECTIONS = new Set(['pricing', 'payments', 'features', 'website-cms', 'ai-settings', 'analytics', 'reports', 'messages', 'announcements', 'support', 'plugins', 'audit-logs', 'system-settings', 'settings', 'backups', 'security', 'subscriptions']);
@@ -448,9 +449,12 @@ function renderMiniInfo(label, value) {
 }
 
 function renderSchoolManagement(schools = []) {
-  const schoolRows = schools.length
-    ? schools.map((school) => renderSchoolRow(school)).join('')
-    : `<tr><td colspan="5" class="px-5 py-8 text-center text-sm text-slate-500">No schools found. Create a new tenant school to get started.</td></tr>`;
+  const schoolRows = schools.map((school) => renderSchoolRow(school)).join('');
+  const statusOptions = getAdminSchoolStatuses(schools).map((status) => {
+    const safeStatus = escapeSchoolDirectoryText(status);
+    const label = status.split(/[-_]/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    return `<option value="${safeStatus}">${escapeSchoolDirectoryText(label)}</option>`;
+  }).join('');
 
   return `
     <section class="space-y-6">
@@ -468,9 +472,7 @@ function renderSchoolManagement(schools = []) {
             <input type="text" id="school-search-input" placeholder="Search schools..." class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" />
             <select id="school-status-filter" class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
               <option value="">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="trial">Trial</option>
-              <option value="suspended">Suspended</option>
+              ${statusOptions}
             </select>
           </div>
           <div id="admin-school-message" class="mt-4 hidden rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"></div>
@@ -493,7 +495,7 @@ function renderSchoolManagement(schools = []) {
             <p class="text-sm uppercase tracking-[0.3em] text-slate-500">School Directory</p>
             <h3 class="mt-2 text-xl font-semibold text-slate-900">Search and filter tenant schools</h3>
           </div>
-          <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">${schools.length} schools</span>
+          <span id="school-directory-count" class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">${schools.length} ${schools.length === 1 ? 'school' : 'schools'}</span>
         </div>
         <div class="overflow-x-auto rounded-[1.75rem] border border-slate-200">
           <table class="w-full border-collapse text-left text-sm text-slate-700">
@@ -507,8 +509,9 @@ function renderSchoolManagement(schools = []) {
                 <th class="px-5 py-4">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="school-directory-rows">
               ${schoolRows}
+              <tr id="school-directory-empty" class="${schools.length ? 'hidden' : ''}"><td colspan="6" class="px-5 py-8 text-center text-sm text-slate-500">No schools found. Create a new tenant school to get started.</td></tr>
             </tbody>
           </table>
         </div>
@@ -543,7 +546,7 @@ function renderSchoolRow(school) {
   const name = school.name || school.schoolName || 'Unknown school';
   const schoolId = school.schoolId || '—';
   const subscription = school.subscriptionPlan || 'trial';
-  const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
+  const status = getAdminSchoolStatus(school);
   const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
   const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
   
@@ -570,6 +573,16 @@ function renderSchoolRow(school) {
       </td>
     </tr>
   `;
+}
+
+function escapeSchoolDirectoryText(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
 }
 
 function renderStatusBadge(status) {
@@ -1695,6 +1708,7 @@ export function attachAdminSectionHandlers(section) {
           }
           return;
         }
+        if (!confirm(`Activate school ${school.name || school.schoolName || schoolId}? It will regain platform access.`)) return;
         const result = await activateAdminSchool(getAccessToken(), schoolId);
         if (!result.ok || result.data?.status !== 'ok') {
           if (status) {
@@ -1885,7 +1899,8 @@ function attachSchoolManagementHandlers(token) {
         }
       } else if (action === 'edit') {
         // Show edit modal
-        const school = await fetchSchoolDetails(token, schoolId);
+        const schoolResult = await fetchSchoolDetails(token, schoolId);
+        const school = schoolResult.ok && schoolResult.data?.status === 'ok' ? schoolResult.data.school : null;
         if (school && modalContent) {
           modalContent.innerHTML = renderEditSchoolModal(school);
           if (modal) modal.classList.remove('hidden');
@@ -1931,25 +1946,6 @@ function attachSchoolManagementHandlers(token) {
     });
   });
 
-  // Search and Filter
-  const searchInput = document.getElementById('school-search-input');
-  const statusFilter = document.getElementById('school-status-filter');
-
-  const applyFilters = () => {
-    const searchTerm = (searchInput?.value || '').toLowerCase();
-    const statusTerm = statusFilter?.value || '';
-
-    document.querySelectorAll('[data-school-id]').forEach((row) => {
-      const schoolName = (row.textContent || '').toLowerCase();
-      const match = (!searchTerm || schoolName.includes(searchTerm)) &&
-                    (!statusTerm || row.innerHTML.includes(statusTerm));
-      row.style.display = match ? '' : 'none';
-    });
-  };
-
-  if (searchInput) searchInput.addEventListener('input', applyFilters);
-  if (statusFilter) statusFilter.addEventListener('change', applyFilters);
-}
 
 // Create school form handler
 function attachSchoolCreateForm(token, onSuccess) {
@@ -2120,29 +2116,6 @@ function attachSchoolEditForm(token, schoolId, onSuccess) {
         resetButton.disabled = false;
       }
     });
-  }
-}
-
-// Fetch school details
-async function fetchSchoolDetails(token, schoolId) {
-  try {
-    const response = await fetch(`/api/v1/schools/${schoolId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.school || null;
-  } catch (error) {
-    console.error('Error fetching school details:', error);
-    return null;
   }
 }
 

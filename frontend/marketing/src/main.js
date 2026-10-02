@@ -16,6 +16,7 @@ import { ChangePasswordPage } from './pages/change-password.js';
 import { VerifyEmailPage } from './pages/verify-email.js';
 import { LegalPage } from './pages/legal.js';
 import { AdminPage, attachAdminSectionHandlers, attachWebsiteCMSHandlers } from './pages/admin.js';
+import { matchesAdminSchoolFilter } from './utils/school-management-filters.mjs';
 import { getAdminState } from './pages/admin-state.js';
 import { PlatformAdminPage } from './pages/platform-admin.js';
 import { SchoolDashboardPage, SchoolAuthorityDashboard, TeacherDashboard, StudentDashboard } from './pages/school-dashboard.js';
@@ -5910,22 +5911,28 @@ function attachAdminPageActions(section, summary, schools) {
 
   const searchInput = document.getElementById('school-search-input');
   const statusFilter = document.getElementById('school-status-filter');
-  const applySchoolStatusFilter = () => {
-    const selectedStatus = String(statusFilter?.value || '').toLowerCase();
-    document.querySelectorAll('[data-school-status]').forEach((row) => {
-      const matches = !selectedStatus || row.dataset.schoolStatus === selectedStatus;
+  const rows = Array.from(document.querySelectorAll('#school-directory-rows [data-school-id]'));
+  const emptyState = document.getElementById('school-directory-empty');
+  const count = document.getElementById('school-directory-count');
+  const applySchoolFilters = () => {
+    const visibleRows = rows.filter((row) => {
+      const matches = matchesAdminSchoolFilter(
+        row.textContent,
+        row.dataset.schoolStatus,
+        searchInput?.value,
+        statusFilter?.value
+      );
       row.classList.toggle('hidden', !matches);
-    });
+      return matches;
+    }).length;
+
+    emptyState?.classList.toggle('hidden', visibleRows > 0);
+    if (count) count.textContent = `${visibleRows} ${visibleRows === 1 ? 'school' : 'schools'}`;
   };
 
-  if (searchInput) {
-    searchInput.addEventListener('input', debounce(async () => {
-      await refreshAdminSchoolList(searchInput.value.trim());
-      applySchoolStatusFilter();
-    }, 300));
-  }
-  statusFilter?.addEventListener('change', applySchoolStatusFilter);
-  applySchoolStatusFilter();
+  searchInput?.addEventListener('input', applySchoolFilters);
+  statusFilter?.addEventListener('change', applySchoolFilters);
+  applySchoolFilters();
 
   const createButton = document.getElementById('create-school-button');
   if (createButton) {
