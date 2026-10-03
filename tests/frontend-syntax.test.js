@@ -67,4 +67,13 @@ describe('marketing frontend syntax', () => {
     expect(adminSource).toContain('Please choose a valid image file for the website logo.');
     expect(adminSource).toContain('Logo uploads must be 2MB or smaller for the best performance.');
   });
+
+  it('routes Get Started to the existing public registration flow and guards the public pricing fetch', () => {
+    const entryPath = path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js');
+    const source = fs.readFileSync(entryPath, 'utf8');
+
+    expect(source).toContain("#/register");
+    expect(source).toContain("Unable to load public pricing plans; showing the default pricing state");
+    expect(source).toContain("Array.isArray(pricingPlans) ? pricingPlans.filter((plan) => plan && plan.active !== false) : []");
+  });
 });

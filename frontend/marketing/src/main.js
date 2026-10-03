@@ -541,10 +541,29 @@ function markActiveSession() {
   recordWorkspaceActivity('Session started', 'The authenticated workspace was restored for this browser.', 'session');
 }
 
+function getSafePublicPricingPlans(pricingPlans = []) {
+  if (!Array.isArray(pricingPlans)) return [];
+  return pricingPlans.filter((plan) => plan && typeof plan === 'object' && (plan.active !== false));
+}
+
 async function renderLanding(activeSection = 'home') {
   const cms = getWebsiteCMSSettings();
-  const pricingResult = await fetchPublicPricing();
-  const pricingPlans = pricingResult.ok && pricingResult.data?.status === 'ok' ? pricingResult.data.pricingPlans || [] : [];
+  let pricingPlans = [];
+
+  try {
+    const pricingResult = await fetchPublicPricing();
+    const payloadPlans = pricingResult && pricingResult.ok && Array.isArray(pricingResult.data?.pricingPlans)
+      ? pricingResult.data.pricingPlans
+      : [];
+    pricingPlans = getSafePublicPricingPlans(payloadPlans);
+
+    if (!pricingResult?.ok || !Array.isArray(pricingResult.data?.pricingPlans)) {
+      console.warn('Unable to load public pricing plans; showing the default pricing state.', pricingResult?.data || pricingResult);
+    }
+  } catch (error) {
+    console.warn('Unable to load public pricing plans; showing the default pricing state.', error);
+  }
+
   root.innerHTML = `
           ${Nav(cms)}
     <main class="relative overflow-hidden">
@@ -662,8 +681,20 @@ async function renderCheckoutPage(planSlug = '', billingPeriod = 'monthly', refe
     location.hash = '#/login';
     return;
   }
-  const pricingResult = await fetchPublicPricing();
-  const plans = pricingResult.ok ? pricingResult.data?.pricingPlans || [] : [];
+
+  let plans = [];
+  try {
+    const pricingResult = await fetchPublicPricing();
+    plans = pricingResult && pricingResult.ok && Array.isArray(pricingResult.data?.pricingPlans)
+      ? getSafePublicPricingPlans(pricingResult.data.pricingPlans)
+      : [];
+    if (!pricingResult?.ok || !Array.isArray(pricingResult.data?.pricingPlans)) {
+      console.warn('Unable to load public pricing plans for checkout; showing the safest available state.', pricingResult?.data || pricingResult);
+    }
+  } catch (error) {
+    console.warn('Unable to load public pricing plans for checkout; showing the safest available state.', error);
+  }
+
   const plan = plans.find((entry) => entry.slug === planSlug) || plans[0];
   if (!plan) {
     root.innerHTML = `${Nav()}<main class="mx-auto max-w-3xl px-6 py-20"><p class="text-slate-600">No active subscription plans are available.</p></main>${Footer()}`;
@@ -997,7 +1028,7 @@ function renderTestimonial(image, message = '', author = '', score = 5) {
 }
 
 function renderPricing(pricingPlans = []) {
-  const plans = Array.isArray(pricingPlans) ? pricingPlans.filter((plan) => plan.active) : [];
+  const plans = Array.isArray(pricingPlans) ? pricingPlans.filter((plan) => plan && plan.active !== false) : [];
   const defaultPlanCards = `
     <article class="rounded-4xl border border-slate-200 bg-white p-8 shadow-sm transition hover:shadow-lg">
       <div class="flex items-center justify-between gap-3">
