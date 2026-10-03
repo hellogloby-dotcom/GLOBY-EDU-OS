@@ -22,6 +22,15 @@ const {
 } = require('./utils/login-rate-limiter');
 const { recordAuditEvent } = require('../audit/audit.service');
 
+function registrationErrorDetails(error, phase) {
+  const errorName = String(error?.name || 'Error').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 60) || 'Error';
+  const rawCode = error?.code;
+  const errorCode = rawCode === undefined || rawCode === null
+    ? ''
+    : String(rawCode).replace(/[^A-Za-z0-9._/-]/g, '').slice(0, 80);
+  return { phase, errorName, ...(errorCode ? { errorCode } : {}) };
+}
+
 function canManageUserSession(req, userId) {
   const roles = Array.isArray(req.user?.roles) ? req.user.roles : [];
   return req.user?.userId === userId || roles.some((role) => String(role).toLowerCase() === 'super_admin');
@@ -73,6 +82,7 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ status: 'error', message: validation.message || 'Please review the registration details and try again.' });
   }
 
+  let phase = 'school.create';
   try {
     const trialEndsAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
     const schoolId = payload.schoolId || generateSchoolId(payload.schoolName, existingSchools);
@@ -109,9 +119,10 @@ router.post('/register', async (req, res) => {
 
     const created = await schoolService.createSchool(schoolPayload);
 
-    const appUrl = getAppUrl();
+    phase = 'firebase.auth-hook';
     if (firebaseAdmin.isFirebaseConfigured()) {
       try {
+        const appUrl = getAppUrl();
         await firebaseAdmin.createUser({
           email: schoolPayload.headEmail,
           password: schoolHead.password,
@@ -122,13 +133,14 @@ router.post('/register', async (req, res) => {
         });
         await sendEmail(schoolPayload.headEmail, 'Verify your email', verificationTemplate(verificationLink, appUrl));
       } catch (createErr) {
-        console.warn('Firebase registration hook failed:', createErr);
+        console.warn('[auth.register] Optional Firebase Auth hook failed', registrationErrorDetails(createErr, phase));
       }
     }
 
     const tenantId = created.schoolId || created.id || (created.school && created.school.schoolId) || schoolId;
     const headAccount = created.headAccount || { username: schoolPayload.headEmail, password: schoolHead.password };
 
+    phase = 'session.login';
     let loginResult = null;
     try {
       loginResult = await authService.login(tenantId, headAccount.username, headAccount.password);
@@ -136,6 +148,7 @@ router.post('/register', async (req, res) => {
       loginResult = null;
     }
 
+    phase = 'response.build';
     const response = {
       status: 'ok',
       schoolId: tenantId,
@@ -155,6 +168,7 @@ router.post('/register', async (req, res) => {
 
     return res.json(response);
   } catch (err) {
+    console.error('[auth.register] School signup failed', registrationErrorDetails(err, phase));
     return res.status(500).json({ status: 'error', message: 'We could not create your school account right now. Please try again.' });
   }
 });
