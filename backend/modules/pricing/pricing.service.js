@@ -47,14 +47,33 @@ function normalizePlan(plan) {
   };
 }
 
+function mergeConfiguredPlans(plans) {
+  const plansByKey = new Map();
+  readFallback().map(normalizePlan).forEach((plan) => {
+    plansByKey.set(plan.slug, plan);
+    plansByKey.set(plan.id, plan);
+  });
+
+  plans.forEach((plan) => {
+    const normalized = normalizePlan(plan);
+    const configured = plansByKey.get(normalized.slug) || plansByKey.get(normalized.id);
+    const merged = normalizePlan({ ...configured, ...plan, id: plan.id || configured?.id });
+    plansByKey.set(merged.slug, merged);
+    plansByKey.set(merged.id, merged);
+  });
+
+  return [...new Set(plansByKey.values())].sort((a, b) => a.displayOrder - b.displayOrder);
+}
+
 async function listPricingPlans({ activeOnly = false } = {}) {
   if (firebaseData.isFirebaseDataConfigured()) {
     const snapshot = await firebaseData.getFirestore().collection('pricingPlans').orderBy('displayOrder').get();
-    return snapshot.docs.map((doc) => normalizePlan({ id: doc.id, ...doc.data() })).filter((plan) => !activeOnly || plan.active);
+    const storedPlans = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return mergeConfiguredPlans(storedPlans).filter((plan) => !activeOnly || plan.active);
   }
   if (prisma && !prisma.__stub && prisma.pricingPlan?.findMany) {
     const rows = await prisma.pricingPlan.findMany({ orderBy: { displayOrder: 'asc' } });
-    return rows.filter((plan) => !activeOnly || plan.active).map(normalizePlan);
+    return mergeConfiguredPlans(rows).filter((plan) => !activeOnly || plan.active);
   }
   return readFallback().map(normalizePlan).filter((plan) => !activeOnly || plan.active).sort((a, b) => a.displayOrder - b.displayOrder);
 }

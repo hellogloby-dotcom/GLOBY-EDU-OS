@@ -11,6 +11,59 @@ describe('authoritative pricing service', () => {
     ]);
   });
 
+  it('fills missing database plans from defaults and preserves explicit inactive overrides', async () => {
+    const firebaseData = require('../../../firebase.data');
+    const firestore = {
+      collection: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      get: jest.fn().mockResolvedValue({
+        docs: [
+          {
+            id: 'starter-plan',
+            data: () => ({
+              slug: 'starter',
+              name: 'Starter',
+              studentLimit: 100,
+              monthlyAmount: 175,
+              yearlyAmount: 1500,
+              currency: 'GHS',
+              active: true,
+              displayOrder: 1,
+            }),
+          },
+          {
+            id: 'pro-plan',
+            data: () => ({
+              slug: 'pro',
+              name: 'Pro',
+              studentLimit: 700,
+              monthlyAmount: 500,
+              yearlyAmount: 5000,
+              currency: 'GHS',
+              active: false,
+              displayOrder: 3,
+            }),
+          },
+        ],
+      }),
+    };
+    const configuredSpy = jest.spyOn(firebaseData, 'isFirebaseDataConfigured').mockReturnValue(true);
+    const firestoreSpy = jest.spyOn(firebaseData, 'getFirestore').mockReturnValue(firestore);
+
+    try {
+      const plans = await pricingService.listPricingPlans();
+      const activePlans = await pricingService.listPricingPlans({ activeOnly: true });
+
+      expect(plans.map((plan) => plan.slug)).toEqual(['starter', 'growth', 'pro', 'enterprise']);
+      expect(plans.find((plan) => plan.slug === 'starter').monthlyAmount).toBe(175);
+      expect(plans.find((plan) => plan.slug === 'pro').active).toBe(false);
+      expect(activePlans.map((plan) => plan.slug)).toEqual(['starter', 'growth']);
+    } finally {
+      configuredSpy.mockRestore();
+      firestoreSpy.mockRestore();
+    }
+  });
+
   it.each([
     ['starter', 'monthly', 150],
     ['starter', 'yearly', 1500],
