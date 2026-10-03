@@ -719,23 +719,45 @@ async function createSchool(data) {
 async function createSchoolFirebase(data) {
   if (!data || !data.name) throw new Error('School name is required');
 
-  const schoolId = data.schoolId || `school-${createSchoolId(data.name)}`;
-  const school = await firebaseCore.getTenant(schoolId);
-  if (school) throw new Error('A school with that ID already exists');
+  const runStep = async (operation, action) => {
+    try {
+      return await action();
+    } catch (error) {
+      if (error && typeof error === 'object') error.registrationOperation = operation;
+      throw error;
+    }
+  };
+  const headEmail = String(data.headEmail || '').trim().toLowerCase();
+  const existingRegistration = await runStep('owner.lookup', () => firebaseCore.findTenantByHeadEmail(headEmail));
+  if (existingRegistration) {
+    const error = new Error('A school registration already exists for this authority email.');
+    error.code = 'SCHOOL_REGISTRATION_EXISTS';
+    error.registrationOperation = 'owner.lookup';
+    throw error;
+  }
+
+  const schoolId = data.schoolId || `GLB-${new Date().getFullYear()}-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+  const school = await runStep('tenant.lookup', () => firebaseCore.getTenant(schoolId));
+  if (school) {
+    const error = new Error('A school with that ID already exists');
+    error.code = 'SCHOOL_ID_EXISTS';
+    error.registrationOperation = 'tenant.lookup';
+    throw error;
+  }
 
   const now = new Date().toISOString();
   const trialEndsAt = data.trialEndsAt || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
   const subdomain = data.subdomain || generateSchoolSubdomain(data.name, []);
-  const headEmail = String(data.headEmail || `head@${schoolId}.globyedu.com`).trim().toLowerCase();
+  const resolvedHeadEmail = headEmail || `head@${schoolId}.globyedu.com`;
   const headPassword = data.headPassword || `Head@${Math.random().toString(36).slice(2, 8)}`;
   const headFullName = data.headFullName || 'School Head';
-  const tenant = await firebaseCore.saveTenant(schoolId, {
+  const tenant = await runStep('tenant.write', () => firebaseCore.saveTenant(schoolId, {
     id: schoolId,
     name: data.name,
     subdomain,
-    email: data.email || headEmail,
+    email: data.email || resolvedHeadEmail,
     headName: headFullName,
-    headEmail,
+    headEmail: resolvedHeadEmail,
     description: data.description || `Tenant school created by ${data.name}`,
     country: data.country || null,
     region: data.region || null,
@@ -753,26 +775,26 @@ async function createSchoolFirebase(data) {
     schoolStatus: data.schoolStatus || 'active',
     status: data.schoolStatus || 'active',
     createdAt: now,
-  }, false);
+  }, false));
 
-  const passwordHash = await bcrypt.hash(headPassword, config.bcrypt.saltRounds);
-  await firebaseCore.saveById('users', `${schoolId}:${headEmail}`, {
+  const passwordHash = await runStep('password.hash', () => bcrypt.hash(headPassword, config.bcrypt.saltRounds));
+  await runStep('user.write', () => firebaseCore.saveById('users', `${schoolId}:${resolvedHeadEmail}`, {
     schoolId,
     tenantId: schoolId,
-    username: headEmail,
-    email: headEmail,
+    username: resolvedHeadEmail,
+    email: resolvedHeadEmail,
     fullName: headFullName,
     role: 'school_head',
     status: 'active',
     passwordHash,
     passwordNeedsReset: !data.headPassword,
     createdAt: now,
-  }, false);
-  await firebaseCore.saveById('roles', `${schoolId}:school_head`, { schoolId, name: 'school_head', permissions: ['school.manage', 'classes.manage', 'users.manage'] }, true);
-  await firebaseCore.saveById('classes', `${schoolId}:class-01`, { schoolId, classId: 'class-01', name: 'Form 1', grade: data.defaultClassGrade || 'Grade 10', status: 'active', students: [] }, false);
-  await firebaseCore.saveById('enrollments', `${schoolId}:${headEmail}`, { schoolId, userId: `${schoolId}:${headEmail}`, role: 'school_head', status: 'active', createdAt: now }, false);
+  }, false));
+  await runStep('role.write', () => firebaseCore.saveById('roles', `${schoolId}:school_head`, { schoolId, name: 'school_head', permissions: ['school.manage', 'classes.manage', 'users.manage'] }, true));
+  await runStep('class.write', () => firebaseCore.saveById('classes', `${schoolId}:class-01`, { schoolId, classId: 'class-01', name: 'Form 1', grade: data.defaultClassGrade || 'Grade 10', status: 'active', students: [] }, false));
+  await runStep('enrollment.write', () => firebaseCore.saveById('enrollments', `${schoolId}:${resolvedHeadEmail}`, { schoolId, userId: `${schoolId}:${resolvedHeadEmail}`, role: 'school_head', status: 'active', createdAt: now }, false));
 
-  return { ...tenant, headAccount: { username: headEmail, password: headPassword } };
+  return { ...tenant, headAccount: { username: resolvedHeadEmail, password: headPassword } };
 }
 
 async function createSchoolFallback(data) {

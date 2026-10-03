@@ -37,6 +37,18 @@ async function getTenant(schoolId) {
   return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
 }
 
+async function findTenantByHeadEmail(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  const snapshot = await collectionRef(CORE_COLLECTIONS.tenants)
+    .where('headEmail', '==', normalizedEmail)
+    .limit(1)
+    .get();
+  if (snapshot.empty) return null;
+  const document = snapshot.docs[0];
+  return { id: document.id, ...document.data() };
+}
+
 async function listTenants() {
   const snapshot = await collectionRef(CORE_COLLECTIONS.tenants).get();
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -146,6 +158,7 @@ module.exports = {
   CORE_COLLECTIONS,
   isFirebaseCoreMode,
   getTenant,
+  findTenantByHeadEmail,
   listTenants,
   saveTenant,
   deleteArchivedTenantIfEmpty,

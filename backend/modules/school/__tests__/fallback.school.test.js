@@ -53,6 +53,51 @@ test('ensureDemoSchool seeds the required development accounts and school identi
   expect(student.passwordNeedsReset).toBe(true);
 });
 
+test('Firebase school creation allocates collision-resistant IDs without the local JSON sequence', async () => {
+  jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+  jest.spyOn(firebaseCore, 'findTenantByHeadEmail').mockResolvedValue(null);
+  const getTenant = jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(null);
+  jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, data) => ({ id: schoolId, schoolId, ...data }));
+  jest.spyOn(firebaseCore, 'saveById').mockImplementation(async (collection, id, data) => ({ id, ...data }));
+
+  const first = await schoolService.createSchool({
+    name: 'Firebase ID Allocation Test',
+    headEmail: 'authority@firebase-id.example.test',
+    headPassword: 'StrongPassword!123',
+  });
+  const second = await schoolService.createSchool({
+    name: 'Firebase ID Allocation Test',
+    headEmail: 'authority@firebase-id.example.test',
+    headPassword: 'StrongPassword!123',
+  });
+
+  expect(first.schoolId).toMatch(/^GLB-\d{4}-[A-F0-9]{12}$/);
+  expect(second.schoolId).toMatch(/^GLB-\d{4}-[A-F0-9]{12}$/);
+  expect(first.schoolId).not.toBe(second.schoolId);
+  expect(getTenant).toHaveBeenNthCalledWith(1, first.schoolId);
+  expect(getTenant).toHaveBeenNthCalledWith(2, second.schoolId);
+});
+
+test('Firebase school creation blocks a second registration for an existing authority email', async () => {
+  jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+  jest.spyOn(firebaseCore, 'findTenantByHeadEmail').mockResolvedValue({
+    schoolId: 'GLB-2026-EXISTING',
+    name: 'Existing Pilot School',
+    headEmail: 'authority@firebase-id.example.test',
+  });
+  const saveTenant = jest.spyOn(firebaseCore, 'saveTenant');
+  const saveById = jest.spyOn(firebaseCore, 'saveById');
+
+  await expect(schoolService.createSchool({
+    name: 'Existing Pilot School',
+    headEmail: 'authority@firebase-id.example.test',
+    headPassword: 'StrongPassword!123',
+  })).rejects.toMatchObject({ code: 'SCHOOL_REGISTRATION_EXISTS', registrationOperation: 'owner.lookup' });
+
+  expect(saveTenant).not.toHaveBeenCalled();
+  expect(saveById).not.toHaveBeenCalled();
+});
+
 test('demo seeding preserves valid non-demo schools while deduplicating duplicate demo entries', () => {
   const extraSchools = {
     schools: [

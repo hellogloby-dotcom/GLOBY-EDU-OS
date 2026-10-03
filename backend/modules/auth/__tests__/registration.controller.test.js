@@ -88,6 +88,7 @@ describe('public registration controller diagnostics', () => {
 
     expect(result.response.status).toBe(200);
     expect(result.body).toMatchObject({ status: 'ok', schoolId: 'GLB-2026-DIAGNOSTIC', tenantId: 'GLB-2026-DIAGNOSTIC' });
+    expect(schoolService.createSchool.mock.calls[0][0].schoolId).toBeUndefined();
     expect(firebaseAdmin.createUser).not.toHaveBeenCalled();
     expect(warning).toHaveBeenCalledWith('[auth.register] Optional Firebase Auth hook failed', {
       phase: 'firebase.auth-hook',
@@ -98,7 +99,10 @@ describe('public registration controller diagnostics', () => {
 
   test('keeps the public error generic while logging only safe failure metadata', async () => {
     const email = `firestore-${Date.now()}@example.test`;
-    const failure = Object.assign(new Error('private diagnostic detail must not be logged'), { code: 'permission-denied' });
+    const failure = Object.assign(new Error('private diagnostic detail must not be logged'), {
+      code: 'permission-denied',
+      registrationOperation: 'tenant.write',
+    });
     schoolService.createSchool.mockRejectedValue(failure);
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -108,9 +112,25 @@ describe('public registration controller diagnostics', () => {
     expect(result.body).toEqual({ status: 'error', message: 'We could not create your school account right now. Please try again.' });
     expect(error).toHaveBeenCalledWith('[auth.register] School signup failed', {
       phase: 'school.create',
+      operation: 'tenant.write',
       errorName: 'Error',
       errorCode: 'permission-denied',
     });
     expect(JSON.stringify(error.mock.calls)).not.toContain('private diagnostic detail');
+  });
+
+  test('returns a conflict instead of a generic server error for an existing school registration', async () => {
+    schoolService.createSchool.mockRejectedValue(Object.assign(
+      new Error('Existing registration'),
+      { code: 'SCHOOL_REGISTRATION_EXISTS', registrationOperation: 'owner.lookup' },
+    ));
+
+    const result = await postRegistration(createRegistrationPayload(`existing-${Date.now()}@example.test`));
+
+    expect(result.response.status).toBe(409);
+    expect(result.body).toEqual({
+      status: 'error',
+      message: 'A school registration for this authority email already exists. Please contact support before retrying.',
+    });
   });
 });

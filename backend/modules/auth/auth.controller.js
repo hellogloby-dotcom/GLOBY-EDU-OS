@@ -12,7 +12,7 @@ const router = express.Router();
 const authService = require('./auth.service');
 const { sendEmail, resetTemplate, verificationTemplate } = require('./utils/email');
 const schoolService = require('../school/school.service');
-const { generateSchoolId, validateRegistrationPayload } = require('./registration.service');
+const { validateRegistrationPayload } = require('./registration.service');
 const authMiddleware = require('./middleware/auth.middleware');
 const {
   getLoginAttemptKey,
@@ -28,7 +28,8 @@ function registrationErrorDetails(error, phase) {
   const errorCode = rawCode === undefined || rawCode === null
     ? ''
     : String(rawCode).replace(/[^A-Za-z0-9._/-]/g, '').slice(0, 80);
-  return { phase, errorName, ...(errorCode ? { errorCode } : {}) };
+  const operation = String(error?.registrationOperation || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80);
+  return { phase, ...(operation ? { operation } : {}), errorName, ...(errorCode ? { errorCode } : {}) };
 }
 
 function canManageUserSession(req, userId) {
@@ -85,11 +86,10 @@ router.post('/register', async (req, res) => {
   let phase = 'school.create';
   try {
     const trialEndsAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-    const schoolId = payload.schoolId || generateSchoolId(payload.schoolName, existingSchools);
+    const schoolId = payload.schoolId || null;
     const schoolPayload = {
       name: payload.schoolName,
-      schoolId,
-      tenantId: schoolId,
+      ...(schoolId ? { schoolId, tenantId: schoolId } : {}),
       country: payload.country || payload.schoolCountry || null,
       region: payload.state || payload.region || null,
       city: payload.city || payload.town || null,
@@ -138,6 +138,7 @@ router.post('/register', async (req, res) => {
     }
 
     const tenantId = created.schoolId || created.id || (created.school && created.school.schoolId) || schoolId;
+    if (!tenantId) throw new Error('School creation did not return a school ID.');
     const headAccount = created.headAccount || { username: schoolPayload.headEmail, password: schoolHead.password };
 
     phase = 'session.login';
@@ -168,6 +169,9 @@ router.post('/register', async (req, res) => {
 
     return res.json(response);
   } catch (err) {
+    if (err?.code === 'SCHOOL_REGISTRATION_EXISTS') {
+      return res.status(409).json({ status: 'error', message: 'A school registration for this authority email already exists. Please contact support before retrying.' });
+    }
     console.error('[auth.register] School signup failed', registrationErrorDetails(err, phase));
     return res.status(500).json({ status: 'error', message: 'We could not create your school account right now. Please try again.' });
   }
