@@ -146,6 +146,7 @@ describe('workspace messaging and support', () => {
     const snapshot = JSON.parse(JSON.stringify(loadSchoolData()));
     const school = snapshot.find((entry) => entry.schoolId === schoolId);
     if (!school) throw new Error('School not found');
+    const originalSubscriptionStatus = school.subscriptionStatus;
     school.classes = [];
     school.teachers = [{ username: 'T001', teacherId: 'T001', fullName: 'Test Teacher', role: 'teacher', status: 'active' }];
     school.students = [];
@@ -169,9 +170,11 @@ describe('workspace messaging and support', () => {
 
     const suspended = await schoolService.deleteSchool(schoolId);
     expect(suspended.schoolStatus).toBe('suspended');
+    expect(suspended.subscriptionStatus).toBe(originalSubscriptionStatus);
     expect((await schoolService.getSchoolBySchoolId(schoolId)).schoolStatus).toBe('suspended');
     const activated = await schoolService.activateSchool(schoolId);
     expect(activated.schoolStatus).toBe('active');
+    expect(activated.subscriptionStatus).toBe(originalSubscriptionStatus);
     expect((await schoolService.getSchoolBySchoolId(schoolId)).schoolStatus).toBe('active');
   });
 

@@ -297,7 +297,7 @@ async function login(tenantId, identifier, password, options = {}) {
     const trialEndsAt = tenant.trialEndsAt ? new Date(tenant.trialEndsAt) : null;
     if (['suspended', 'inactive', 'blocked', 'disabled', 'expired'].includes(schoolStatus) ||
         ['suspended', 'inactive', 'blocked', 'disabled', 'expired'].includes(subscriptionStatus) ||
-        (trialEndsAt && !Number.isNaN(trialEndsAt.getTime()) && trialEndsAt.getTime() <= Date.now())) {
+        (subscriptionStatus === 'trial' && trialEndsAt && !Number.isNaN(trialEndsAt.getTime()) && trialEndsAt.getTime() <= Date.now())) {
       throw new Error('School account is not active');
     }
   }

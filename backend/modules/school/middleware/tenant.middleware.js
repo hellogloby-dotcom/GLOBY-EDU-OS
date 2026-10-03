@@ -63,8 +63,8 @@ async function tenantMiddleware(req, res, next) {
         return res.status(403).json({ status: 'error', code: 'SCHOOL_ARCHIVED', message: 'This school has been archived.' });
       }
       const resolved = schoolService.resolveSchoolLifecycleStatus(tenant);
-      if (resolved.schoolStatus !== 'active') {
-        return res.status(403).json({ status: 'error', message: 'This school is suspended or its trial has expired.' });
+      if (!schoolService.isSchoolAccessAllowed(resolved)) {
+        return denySchoolAccess(res, resolved);
       }
       req.tenant = resolved;
       return next();
@@ -81,8 +81,8 @@ async function tenantMiddleware(req, res, next) {
         return res.status(403).json({ status: 'error', code: 'SCHOOL_ARCHIVED', message: 'This school has been archived.' });
       }
       const resolved = schoolService.resolveSchoolLifecycleStatus(school);
-      if (resolved.schoolStatus !== 'active') {
-        return res.status(403).json({ status: 'error', message: 'This school is suspended or its trial has expired.' });
+      if (!schoolService.isSchoolAccessAllowed(resolved)) {
+        return denySchoolAccess(res, resolved);
       }
       req.tenant = resolved;
       return next();
@@ -100,8 +100,8 @@ async function tenantMiddleware(req, res, next) {
       return res.status(403).json({ status: 'error', code: 'SCHOOL_ARCHIVED', message: 'This school has been archived.' });
     }
     const resolvedTenant = schoolService.resolveSchoolLifecycleStatus(tenant);
-    if (resolvedTenant.schoolStatus !== 'active') {
-      return res.status(403).json({ status: 'error', message: 'This school is suspended or its trial has expired.' });
+    if (!schoolService.isSchoolAccessAllowed(resolvedTenant)) {
+      return denySchoolAccess(res, resolvedTenant);
     }
 
     // Attach tenant info for downstream handlers
@@ -110,6 +110,14 @@ async function tenantMiddleware(req, res, next) {
   } catch (err) {
     return res.status(500).json({ status: 'error', message: 'Tenant check failed' });
   }
+}
+
+function denySchoolAccess(res, school) {
+  const operationalStatus = String(school.schoolStatus || school.status || '').trim().toLowerCase();
+  if (operationalStatus !== 'active') {
+    return res.status(403).json({ status: 'error', code: 'SCHOOL_SUSPENDED', message: 'This school is operationally suspended.' });
+  }
+  return res.status(403).json({ status: 'error', code: 'SUBSCRIPTION_EXPIRED', message: 'This school subscription is expired or unavailable.' });
 }
 
 function schoolIdMismatch(user, requestedSchoolId) {

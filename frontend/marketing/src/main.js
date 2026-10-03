@@ -5945,7 +5945,8 @@ function attachAdminPageActions(section, summary, schools) {
         row.textContent,
         row.dataset.schoolStatus,
         searchInput?.value,
-        statusFilter?.value
+        statusFilter?.value,
+        row.dataset.schoolSubscriptionStatus
       );
       row.classList.toggle('hidden', !matches);
       return matches;

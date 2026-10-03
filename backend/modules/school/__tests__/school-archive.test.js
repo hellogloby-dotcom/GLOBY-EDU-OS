@@ -1,6 +1,7 @@
 const schoolService = require('../school.service');
 const tenantMiddleware = require('../middleware/tenant.middleware');
 const firebaseData = require('../../../firebase.data');
+const firebaseCore = require('../../../firebase.core');
 
 const SCHOOL_ID = 'archive-qa-school-001';
 
@@ -56,7 +57,8 @@ describe('Super Admin school archive service', () => {
     expect((await schoolService.listArchivedSchools('archive qa')).map((school) => school.schoolId)).toEqual([SCHOOL_ID]);
     expect(await schoolService.listArchivedSchools('not a match')).toEqual([]);
     expect((await schoolService.listArchivedSchools('', 'trial')).map((school) => school.schoolId)).toEqual([SCHOOL_ID]);
-    expect(await schoolService.listArchivedSchools('', 'active')).toEqual([]);
+    expect((await schoolService.listArchivedSchools('', 'active')).map((school) => school.schoolId)).toEqual([SCHOOL_ID]);
+    expect(await schoolService.listArchivedSchools('', 'suspended')).toEqual([]);
   });
 
   it('excludes archived schools from platform summary metrics', async () => {
@@ -66,6 +68,101 @@ describe('Super Admin school archive service', () => {
 
     expect(summary.totalSchools).toBe(0);
     expect(summary.schools).toEqual([]);
+  });
+
+  it('reports operational school state separately from subscription state', async () => {
+    const summary = await schoolService.getPlatformSummary();
+
+    expect(summary.activeSchools).toBe(1);
+    expect(summary.trialSchools).toBe(1);
+    expect(summary.activeSubscriptions).toBe(0);
+    expect(summary.suspendedSchools).toBe(0);
+  });
+
+  it.each([
+    ['A active subscription', 'active', 'active', true],
+    ['B trial subscription', 'active', 'trial', true],
+    ['C expired subscription', 'active', 'expired', false],
+    ['D suspended operational state', 'suspended', 'active', false],
+    ['E suspended and expired', 'suspended', 'expired', false],
+  ])('keeps operational state and access distinct for scenario %s', async (_label, schoolStatus, subscriptionStatus, allowed) => {
+    const trialEndsAt = subscriptionStatus === 'trial'
+      ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
+    const resolved = schoolService.resolveSchoolLifecycleStatus({ ...createSchool(), schoolStatus, status: schoolStatus, subscriptionStatus, trialEndsAt });
+
+    expect(resolved.schoolStatus).toBe(schoolStatus);
+    expect(resolved.subscriptionStatus).toBe(subscriptionStatus);
+    expect(schoolService.isSchoolAccessAllowed(resolved)).toBe(allowed);
+  });
+
+  it('maps the legacy Prisma trial status to an active operational state', () => {
+    const resolved = schoolService.resolveSchoolLifecycleStatus({ status: 'trial', trialEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
+
+    expect(resolved.schoolStatus).toBe('active');
+    expect(resolved.status).toBe('trial');
+    expect(resolved.subscriptionStatus).toBe('trial');
+  });
+
+  it('does not infer operational suspension from an expired-only legacy record', () => {
+    const resolved = schoolService.resolveSchoolLifecycleStatus({ status: 'expired' });
+
+    expect(resolved.schoolStatus).toBe('active');
+    expect(resolved.subscriptionStatus).toBe('expired');
+    expect(schoolService.isSchoolAccessAllowed(resolved)).toBe(false);
+  });
+
+  it('suspends and activates operational state without changing subscription state', async () => {
+    const trialEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    global.__workspaceSnapshot = [{ ...createSchool(), trialEndsAt }];
+
+    const suspended = await schoolService.deleteSchool(SCHOOL_ID);
+    expect(suspended.schoolStatus).toBe('suspended');
+    expect(suspended.subscriptionStatus).toBe('trial');
+
+    const activated = await schoolService.activateSchool(SCHOOL_ID);
+    expect(activated.schoolStatus).toBe('active');
+    expect(activated.subscriptionStatus).toBe('trial');
+    expect(activated.trialEndsAt).toBe(trialEndsAt);
+  });
+
+  it('reactivates operational status without renewing an expired subscription', async () => {
+    const trialEndsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    global.__workspaceSnapshot = [{
+      ...createSchool(),
+      schoolStatus: 'suspended',
+      status: 'suspended',
+      subscriptionStatus: 'expired',
+      trialEndsAt,
+    }];
+
+    const activated = await schoolService.activateSchool(SCHOOL_ID);
+
+    expect(activated.schoolStatus).toBe('active');
+    expect(activated.status).toBe('active');
+    expect(activated.subscriptionStatus).toBe('expired');
+    expect(activated.trialEndsAt).toBe(trialEndsAt);
+    expect(schoolService.isSchoolAccessAllowed(activated)).toBe(false);
+  });
+
+  it('keeps Firebase activation separate from expired subscription state', async () => {
+    const trialEndsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const tenant = { ...createSchool(), schoolStatus: 'suspended', status: 'suspended', subscriptionStatus: 'expired', trialEndsAt };
+    const firebaseMode = jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+    const getTenant = jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(tenant);
+    const saveTenant = jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, updates) => ({ ...tenant, ...updates, schoolId }));
+
+    const activated = await schoolService.activateSchool(SCHOOL_ID);
+
+    expect(activated.schoolStatus).toBe('active');
+    expect(activated.status).toBe('active');
+    expect(activated.subscriptionStatus).toBe('expired');
+    expect(activated.trialEndsAt).toBe(trialEndsAt);
+    expect(saveTenant.mock.calls[0][1]).not.toHaveProperty('subscriptionStatus');
+    expect(saveTenant.mock.calls[0][1]).not.toHaveProperty('trialEndsAt');
+    getTenant.mockRestore();
+    saveTenant.mockRestore();
+    firebaseMode.mockRestore();
   });
 
   it('restores only archive state and preserves status and related data', async () => {

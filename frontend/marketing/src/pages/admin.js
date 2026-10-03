@@ -6,7 +6,7 @@
 import { appendAuditLog, encryptSecret, getAdminState, maskAuditValue, recordNotification, saveAdminState, setSessionActivity } from './admin-state.js';
 import { activateAdminSchool, archiveAdminSchool, deleteAdminSchool, fetchArchivedAdminSchools, fetchMessageRecipients, createWorkspaceMessage, fetchSchoolDetails, permanentlyDeleteArchivedSchool, restoreAdminSchool } from '../api/school.js';
 import { updatePricingPlan } from '../api/pricing.js';
-import { getAdminSchoolStatus, getAdminSchoolStatuses } from '../utils/school-management-filters.mjs';
+import { getAdminSchoolStatus, getAdminSchoolSubscriptionStatus, getAdminSchoolStatuses } from '../utils/school-management-filters.mjs';
 
 const WEBSITE_CMS_STORAGE_KEY = 'globyedu_websiteCms';
 const SUPER_ADMIN_ONLY_SECTIONS = new Set(['pricing', 'payments', 'features', 'website-cms', 'ai-settings', 'analytics', 'reports', 'messages', 'announcements', 'support', 'plugins', 'audit-logs', 'system-settings', 'settings', 'backups', 'security', 'subscriptions', 'archived-schools']);
@@ -264,7 +264,7 @@ function renderDashboardOverview(userFullName, summary = {}) {
           <p class="font-semibold text-slate-900">${school.name || school.schoolName || 'School'}</p>
           <p class="text-xs text-slate-500">${school.schoolId || school.id || 'school-id'}</p>
         </div>
-        <span class="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">${String(school.subscriptionStatus || school.status || 'active').toLowerCase()}</span>
+        <span class="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-700">Operational: ${getAdminSchoolStatus(school)} · Subscription: ${getAdminSchoolSubscriptionStatus(school)}</span>
       </div>
     `).join('')
     : '<div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No schools tracked yet.</div>';
@@ -552,6 +552,7 @@ function renderSchoolRow(school) {
   const schoolId = school.schoolId || '—';
   const subscription = school.subscriptionPlan || 'trial';
   const status = getAdminSchoolStatus(school);
+  const subscriptionStatus = getAdminSchoolSubscriptionStatus(school);
   const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
   const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
   
@@ -564,11 +565,11 @@ function renderSchoolRow(school) {
   }
 
   return `
-    <tr data-school-id="${schoolId}" data-school-status="${status}" class="border-t border-slate-200 hover:bg-slate-50 transition">
+    <tr data-school-id="${schoolId}" data-school-status="${status}" data-school-subscription-status="${subscriptionStatus}" class="border-t border-slate-200 hover:bg-slate-50 transition">
       <td class="px-5 py-4 font-semibold text-slate-900">${name}</td>
       <td class="px-5 py-4 font-mono text-xs text-slate-600">${schoolId}</td>
       <td class="px-5 py-4 capitalize text-slate-600">${subscription}</td>
-      <td class="px-5 py-4">${renderStatusBadge(status)}</td>
+      <td class="px-5 py-4"><div class="space-y-2"><div><span class="mr-2 text-xs text-slate-500">Operational</span>${renderStatusBadge(status)}</div><div><span class="mr-2 text-xs text-slate-500">Subscription</span>${renderStatusBadge(subscriptionStatus)}</div></div></td>
       <td class="px-5 py-4 text-slate-600">${studentCount} students / ${teacherCount} teachers</td>
       <td class="px-5 py-4 flex flex-wrap gap-2">
         <button class="admin-school-action inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" data-action="view" data-school-id="${schoolId}" title="View details">👁</button>
@@ -590,6 +591,7 @@ function renderArchivedSchools(schools = []) {
     const name = escapeSchoolDirectoryText(school.name || school.schoolName || 'Unknown school');
     const schoolId = escapeSchoolDirectoryText(school.schoolId || school.id || '');
     const status = escapeSchoolDirectoryText(getAdminSchoolStatus(school));
+    const subscriptionStatus = escapeSchoolDirectoryText(getAdminSchoolSubscriptionStatus(school));
     const plan = escapeSchoolDirectoryText(school.subscriptionPlan || 'trial');
     const archivedAt = school.archivedAt && !Number.isNaN(new Date(school.archivedAt).getTime())
       ? new Date(school.archivedAt).toLocaleString()
@@ -597,11 +599,11 @@ function renderArchivedSchools(schools = []) {
     const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
     const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
     return `
-      <tr data-archived-school-row data-school-id="${schoolId}" data-school-status="${status}" class="border-t border-slate-200 hover:bg-slate-50 transition">
+      <tr data-archived-school-row data-school-id="${schoolId}" data-school-status="${status}" data-school-subscription-status="${subscriptionStatus}" class="border-t border-slate-200 hover:bg-slate-50 transition">
         <td class="px-5 py-4 font-semibold text-slate-900">${name}</td>
         <td class="px-5 py-4 font-mono text-xs text-slate-600">${schoolId}</td>
         <td class="px-5 py-4 capitalize text-slate-600">${plan}</td>
-        <td class="px-5 py-4">${renderStatusBadge(status)}</td>
+        <td class="px-5 py-4"><div class="space-y-2"><div><span class="mr-2 text-xs text-slate-500">Operational</span>${renderStatusBadge(status)}</div><div><span class="mr-2 text-xs text-slate-500">Subscription</span>${renderStatusBadge(subscriptionStatus)}</div></div></td>
         <td class="px-5 py-4 text-sm text-slate-600">${escapeSchoolDirectoryText(archivedAt)}</td>
         <td class="px-5 py-4 text-slate-600">${studentCount} students / ${teacherCount} teachers</td>
         <td class="px-5 py-4 flex flex-wrap gap-2">
@@ -637,7 +639,7 @@ function renderArchivedSchools(schools = []) {
         </div>
         <div class="overflow-x-auto rounded-[1.75rem] border border-slate-200">
           <table class="w-full border-collapse text-left text-sm text-slate-700">
-            <thead class="bg-slate-50 text-slate-500"><tr><th class="px-5 py-4">School Name</th><th class="px-5 py-4">School ID</th><th class="px-5 py-4">Subscription</th><th class="px-5 py-4">Previous Status</th><th class="px-5 py-4">Archived Date</th><th class="px-5 py-4">Users</th><th class="px-5 py-4">Actions</th></tr></thead>
+            <thead class="bg-slate-50 text-slate-500"><tr><th class="px-5 py-4">School Name</th><th class="px-5 py-4">School ID</th><th class="px-5 py-4">Subscription Plan</th><th class="px-5 py-4">Previous Operational / Subscription Status</th><th class="px-5 py-4">Archived Date</th><th class="px-5 py-4">Users</th><th class="px-5 py-4">Actions</th></tr></thead>
             <tbody id="archived-school-directory-rows">
               ${rows}
               <tr id="archived-school-directory-empty" class="${schools.length ? 'hidden' : ''}"><td colspan="7" class="px-5 py-8 text-center text-sm text-slate-500">No archived schools found.</td></tr>
@@ -805,7 +807,8 @@ function renderEditSchoolModal(school) {
 function renderSchoolDetailsModal(school, isArchived = false) {
   const name = school.name || school.schoolName || 'Unknown';
   const schoolId = school.schoolId || '—';
-  const status = (school.subscriptionStatus || school.schoolStatus || 'inactive').toLowerCase();
+  const status = getAdminSchoolStatus(school);
+  const subscriptionStatus = getAdminSchoolSubscriptionStatus(school);
   const plan = school.subscriptionPlan || 'trial';
   const studentCount = school.studentCount ?? (Array.isArray(school.students) ? school.students.length : 0);
   const teacherCount = school.teacherCount ?? (Array.isArray(school.teachers) ? school.teachers.length : 0);
@@ -822,7 +825,7 @@ function renderSchoolDetailsModal(school, isArchived = false) {
           <p class="text-sm uppercase tracking-[0.3em] text-sky-600">School Details</p>
           <h2 class="mt-2 text-2xl font-semibold text-slate-900">${name}</h2>
         </div>
-        ${renderStatusBadge(status)}
+        <div class="space-y-2 text-right"><div><span class="mr-2 text-xs text-slate-500">Operational</span>${renderStatusBadge(status)}</div><div><span class="mr-2 text-xs text-slate-500">Subscription</span>${renderStatusBadge(subscriptionStatus)}</div></div>
       </div>
       
       <div class="mt-6 grid gap-4 sm:grid-cols-2">
@@ -1752,8 +1755,8 @@ export function attachAdminSectionHandlers(section) {
           }
           return;
         }
-        school.schoolStatus = result.data.school?.schoolStatus || 'suspended';
-        school.subscriptionStatus = result.data.school?.subscriptionStatus || 'suspended';
+        school.schoolStatus = result.data.school?.schoolStatus || result.data.school?.status || 'suspended';
+        school.subscriptionStatus = result.data.school?.subscriptionStatus || school.subscriptionStatus;
         school.isSuspended = true;
         saveAdminState(state);
         appendAuditLog('Suspended school', `School ${school.name || school.schoolName || schoolId} was suspended by Super Admin.`, { target: schoolId, actorRole: 'super_admin', resultStatus: 'success', schoolId, schoolName: school.name || school.schoolName || schoolId });
@@ -1799,15 +1802,23 @@ export function attachAdminSectionHandlers(section) {
           }
           return;
         }
-        school.schoolStatus = result.data.school?.schoolStatus || 'active';
-        school.subscriptionStatus = result.data.school?.subscriptionStatus || 'trial';
+        school.schoolStatus = result.data.school?.schoolStatus || result.data.school?.status || 'active';
+        school.subscriptionStatus = result.data.school?.subscriptionStatus || school.subscriptionStatus;
         school.isSuspended = false;
         saveAdminState(state);
         appendAuditLog('Activated school', `School ${school.name || school.schoolName || schoolId} was reactivated by Super Admin.`, { target: schoolId, actorRole: 'super_admin', resultStatus: 'success', schoolId, schoolName: school.name || school.schoolName || schoolId });
         const activateStatus = document.getElementById('backup-status');
         if (activateStatus) {
-          activateStatus.textContent = `School ${school.name || school.schoolName || schoolId} was reactivated and access is restored.`;
-          activateStatus.className = 'mt-4 rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800';
+          const subscriptionStatus = String(school.subscriptionStatus || '').toLowerCase();
+          const trialExpired = subscriptionStatus === 'trial'
+            && school.trialEndsAt
+            && new Date(school.trialEndsAt).getTime() <= Date.now();
+          const subscriptionAllowsAccess = ['active', 'paid'].includes(subscriptionStatus)
+            || (subscriptionStatus === 'trial' && !trialExpired);
+          activateStatus.textContent = subscriptionAllowsAccess
+            ? `School ${school.name || school.schoolName || schoolId} is operationally active and its subscription permits access.`
+            : `School ${school.name || school.schoolName || schoolId} is operationally active, but its subscription is ${subscriptionStatus || 'unavailable'}. Verified checkout is required before school access is restored.`;
+          activateStatus.className = `mt-4 rounded-3xl border p-4 text-sm ${subscriptionAllowsAccess ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`;
           activateStatus.classList.remove('hidden');
         }
       });
@@ -1910,7 +1921,6 @@ function attachSchoolManagementHandlers(token) {
   const modalContent = document.getElementById('school-modal-content');
   const modalCloseBtn = document.getElementById('school-modal-close');
   const detailsCloseBtn = document.getElementById('school-details-modal-close');
-  const createBtn = document.getElementById('create-school-button');
   const messageDiv = document.getElementById('admin-school-message');
 
   // Close modal handlers
@@ -1936,20 +1946,6 @@ function attachSchoolManagementHandlers(token) {
   if (detailsModal) {
     detailsModal.addEventListener('click', (e) => {
       if (e.target === detailsModal) closeDetailsModal();
-    });
-  }
-
-  // Create School Button
-  if (createBtn) {
-    createBtn.addEventListener('click', () => {
-      if (modalContent) {
-        modalContent.innerHTML = renderCreateSchoolModal();
-      }
-      if (modal) modal.classList.remove('hidden');
-      attachSchoolCreateForm(token, closeModal);
-      if (document.getElementById('school-modal-cancel')) {
-        document.getElementById('school-modal-cancel').addEventListener('click', closeModal);
-      }
     });
   }
 
@@ -2367,9 +2363,9 @@ function getAccessToken() {
 
 function renderSubscriptions(summary = {}, schools = []) {
   const state = getAdminState();
-  const activeSubscriptions = schools.filter(s => (s.subscriptionStatus || s.schoolStatus || 'inactive').toLowerCase() === 'active').length;
-  const trialSubscriptions = schools.filter(s => (s.subscriptionStatus || s.schoolStatus || 'inactive').toLowerCase() === 'trial').length;
-  const pastDue = schools.filter(s => (s.subscriptionStatus || s.schoolStatus || 'inactive').toLowerCase() === 'expired').length;
+  const activeSubscriptions = schools.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === 'active').length;
+  const trialSubscriptions = schools.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === 'trial').length;
+  const pastDue = schools.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === 'expired').length;
   
   const summaryCards = [
     { label: 'Active plans', value: activeSubscriptions.toString(), tone: 'emerald' },
@@ -2396,7 +2392,7 @@ function renderSubscriptions(summary = {}, schools = []) {
             <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Current plans</p>
             <h3 class="mt-2 text-xl font-semibold text-slate-900">Live subscription portfolio</h3>
           </div>
-          <button type="button" data-admin-action="renew-subscriptions" class="rounded-full bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">Queue renewals</button>
+          <p class="text-sm text-slate-600">Subscription renewals take effect only after the school completes verified checkout.</p>
           <div id="subscription-action-status" class="hidden rounded-3xl border border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800"></div>
         </div>
         <div class="mt-6 grid gap-4 lg:grid-cols-2">
@@ -2462,9 +2458,9 @@ function renderAnalytics(summary = {}, schools = []) {
   const totalStudents = summary.totalStudents || 0;
   const totalTeachers = summary.totalTeachers || 0;
   const totalSchools = summary.totalSchools || schools.length || 0;
-  const activeSchools = summary.activeSchools ?? schools.filter((school) => ['active', 'trial', 'paid'].includes(String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
-  const suspendedSchools = summary.suspendedSchools ?? schools.filter((school) => ['suspended', 'inactive'].includes(String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
-  const trialSchools = summary.trialSchools ?? schools.filter((school) => String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase() === 'trial').length;
+  const activeSchools = summary.activeSchools ?? schools.filter((school) => ['active', 'paid'].includes(String(school.schoolStatus || school.status || '').toLowerCase())).length;
+  const suspendedSchools = summary.suspendedSchools ?? schools.filter((school) => ['suspended', 'inactive', 'blocked', 'disabled'].includes(String(school.schoolStatus || school.status || '').toLowerCase())).length;
+  const trialSchools = summary.trialSchools ?? schools.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === 'trial').length;
   const activeSubscriptions = summary.activeSubscriptions ?? schools.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || '').toLowerCase())).length;
   return `
     <section class="space-y-6">
@@ -3107,7 +3103,7 @@ function renderSecurity(loadedSchools = []) {
   const sessions = state.sessions || [];
   const failedLogins = Number(localStorage.getItem('globyedu_failedLogins') || 0);
   const successfulLogins = Number(localStorage.getItem('globyedu_successfulLogins') || 0);
-  const suspendedSchools = schools.filter((school) => ['suspended', 'inactive'].includes(String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase())).length;
+  const suspendedSchools = schools.filter((school) => ['suspended', 'inactive', 'blocked', 'disabled'].includes(String(school.schoolStatus || school.status || '').toLowerCase())).length;
   const activeSessions = sessions.length;
   const roleDistribution = ['super_admin', 'school_authority', 'teacher', 'student'].map((role) => {
     const count = role === 'super_admin' ? (localStorage.getItem('globyedu_userRole') === 'super_admin' ? 1 : 0) : 0;

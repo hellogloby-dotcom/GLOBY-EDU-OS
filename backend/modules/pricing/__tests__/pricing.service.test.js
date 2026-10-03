@@ -154,6 +154,86 @@ describe('authoritative pricing service', () => {
     }
   });
 
+  it('renews subscription after verified payment without unsuspending the school', async () => {
+    const originalFetch = global.fetch;
+    const originalSecret = process.env.PAYSTACK_SECRET_KEY;
+    const originalWebhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
+    const records = new Map();
+    let tenant = { schoolId: 'school-payment-status-1', schoolStatus: 'suspended', status: 'suspended', subscriptionStatus: 'expired' };
+    const firebaseData = require('../../../firebase.data');
+    const firebaseCore = require('../../../firebase.core');
+    const firebaseMode = jest.spyOn(firebaseData, 'isFirebaseDataConfigured').mockReturnValue(true);
+    const saveById = jest.spyOn(firebaseCore, 'saveById').mockImplementation(async (collection, id, value) => {
+      records.set(`${collection}:${id}`, value);
+      return value;
+    });
+    const getById = jest.spyOn(firebaseCore, 'getById').mockImplementation(async (collection, id) => records.get(`${collection}:${id}`) || null);
+    const getTenant = jest.spyOn(firebaseCore, 'getTenant').mockImplementation(async () => tenant);
+    const saveTenant = jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, patch) => {
+      tenant = { ...tenant, ...patch, schoolId };
+      return tenant;
+    });
+    const getPricingPlan = jest.spyOn(pricingService, 'getPricingPlan').mockResolvedValue({
+      slug: 'starter',
+      name: 'Starter',
+      studentLimit: 100,
+      billingPeriod: 'monthly',
+      amount: 150,
+      currency: 'GHS',
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: true, data: { reference: 'payment-status-renewal', authorization_url: 'https://checkout.test/renewal' } }),
+    });
+    process.env.PAYSTACK_SECRET_KEY = 'server-only-test-secret';
+    process.env.PAYSTACK_WEBHOOK_SECRET = 'server-only-test-webhook-secret';
+
+    try {
+      const checkout = await paymentService.initializeCheckout({
+        schoolId: tenant.schoolId,
+        email: 'renewal@example.test',
+        planSlug: 'starter',
+        billingPeriod: 'monthly',
+        callbackUrl: 'https://example.test/checkout',
+        acceptance: { terms: true, privacy: true, paymentRefund: true },
+      });
+      const payment = await paymentService.getPayment(checkout.reference);
+      const event = {
+        event: 'charge.success',
+        data: {
+          reference: checkout.reference,
+          amount: payment.amountMinor,
+          currency: payment.currency,
+          status: 'success',
+          metadata: { schoolId: payment.schoolId, planSlug: payment.planSlug, billingPeriod: payment.billingPeriod },
+          paid_at: new Date().toISOString(),
+        },
+      };
+      const rawBody = JSON.stringify(event);
+      const signature = require('crypto').createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET).update(rawBody).digest('hex');
+
+      await paymentService.processWebhook(rawBody, signature, event);
+
+      expect(tenant.schoolStatus).toBe('suspended');
+      expect(tenant.status).toBe('suspended');
+      expect(tenant.subscriptionStatus).toBe('active');
+      expect(tenant.expiresAt).toBeTruthy();
+      expect(saveTenant).toHaveBeenCalledWith(tenant.schoolId, expect.not.objectContaining({ schoolStatus: expect.anything(), status: expect.anything() }));
+    } finally {
+      global.fetch = originalFetch;
+      if (originalSecret === undefined) delete process.env.PAYSTACK_SECRET_KEY;
+      else process.env.PAYSTACK_SECRET_KEY = originalSecret;
+      if (originalWebhookSecret === undefined) delete process.env.PAYSTACK_WEBHOOK_SECRET;
+      else process.env.PAYSTACK_WEBHOOK_SECRET = originalWebhookSecret;
+      firebaseMode.mockRestore();
+      saveById.mockRestore();
+      getById.mockRestore();
+      getTenant.mockRestore();
+      saveTenant.mockRestore();
+      getPricingPlan.mockRestore();
+    }
+  });
+
   it('rejects shell-command text as a webhook secret without falling back to the API secret', () => {
     const originalSecret = process.env.PAYSTACK_SECRET_KEY;
     const originalWebhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET;

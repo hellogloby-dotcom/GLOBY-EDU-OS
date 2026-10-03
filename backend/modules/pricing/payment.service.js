@@ -145,7 +145,7 @@ async function activateVerifiedPayment(payment, transaction) {
   });
   if (isProductionStore()) {
     const tenant = await firebaseCore.getTenant(payment.schoolId);
-    if (tenant) await firebaseCore.saveTenant(payment.schoolId, { subscriptionPlan: payment.planSlug, subscriptionStatus: 'active', expiresAt: calculateExpiry(paidAt, payment.billingPeriod), schoolStatus: 'active' });
+    if (tenant) await firebaseCore.saveTenant(payment.schoolId, { subscriptionPlan: payment.planSlug, subscriptionStatus: 'active', expiresAt: calculateExpiry(paidAt, payment.billingPeriod) });
   }
   return updatedPayment;
 }

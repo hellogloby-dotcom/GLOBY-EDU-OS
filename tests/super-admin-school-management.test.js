@@ -9,21 +9,29 @@ describe('Super Admin school directory filters', () => {
   beforeAll(() => {
     const helperUrl = pathToFileURL(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'utils', 'school-management-filters.mjs')).href;
     const script = `
-      import { getAdminSchoolStatus, getAdminSchoolStatuses, matchesAdminSchoolFilter } from ${JSON.stringify(helperUrl)};
+      import { getAdminSchoolStatus, getAdminSchoolSubscriptionStatus, getAdminSchoolStatuses, matchesAdminSchoolFilter } from ${JSON.stringify(helperUrl)};
       const beta = { name: 'Beta School', schoolId: 'school-beta-2', subscriptionStatus: 'Expired', schoolStatus: 'active' };
       const alpha = { name: 'Alpha School', schoolId: 'GLB-ALPHA-1', subscriptionStatus: 'trial', schoolStatus: 'active' };
+      const suspended = { name: 'Suspended School', schoolId: 'GLB-SUSPENDED-1', subscriptionStatus: 'expired', schoolStatus: 'suspended' };
       const searchableBeta = 'Beta School school-beta-2 expired';
       const searchableAlpha = 'Alpha School GLB-ALPHA-1 trial';
       process.stdout.write(JSON.stringify({
         betaStatus: getAdminSchoolStatus(beta),
-        statuses: getAdminSchoolStatuses([beta, alpha, { subscriptionStatus: 'pending-review' }]),
+        betaSubscriptionStatus: getAdminSchoolSubscriptionStatus(beta),
+        suspendedStatus: getAdminSchoolStatus(suspended),
+        legacyTrialStatus: getAdminSchoolStatus({ status: 'trial', subscriptionStatus: 'trial' }),
+        legacyExpiredStatus: getAdminSchoolStatus({ status: 'expired' }),
+        legacyExpiredSubscription: getAdminSchoolSubscriptionStatus({ status: 'expired' }),
+        legacySuspendedStatus: getAdminSchoolStatus({ subscriptionStatus: 'suspended' }),
+        statuses: getAdminSchoolStatuses([beta, alpha, suspended, { subscriptionStatus: 'pending-review' }]),
         byName: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'Beta School'),
         byId: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'school-beta-2'),
         noMatch: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'missing school'),
         cleared: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), ''),
-        combinedMatch: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'beta', 'expired'),
-        combinedMismatch: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'beta', 'active'),
-        otherSchool: matchesAdminSchoolFilter(searchableAlpha, getAdminSchoolStatus(alpha), 'alpha', 'trial'),
+        combinedMatch: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'beta', 'expired', getAdminSchoolSubscriptionStatus(beta)),
+        operationalMatch: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'beta', 'active', getAdminSchoolSubscriptionStatus(beta)),
+        combinedMismatch: matchesAdminSchoolFilter(searchableBeta, getAdminSchoolStatus(beta), 'beta', 'suspended', getAdminSchoolSubscriptionStatus(beta)),
+        otherSchool: matchesAdminSchoolFilter(searchableAlpha, getAdminSchoolStatus(alpha), 'alpha', 'trial', getAdminSchoolSubscriptionStatus(alpha)),
       }));
     `;
     const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8' });
@@ -42,8 +50,15 @@ describe('Super Admin school directory filters', () => {
   });
 
   it('filters by the displayed lifecycle status and composes search with status', () => {
-    expect(scenarios.betaStatus).toBe('expired');
+    expect(scenarios.betaStatus).toBe('active');
+    expect(scenarios.betaSubscriptionStatus).toBe('expired');
+    expect(scenarios.suspendedStatus).toBe('suspended');
+    expect(scenarios.legacyTrialStatus).toBe('active');
+    expect(scenarios.legacyExpiredStatus).toBe('active');
+    expect(scenarios.legacyExpiredSubscription).toBe('expired');
+    expect(scenarios.legacySuspendedStatus).toBe('suspended');
     expect(scenarios.combinedMatch).toBe(true);
+    expect(scenarios.operationalMatch).toBe(true);
     expect(scenarios.combinedMismatch).toBe(false);
     expect(scenarios.otherSchool).toBe(true);
   });
@@ -59,9 +74,13 @@ describe('Super Admin school directory filters', () => {
     expect(mainSource).toContain('document.querySelectorAll(isArchivedSection');
     expect(mainSource).toContain("'#school-directory-rows [data-school-id]'");
     expect(mainSource).toContain('matchesAdminSchoolFilter(');
+    expect(mainSource).toContain('row.dataset.schoolSubscriptionStatus');
     expect(mainSource).toContain("'archived-school-directory-empty' : 'school-directory-empty'");
     expect(adminSource).toContain('getAdminSchoolStatuses(schools)');
     expect(adminSource).toContain('data-school-status="${status}"');
+    expect(adminSource).toContain('data-school-subscription-status="${subscriptionStatus}"');
+    expect(adminSource).toContain('Operational</span>');
+    expect(adminSource).toContain('Subscription</span>');
   });
 
   it('uses the existing details API result to open the school details modal', () => {
@@ -83,6 +102,8 @@ describe('Super Admin school directory filters', () => {
 
     expect(securityHandler).toContain('if (!confirm(`Activate school ${school.name || school.schoolName || schoolId}? It will regain platform access.`)) return;');
     expect(securityHandler.indexOf('if (!confirm(')).toBeLessThan(securityHandler.indexOf('await activateAdminSchool('));
+    expect(securityHandler).toContain('is operationally active, but its subscription is');
+    expect(securityHandler).toContain('Verified checkout is required before school access is restored.');
   });
 
   it('preserves create/edit required fields, existing API methods, and cancel controls', () => {
@@ -105,6 +126,23 @@ describe('Super Admin school directory filters', () => {
     expect(editHandler).toContain("method: 'PUT'");
     expect(schoolActions.match(/addEventListener\('click', closeModal\)/g).length).toBeGreaterThanOrEqual(2);
     expect(schoolActions).toContain("if (document.getElementById('school-modal-cancel'))");
+  });
+
+  it('binds the primary create button once while preserving the quick-action create flow', () => {
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'main.js'), 'utf8');
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
+
+    expect(mainSource).toContain("createButton.addEventListener('click', () => handleCreateSchool())");
+    expect(adminSource).not.toContain("createBtn.addEventListener('click'");
+    expect(adminSource).toContain("document.querySelectorAll('.school-action-quick')");
+  });
+
+  it('does not advertise an unhandled renewal action and keeps verified payment as the renewal gate', () => {
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
+    const subscriptions = adminSource.match(/function renderSubscriptions\(summary = \{\}, schools = \[\]\) \{([\s\S]*?)\n\}/)?.[1] || '';
+
+    expect(subscriptions).not.toContain('data-admin-action="renew-subscriptions"');
+    expect(subscriptions).toContain('Subscription renewals take effect only after the school completes verified checkout.');
   });
 
   it('uses the existing Super Admin archive endpoints through the school API service', () => {

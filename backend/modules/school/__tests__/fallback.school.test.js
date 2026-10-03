@@ -4,6 +4,8 @@ const bcrypt = require('bcrypt');
 const { ensureDemoSchool } = require('../fallback.school');
 const schoolService = require('../school.service');
 const firebaseCore = require('../../../firebase.core');
+const firebaseData = require('../../../firebase.data');
+const tenantMiddleware = require('../middleware/tenant.middleware');
 const { generateSchoolSubdomain, resolveTenantFromHostname } = require('../tenant-hostname');
 
 const schoolsFile = path.join(__dirname, '../../../data/schools.json');
@@ -446,7 +448,7 @@ test('new schools receive a 5-day free trial and persist the trial expiry date',
   expect(expiry - now).toBeLessThanOrEqual(5 * 24 * 60 * 60 * 1000 + 60000);
 });
 
-test('expired trial schools are resolved as suspended to block normal access', async () => {
+test('expired trial changes subscription state without changing operational school status', async () => {
   fs.writeFileSync(schoolsFile, JSON.stringify({ schools: [] }, null, 2), 'utf8');
 
   const created = await schoolService.createSchool({
@@ -466,6 +468,20 @@ test('expired trial schools are resolved as suspended to block normal access', a
   saveSchoolData(schools);
 
   const resolved = await schoolService.getSchoolBySchoolId(created.schoolId);
-  expect(resolved.schoolStatus).toBe('suspended');
-  expect(['expired', 'suspended']).toContain((resolved.subscriptionStatus || '').toLowerCase());
+  expect(resolved.schoolStatus).toBe('active');
+  expect(resolved.subscriptionStatus).toBe('expired');
+
+  const firebaseMode = jest.spyOn(firebaseData, 'isFirebaseDataConfigured').mockReturnValue(false);
+  const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  const next = jest.fn();
+  await tenantMiddleware({
+    user: { roles: ['school_authority'], tenantId: created.schoolId, schoolId: created.schoolId },
+    params: { schoolId: created.schoolId },
+    body: {},
+    headers: {},
+  }, response, next);
+  expect(response.status).toHaveBeenCalledWith(403);
+  expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SUBSCRIPTION_EXPIRED' }));
+  expect(next).not.toHaveBeenCalled();
+  firebaseMode.mockRestore();
 });

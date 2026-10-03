@@ -39,8 +39,44 @@ jest.mock('../../../config/prisma.client', () => ({
 jest.mock('bcrypt', () => ({ compare: jest.fn(async () => true), hash: jest.fn(async () => 'hash') }));
 
 const authService = require('../auth.service');
+const firebaseData = require('../../../firebase.data');
+const firebaseCore = require('../../../firebase.core');
+
+function mockFirebaseSchoolLogin(school) {
+  jest.spyOn(firebaseData, 'isFirebaseDataConfigured').mockReturnValue(true);
+  jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(school);
+  const userRecord = {
+    id: 'school-user-1',
+    email: 'linked@globy.test',
+    schoolId: 'globy-school',
+    tenantId: 'globy-school',
+    role: 'school_authority',
+    roles: ['school_authority'],
+    status: 'active',
+    isVerified: true,
+    passwordHash: 'firebase-test-hash',
+    passwordNeedsReset: false,
+  };
+  const userRef = { id: userRecord.id };
+  const userSnapshot = { exists: true, id: userRecord.id, data: () => userRecord };
+  const firestore = {
+    collection: (name) => name === 'users'
+      ? { doc: () => userRef, where: () => ({ get: async () => ({ docs: [{ id: userRecord.id, data: () => userRecord }] }) }) }
+      : { doc: (id) => ({ id }) },
+    runTransaction: async (callback) => callback({
+      get: async (reference) => reference === userRef ? userSnapshot : { exists: false, data: () => null },
+      create: () => {},
+      update: () => {},
+    }),
+  };
+  jest.spyOn(firebaseData, 'getFirestore').mockReturnValue({
+    ...firestore,
+  });
+}
 
 describe('Firebase login account-linking policy', () => {
+  afterEach(() => jest.restoreAllMocks());
+
   test('rejects an unlinked Firebase account without creating a user', async () => {
     const firebaseAdmin = require('../../../firebase.admin');
     firebaseAdmin.verifyIdToken.mockResolvedValueOnce({ email: 'unknown@globy.test', email_verified: true });
@@ -62,5 +98,29 @@ describe('Firebase login account-linking policy', () => {
     expect(result.user.roles).toEqual(['school_authority']);
     expect(result.accessToken).toBeTruthy();
     expect(result.refreshToken).toBeTruthy();
+  });
+
+  test('allows an active subscription when an old trial end date remains on the tenant', async () => {
+    mockFirebaseSchoolLogin({
+      schoolId: 'globy-school',
+      schoolStatus: 'active',
+      subscriptionStatus: 'active',
+      trialEndsAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    await expect(authService.login('globy-school', 'linked@globy.test', 'test-password'))
+      .resolves.toMatchObject({ user: { schoolId: 'globy-school' } });
+  });
+
+  test('continues to deny a trial subscription after its trial end date', async () => {
+    mockFirebaseSchoolLogin({
+      schoolId: 'globy-school',
+      schoolStatus: 'active',
+      subscriptionStatus: 'trial',
+      trialEndsAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    await expect(authService.login('globy-school', 'linked@globy.test', 'test-password'))
+      .rejects.toThrow('School account is not active');
   });
 });

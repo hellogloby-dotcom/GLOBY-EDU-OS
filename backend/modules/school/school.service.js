@@ -287,34 +287,53 @@ function resolveSchoolLifecycleStatus(school = {}) {
   }
 
   const normalized = { ...school };
-  const schoolStatus = String(normalized.schoolStatus || normalized.status || '').trim().toLowerCase();
-  const subscriptionStatus = String(normalized.subscriptionStatus || '').trim().toLowerCase();
-  const manualSuspended = ['suspended', 'inactive', 'blocked', 'disabled'].includes(schoolStatus) || ['suspended', 'inactive', 'blocked', 'disabled'].includes(subscriptionStatus);
+  const storedSchoolStatus = String(normalized.schoolStatus || '').trim().toLowerCase();
+  const legacyStatus = String(normalized.status || '').trim().toLowerCase();
+  const explicitSubscriptionStatus = String(normalized.subscriptionStatus || '').trim().toLowerCase();
+  const legacySubscriptionStatus = !storedSchoolStatus && ['trial', 'expired'].includes(legacyStatus) ? legacyStatus : '';
+  const subscriptionStatus = explicitSubscriptionStatus || legacySubscriptionStatus;
+  const legacyOperationalStatus = ['trial', 'expired'].includes(legacyStatus) ? 'active' : legacyStatus;
+  const subscriptionOperationalStatus = ['suspended', 'inactive', 'blocked', 'disabled'].includes(subscriptionStatus)
+    ? 'suspended'
+    : ['active', 'trial', 'expired', 'paid'].includes(subscriptionStatus) ? 'active' : '';
+  const schoolStatus = storedSchoolStatus || legacyOperationalStatus || subscriptionOperationalStatus;
+  const operationallySuspended = ['suspended', 'inactive', 'blocked', 'disabled'].includes(schoolStatus);
   const trialEndsAt = normalized.trialEndsAt ? new Date(normalized.trialEndsAt) : null;
-  const hasExpiredTrial = Boolean(trialEndsAt && !Number.isNaN(trialEndsAt.getTime()) && trialEndsAt.getTime() <= Date.now());
-
-  if (manualSuspended) {
-    normalized.schoolStatus = 'suspended';
-    normalized.subscriptionStatus = subscriptionStatus === 'expired' ? 'expired' : 'suspended';
-    return normalized;
-  }
+  const hasExpiredTrial = (!subscriptionStatus || subscriptionStatus === 'trial')
+    && Boolean(trialEndsAt && !Number.isNaN(trialEndsAt.getTime()) && trialEndsAt.getTime() <= Date.now());
 
   if (hasExpiredTrial && normalized.developmentOnly !== true) {
-    normalized.schoolStatus = 'suspended';
     normalized.subscriptionStatus = 'expired';
     normalized.trialStatus = normalized.trialStatus || 'Expired';
+  } else if (!normalized.subscriptionStatus && legacySubscriptionStatus) {
+    normalized.subscriptionStatus = legacySubscriptionStatus;
+  }
+
+  if (operationallySuspended) {
+    normalized.schoolStatus = 'suspended';
     return normalized;
   }
 
-  if (!normalized.schoolStatus && normalized.status) {
-    normalized.schoolStatus = normalized.status;
-  }
-
-  if (!normalized.subscriptionStatus && normalized.schoolStatus) {
-    normalized.subscriptionStatus = normalized.schoolStatus;
-  }
+  if (!normalized.schoolStatus && schoolStatus) normalized.schoolStatus = schoolStatus;
 
   return normalized;
+}
+
+function isSchoolAccessAllowed(school = {}) {
+  const schoolStatus = String(school.schoolStatus || school.status || '').trim().toLowerCase();
+  if (schoolStatus !== 'active') return false;
+
+  const subscriptionStatus = String(school.subscriptionStatus || '').trim().toLowerCase();
+  if (['expired', 'suspended', 'inactive', 'blocked', 'disabled'].includes(subscriptionStatus)) return false;
+
+  const trialEndsAt = school.trialEndsAt ? new Date(school.trialEndsAt) : null;
+  return !(
+    subscriptionStatus === 'trial'
+    && school.developmentOnly !== true
+    && trialEndsAt
+    && !Number.isNaN(trialEndsAt.getTime())
+    && trialEndsAt.getTime() <= Date.now()
+  );
 }
 
 function createSchoolArchiveError(code, message) {
@@ -1400,8 +1419,7 @@ async function deleteSchool(id) {
     const updated = {
       ...school,
       schoolStatus: 'suspended',
-      subscriptionStatus: 'suspended',
-      trialStatus: 'Suspended',
+      status: 'suspended',
       id: school.id || school.schoolId,
     };
     schools[index] = updated;
@@ -1409,7 +1427,7 @@ async function deleteSchool(id) {
     return updated;
   }
 
-  const updated = await prisma.tenant.update({ where: { id }, data: { status: 'suspended', subscriptionStatus: 'suspended' } }).catch((err) => {
+  const updated = await prisma.tenant.update({ where: { id }, data: { status: 'suspended' } }).catch((err) => {
     throw new Error('Failed to suspend school: ' + (err.message || err));
   });
   return updated;
@@ -1423,7 +1441,6 @@ async function activateSchool(id) {
     return firebaseCore.saveTenant(id, {
       status: 'active',
       schoolStatus: 'active',
-      subscriptionStatus: ['expired', 'suspended'].includes(String(school.subscriptionStatus || '').toLowerCase()) ? 'trial' : school.subscriptionStatus || 'active',
     });
   }
 
@@ -1439,11 +1456,6 @@ async function activateSchool(id) {
       ...school,
       schoolStatus: 'active',
       status: 'active',
-      subscriptionStatus: school.subscriptionStatus === 'expired' || school.subscriptionStatus === 'suspended' ? 'trial' : school.subscriptionStatus || 'active',
-      trialStatus: school.subscriptionStatus === 'expired' ? '5-Day Trial' : school.trialStatus || 'Active',
-      trialEndsAt: school.trialEndsAt && new Date(school.trialEndsAt).getTime() > Date.now()
-        ? school.trialEndsAt
-        : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       id: school.id || school.schoolId,
     };
     schools[index] = updated;
@@ -1454,7 +1466,7 @@ async function activateSchool(id) {
   const school = await prisma.tenant.findUnique({ where: { id } });
   if (!school) throw new Error('School not found');
   if (isArchivedSchool(school)) throw createSchoolArchiveError('SCHOOL_ARCHIVED', 'Archived schools must be restored before activation.');
-  const updated = await prisma.tenant.update({ where: { id }, data: { status: 'active', subscriptionStatus: 'active' } }).catch((err) => {
+  const updated = await prisma.tenant.update({ where: { id }, data: { status: 'active' } }).catch((err) => {
     throw new Error('Failed to activate school: ' + (err.message || err));
   });
   return updated;
@@ -1470,7 +1482,8 @@ async function listArchivedSchools(search = '', status = '') {
   const selectedStatus = String(status || '').trim().toLowerCase();
   return (await getAllSchools())
     .filter((school) => isArchivedSchool(school) && matchesSchoolSearch(school, search))
-    .filter((school) => !selectedStatus || String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase() === selectedStatus)
+    .filter((school) => !selectedStatus || [school.schoolStatus, school.status, school.subscriptionStatus]
+      .some((value) => String(value || '').trim().toLowerCase() === selectedStatus))
     .map(sanitizeSchoolResponse);
 }
 
@@ -1506,7 +1519,7 @@ function buildPlatformAnalytics(schools, days) {
     teacherGrowth: buildGrowthSeries(teachers, days),
     subscriptionActivity: ['trial', 'active', 'suspended', 'expired'].map((status) => ({
       status,
-      count: schools.filter((school) => String(school.subscriptionStatus || school.schoolStatus || '').toLowerCase() === status).length,
+      count: schools.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === status).length,
     })),
     revenue: null,
     revenueCurrency: null,
@@ -1515,7 +1528,7 @@ function buildPlatformAnalytics(schools, days) {
 
 function buildPlatformSummaryFromSchools(schools, analyticsDays) {
   const normalized = schools.map((school) => resolveSchoolLifecycleStatus(school));
-  const activeSchools = normalized.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase()));
+  const activeSchools = normalized.filter((school) => String(school.schoolStatus || school.status || '').toLowerCase() === 'active');
   const schoolSummaries = normalized.map((school) => ({
     schoolId: school.schoolId,
     name: school.name,
@@ -1532,11 +1545,11 @@ function buildPlatformSummaryFromSchools(schools, analyticsDays) {
   return {
     totalSchools: normalized.length,
     activeSchools: activeSchools.length,
-    trialSchools: normalized.filter((school) => String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase() === 'trial').length,
-    expiredSchools: normalized.filter((school) => ['expired', 'inactive', 'blocked'].includes(String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase())).length,
+    trialSchools: normalized.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === 'trial').length,
+    expiredSchools: normalized.filter((school) => String(school.subscriptionStatus || '').toLowerCase() === 'expired').length,
     totalStudents: normalized.reduce((sum, school) => sum + countSchoolUsers(school, 'student'), 0),
     totalTeachers: normalized.reduce((sum, school) => sum + countSchoolUsers(school, 'teacher'), 0),
-    suspendedSchools: normalized.filter((school) => ['suspended', 'inactive', 'blocked'].includes(String(school.subscriptionStatus || school.schoolStatus || school.status || '').toLowerCase())).length,
+    suspendedSchools: normalized.filter((school) => ['suspended', 'inactive', 'blocked'].includes(String(school.schoolStatus || school.status || '').toLowerCase())).length,
     activeSubscriptions: normalized.filter((school) => ['active', 'paid'].includes(String(school.subscriptionStatus || '').toLowerCase())).length,
     revenue: null,
     schools: schoolSummaries,
@@ -1565,11 +1578,11 @@ async function getPlatformSummary({ days = 365 } = {}) {
       .filter((tenant) => !isArchivedSchool(tenant))
       .map((tenant) => resolveSchoolLifecycleStatus(tenant));
     const totalSchools = tenants.length;
-    const activeSchools = tenants.filter((tenant) => ['active', 'paid'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
+    const activeSchools = tenants.filter((tenant) => String(tenant.schoolStatus || tenant.status || '').toLowerCase() === 'active').length;
     const trialSchools = tenants.filter(
-      (tenant) => (tenant.subscriptionStatus || tenant.status || '').toLowerCase() === 'trial'
+      (tenant) => String(tenant.subscriptionStatus || '').toLowerCase() === 'trial'
     ).length;
-    const expiredSchools = tenants.filter((tenant) => ['expired', 'inactive', 'blocked'].includes((tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length;
+    const expiredSchools = tenants.filter((tenant) => String(tenant.subscriptionStatus || '').toLowerCase() === 'expired').length;
     const totalStudents = tenants.reduce(
       (sum, tenant) =>
         sum + ((tenant.users || []).filter((user) => user.roles?.some((role) => role.role?.name === 'student')).length || 0),
@@ -1585,7 +1598,7 @@ async function getPlatformSummary({ days = 365 } = {}) {
       name: tenant.name,
       subscriptionPlan: tenant.subscriptionPlan,
       subscriptionStatus: tenant.subscriptionStatus,
-      schoolStatus: tenant.status,
+      schoolStatus: tenant.schoolStatus || tenant.status,
       userCount: (tenant.users || []).length,
       studentCount: countSchoolUsers(tenant, 'student'),
       teacherCount: countSchoolUsers(tenant, 'teacher'),
@@ -1599,7 +1612,7 @@ async function getPlatformSummary({ days = 365 } = {}) {
       expiredSchools,
       totalStudents,
       totalTeachers,
-      suspendedSchools: tenants.filter((tenant) => ['suspended', 'inactive', 'blocked'].includes(String(tenant.subscriptionStatus || tenant.status || '').toLowerCase())).length,
+      suspendedSchools: tenants.filter((tenant) => ['suspended', 'inactive', 'blocked'].includes(String(tenant.schoolStatus || tenant.status || '').toLowerCase())).length,
       activeSubscriptions: tenants.filter((tenant) => ['active', 'paid'].includes(String(tenant.subscriptionStatus || '').toLowerCase())).length,
       revenue: null,
       schools: schoolSummaries,
@@ -3381,6 +3394,7 @@ module.exports = {
   getSchoolBySchoolId,
   sanitizeSchoolResponse,
   resolveSchoolLifecycleStatus,
+  isSchoolAccessAllowed,
   getStudentSchoolView,
   getTeacherSchoolView,
   createFeePayment,
