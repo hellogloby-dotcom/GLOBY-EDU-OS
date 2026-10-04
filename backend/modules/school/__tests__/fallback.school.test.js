@@ -78,6 +78,33 @@ test('Firebase school creation allocates collision-resistant IDs without the loc
   expect(getTenant).toHaveBeenNthCalledWith(2, second.schoolId);
 });
 
+test('Firebase school creation stores an unverified tenant-linked school_head record', async () => {
+  jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+  jest.spyOn(firebaseCore, 'findTenantByHeadEmail').mockResolvedValue(null);
+  jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(null);
+  jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, data) => ({ id: schoolId, schoolId, ...data }));
+  const saved = new Map();
+  jest.spyOn(firebaseCore, 'saveById').mockImplementation(async (collection, id, data) => {
+    saved.set(`${collection}:${id}`, { id, ...data });
+    return { id, ...data };
+  });
+
+  const created = await schoolService.createSchool({
+    name: 'Firebase Verification State Test',
+    headEmail: 'authority@verification-state.example.test',
+    headPassword: 'StrongPassword!123',
+  });
+  const user = saved.get(`users:${created.schoolId}:authority@verification-state.example.test`);
+
+  expect(user).toMatchObject({
+    schoolId: created.schoolId,
+    tenantId: created.schoolId,
+    role: 'school_head',
+    isVerified: false,
+    emailVerified: false,
+  });
+});
+
 test('Firebase school creation blocks a second registration for an existing authority email', async () => {
   jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
   jest.spyOn(firebaseCore, 'findTenantByHeadEmail').mockResolvedValue({
@@ -96,6 +123,17 @@ test('Firebase school creation blocks a second registration for an existing auth
 
   expect(saveTenant).not.toHaveBeenCalled();
   expect(saveById).not.toHaveBeenCalled();
+});
+
+test('JSON fallback school head retains its trusted local verification state', async () => {
+  const created = await schoolService.createSchool({
+    name: 'Local Verification Fallback Test',
+    headEmail: 'authority@local-verification.example.test',
+    headPassword: 'StrongPassword!123',
+  });
+  const user = created.users.find((entry) => entry.username === 'authority@local-verification.example.test');
+
+  expect(user).toMatchObject({ role: 'school_head', isVerified: true, emailVerified: true });
 });
 
 test('demo seeding preserves valid non-demo schools while deduplicating duplicate demo entries', () => {

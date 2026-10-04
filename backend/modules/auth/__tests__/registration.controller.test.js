@@ -7,13 +7,16 @@ jest.mock('../../../firebase.admin', () => ({
   createUser: jest.fn(),
   generateEmailVerificationLink: jest.fn(),
 }));
+jest.mock('../../../firebase.data', () => ({ isFirebaseDataConfigured: jest.fn() }));
 jest.mock('../../../config/app-url.config', () => ({ getAppUrl: jest.fn() }));
-jest.mock('../utils/email', () => ({ sendEmail: jest.fn(), verificationTemplate: jest.fn() }));
+jest.mock('../utils/email', () => ({ sendEmail: jest.fn(), verificationTemplate: jest.fn(), resetTemplate: jest.fn() }));
 
 const schoolService = require('../../school/school.service');
 const authService = require('../auth.service');
 const firebaseAdmin = require('../../../firebase.admin');
+const firebaseData = require('../../../firebase.data');
 const { getAppUrl } = require('../../../config/app-url.config');
+const { sendEmail } = require('../utils/email');
 const authRouter = require('../auth.controller');
 
 function createTestServer() {
@@ -50,6 +53,12 @@ describe('public registration controller diagnostics', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    firebaseData.isFirebaseDataConfigured.mockReturnValue(false);
+    firebaseAdmin.isFirebaseConfigured.mockReturnValue(false);
+    firebaseAdmin.createUser.mockResolvedValue({ uid: 'firebase-user-test' });
+    firebaseAdmin.generateEmailVerificationLink.mockResolvedValue('https://auth.example.test/verify');
+    getAppUrl.mockReturnValue('https://app.example.test');
+    sendEmail.mockResolvedValue({ ok: true });
   });
 
   afterEach(() => {
@@ -65,36 +74,110 @@ describe('public registration controller diagnostics', () => {
     return { response, body: await response.json() };
   }
 
-  test('missing APP_URL in the optional email hook does not turn a created school into a failed signup', async () => {
+  test('missing APP_URL prevents Firebase registration before creating the school', async () => {
     const email = `app-url-${Date.now()}@example.test`;
-    schoolService.createSchool.mockResolvedValue({
-      schoolId: 'GLB-2026-DIAGNOSTIC',
-      trialEndsAt: new Date('2026-10-08T00:00:00.000Z'),
-      headAccount: { username: email, password: 'ValidPassword!1' },
-    });
+    firebaseData.isFirebaseDataConfigured.mockReturnValue(true);
     firebaseAdmin.isFirebaseConfigured.mockReturnValue(true);
     getAppUrl.mockImplementation(() => {
       throw new Error('APP_URL is required in production.');
     });
-    authService.login.mockResolvedValue({
-      accessToken: 'test-access-token',
-      refreshToken: 'test-refresh-token',
-      user: { id: 'GLB-2026-DIAGNOSTIC:user', email, roles: ['school_authority'] },
-    });
-    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await postRegistration(createRegistrationPayload(email));
 
-    expect(result.response.status).toBe(200);
-    expect(result.body).toMatchObject({ status: 'ok', schoolId: 'GLB-2026-DIAGNOSTIC', tenantId: 'GLB-2026-DIAGNOSTIC' });
-    expect(schoolService.createSchool.mock.calls[0][0].schoolId).toBeUndefined();
+    expect(result.response.status).toBe(503);
+    expect(result.body.code).toBe('REGISTRATION_VERIFICATION_SETUP_FAILED');
+    expect(schoolService.createSchool).not.toHaveBeenCalled();
     expect(firebaseAdmin.createUser).not.toHaveBeenCalled();
-    expect(warning).toHaveBeenCalledWith('[auth.register] Optional Firebase Auth hook failed', {
-      phase: 'firebase.auth-hook',
+    expect(error).toHaveBeenCalledWith('[auth.register] School signup failed', {
+      phase: 'firebase.configuration',
       errorName: 'Error',
     });
-    expect(error).not.toHaveBeenCalled();
+  });
+
+  test('Firebase signup returns pending verification without issuing a session', async () => {
+    const email = `verified-${Date.now()}@example.test`;
+    firebaseData.isFirebaseDataConfigured.mockReturnValue(true);
+    firebaseAdmin.isFirebaseConfigured.mockReturnValue(true);
+    schoolService.createSchool.mockResolvedValue({
+      schoolId: 'GLB-2026-VERIFICATION',
+      trialEndsAt: new Date('2026-10-08T00:00:00.000Z'),
+      headAccount: { username: email, password: 'ValidPassword!1' },
+    });
+
+    const result = await postRegistration(createRegistrationPayload(email));
+
+    expect(result.response.status).toBe(202);
+    expect(result.body).toMatchObject({
+      status: 'pending_verification',
+      requiresEmailVerification: true,
+      schoolId: 'GLB-2026-VERIFICATION',
+      tenantId: 'GLB-2026-VERIFICATION',
+      verificationEmail: email,
+    });
+    expect(result.body.accessToken).toBeUndefined();
+    expect(result.body.user).toBeUndefined();
+    expect(firebaseAdmin.createUser).toHaveBeenCalledWith({
+      email,
+      password: 'ValidPassword!1',
+      displayName: 'Test Authority',
+    });
+    expect(sendEmail).toHaveBeenCalled();
+    expect(authService.login).not.toHaveBeenCalled();
+  });
+
+  test('Firebase Auth creation failure cannot report registration success', async () => {
+    const email = `auth-failed-${Date.now()}@example.test`;
+    firebaseData.isFirebaseDataConfigured.mockReturnValue(true);
+    firebaseAdmin.isFirebaseConfigured.mockReturnValue(true);
+    schoolService.createSchool.mockResolvedValue({ schoolId: 'GLB-2026-PARTIAL' });
+    firebaseAdmin.createUser.mockRejectedValue(Object.assign(new Error('private auth detail'), { code: 'auth/internal-error' }));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await postRegistration(createRegistrationPayload(email));
+
+    expect(result.response.status).toBe(503);
+    expect(result.body).toMatchObject({ status: 'error', code: 'REGISTRATION_VERIFICATION_SETUP_FAILED' });
+    expect(result.body.message).toMatch(/workspace was created.*contact support before retrying/i);
+    expect(result.body.accessToken).toBeUndefined();
+    expect(authService.login).not.toHaveBeenCalled();
+  });
+
+  test('verification email delivery failure cannot report registration success', async () => {
+    const email = `mail-failed-${Date.now()}@example.test`;
+    firebaseData.isFirebaseDataConfigured.mockReturnValue(true);
+    firebaseAdmin.isFirebaseConfigured.mockReturnValue(true);
+    schoolService.createSchool.mockResolvedValue({ schoolId: 'GLB-2026-MAIL-PARTIAL' });
+    sendEmail.mockResolvedValue({ ok: false, reason: 'BREVO_NOT_CONFIGURED' });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await postRegistration(createRegistrationPayload(email));
+
+    expect(result.response.status).toBe(503);
+    expect(result.body.code).toBe('REGISTRATION_VERIFICATION_SETUP_FAILED');
+    expect(result.body.accessToken).toBeUndefined();
+    expect(authService.login).not.toHaveBeenCalled();
+  });
+
+  test('fallback signup reports success only after creating a real session', async () => {
+    const email = `fallback-${Date.now()}@example.test`;
+    schoolService.createSchool.mockResolvedValue({
+      schoolId: 'GLB-2026-FALLBACK',
+      trialEndsAt: new Date('2026-10-08T00:00:00.000Z'),
+      headAccount: { username: email, password: 'ValidPassword!1' },
+    });
+    authService.login.mockResolvedValue({
+      accessToken: 'test-access-token',
+      refreshToken: 'test-refresh-token',
+      user: { id: 'fallback-user', email, roles: ['school_head'] },
+    });
+
+    const result = await postRegistration(createRegistrationPayload(email));
+
+    expect(result.response.status).toBe(200);
+    expect(result.body).toMatchObject({ status: 'ok', schoolId: 'GLB-2026-FALLBACK', tenantId: 'GLB-2026-FALLBACK' });
+    expect(result.body.accessToken).toBe('test-access-token');
+    expect(result.body.user.role).toBe('school_head');
   });
 
   test('keeps the public error generic while logging only safe failure metadata', async () => {

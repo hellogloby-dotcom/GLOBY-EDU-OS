@@ -453,6 +453,34 @@ export function attachRegisterWizardHandlers() {
       };
 
       const result = await apiRegister(payload);
+      if (result.ok && result.data?.status === 'pending_verification') {
+        loadingOverlay.classList.add('hidden');
+        loadingOverlay.classList.remove('flex');
+        const notice = document.createElement('div');
+        notice.className = 'rounded-2xl border border-sky-100 bg-sky-50 p-5 text-sky-950';
+        notice.setAttribute('role', 'status');
+
+        const heading = document.createElement('p');
+        heading.className = 'font-semibold';
+        heading.textContent = 'Verify your email to finish setting up your school';
+        const instructions = document.createElement('p');
+        instructions.className = 'mt-2 text-sm';
+        instructions.textContent = `We sent a verification link to ${result.data.verificationEmail || values.head.email}. Open that link, then sign in with your email and password.`;
+        const schoolId = document.createElement('p');
+        schoolId.className = 'mt-2 text-sm';
+        schoolId.textContent = `School ID: ${result.data.schoolId}. You will need it to sign in.`;
+        const loginLink = document.createElement('a');
+        loginLink.href = '#/login';
+        loginLink.className = 'mt-4 inline-flex font-semibold text-sky-800 underline underline-offset-4';
+        loginLink.textContent = 'Go to sign in';
+
+        notice.append(heading, instructions, schoolId, loginLink);
+        messageSlot.replaceChildren(notice);
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Verification email sent';
+        return;
+      }
+
       if (!result.ok || result.data?.status !== 'ok') {
         loadingOverlay.classList.add('hidden');
         loadingOverlay.classList.remove('flex');

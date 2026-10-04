@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 const config = require('../../config/auth.config');
 const { getAppUrl } = require('../../config/app-url.config');
 const firebaseAdmin = require('../../firebase.admin');
+const firebaseData = require('../../firebase.data');
 const router = express.Router();
 const authService = require('./auth.service');
 const { sendEmail, resetTemplate, verificationTemplate } = require('./utils/email');
@@ -71,7 +72,7 @@ function saveSchoolData(schools) {
 
 // POST /api/v1/auth/register
 // Accepts a structured registration payload (multi-step wizard). Creates tenant, school head,
-// default roles, permissions, settings and returns auto-login tokens for the new school head.
+// default roles and settings. Firebase accounts must verify email before login.
 router.post('/register', async (req, res) => {
   const payload = req.body || {};
   const schoolHead = payload.head || {};
@@ -84,8 +85,18 @@ router.post('/register', async (req, res) => {
   }
 
   let phase = 'school.create';
+  let firebaseMode = false;
+  let createdSchoolId = null;
   try {
     const trialEndsAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    firebaseMode = firebaseData.isFirebaseDataConfigured();
+    let appUrl = '';
+    if (firebaseMode) {
+      phase = 'firebase.configuration';
+      if (!firebaseAdmin.isFirebaseConfigured()) throw new Error('Firebase Authentication is not configured.');
+      appUrl = getAppUrl();
+    }
+
     const schoolId = payload.schoolId || null;
     const schoolPayload = {
       name: payload.schoolName,
@@ -118,36 +129,47 @@ router.post('/register', async (req, res) => {
     };
 
     const created = await schoolService.createSchool(schoolPayload);
-
-    phase = 'firebase.auth-hook';
-    if (firebaseAdmin.isFirebaseConfigured()) {
-      try {
-        const appUrl = getAppUrl();
-        await firebaseAdmin.createUser({
-          email: schoolPayload.headEmail,
-          password: schoolHead.password,
-          displayName: schoolHead.fullName,
-        });
-        const verificationLink = await firebaseAdmin.generateEmailVerificationLink(schoolPayload.headEmail, {
-          url: `${appUrl}/#/login`,
-        });
-        await sendEmail(schoolPayload.headEmail, 'Verify your email', verificationTemplate(verificationLink, appUrl));
-      } catch (createErr) {
-        console.warn('[auth.register] Optional Firebase Auth hook failed', registrationErrorDetails(createErr, phase));
-      }
-    }
-
     const tenantId = created.schoolId || created.id || (created.school && created.school.schoolId) || schoolId;
     if (!tenantId) throw new Error('School creation did not return a school ID.');
-    const headAccount = created.headAccount || { username: schoolPayload.headEmail, password: schoolHead.password };
+    createdSchoolId = tenantId;
+
+    if (firebaseMode) {
+      phase = 'firebase.auth.create';
+      await firebaseAdmin.createUser({
+        email: schoolPayload.headEmail,
+        password: schoolHead.password,
+        displayName: schoolHead.fullName,
+      });
+      phase = 'firebase.verification.link';
+      const verificationLink = await firebaseAdmin.generateEmailVerificationLink(schoolPayload.headEmail, {
+        url: `${appUrl}/#/login`,
+      });
+      phase = 'firebase.verification.email';
+      const delivery = await sendEmail(schoolPayload.headEmail, 'Verify your email', verificationTemplate(verificationLink, appUrl));
+      if (delivery?.ok !== true) {
+        const error = new Error('Verification email delivery failed.');
+        error.code = delivery?.reason || 'EMAIL_DELIVERY_FAILED';
+        error.registrationOperation = 'verification-email.send';
+        throw error;
+      }
+
+      return res.status(202).json({
+        status: 'pending_verification',
+        requiresEmailVerification: true,
+        schoolId: tenantId,
+        tenantId,
+        trialEndsAt: (created.trialEndsAt || trialEndsAt).toISOString ? (created.trialEndsAt || trialEndsAt).toISOString() : new Date(created.trialEndsAt || trialEndsAt).toISOString(),
+        trialStatus: '5-Day Trial',
+        accountStatus: 'trial',
+        schoolName: payload.schoolName,
+        verificationEmail: schoolPayload.headEmail,
+      });
+    }
 
     phase = 'session.login';
-    let loginResult = null;
-    try {
-      loginResult = await authService.login(tenantId, headAccount.username, headAccount.password);
-    } catch (err) {
-      loginResult = null;
-    }
+    const headAccount = created.headAccount || { username: schoolPayload.headEmail, password: schoolHead.password };
+    const loginResult = await authService.login(tenantId, headAccount.username, headAccount.password);
+    if (!loginResult?.accessToken) throw new Error('School Authority session was not created.');
 
     phase = 'response.build';
     const response = {
@@ -161,11 +183,9 @@ router.post('/register', async (req, res) => {
       headAccount: { email: headAccount.username },
     };
 
-    if (loginResult) {
-      setRefreshCookie(res, loginResult.refreshToken);
-      response.accessToken = loginResult.accessToken;
-      response.user = { id: loginResult.user.id, email: loginResult.user.email, role: loginResult.user.roles?.[0] || 'school_authority' };
-    }
+    setRefreshCookie(res, loginResult.refreshToken);
+    response.accessToken = loginResult.accessToken;
+    response.user = { id: loginResult.user.id, email: loginResult.user.email, role: loginResult.user.roles?.[0] || 'school_authority' };
 
     return res.json(response);
   } catch (err) {
@@ -173,6 +193,16 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ status: 'error', message: 'A school registration for this authority email already exists. Please contact support before retrying.' });
     }
     console.error('[auth.register] School signup failed', registrationErrorDetails(err, phase));
+    if (firebaseMode && phase.startsWith('firebase.')) {
+      return res.status(503).json({
+        status: 'error',
+        code: 'REGISTRATION_VERIFICATION_SETUP_FAILED',
+        message: createdSchoolId
+          ? 'Your school workspace was created, but email verification setup could not be completed. Contact support before retrying.'
+          : 'Registration is temporarily unavailable. Please try again later.',
+        ...(createdSchoolId ? { schoolId: createdSchoolId, tenantId: createdSchoolId } : {}),
+      });
+    }
     return res.status(500).json({ status: 'error', message: 'We could not create your school account right now. Please try again.' });
   }
 });

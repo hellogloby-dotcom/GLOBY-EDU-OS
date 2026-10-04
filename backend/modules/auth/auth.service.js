@@ -302,9 +302,25 @@ async function login(tenantId, identifier, password, options = {}) {
     }
   }
 
-  const user = await validateUserByEmail(tenantId, identifier, password);
+  let user = await validateUserByEmail(tenantId, identifier, password);
   if (!user) throw new Error('Invalid credentials');
   if (user.status !== 'active' || !roleMatchesLoginType(user, options.loginType)) throw new Error('Invalid credentials');
+  if (firebaseData.isFirebaseDataConfigured() && user.isVerified !== true) {
+    let firebaseUser = null;
+    try {
+      firebaseUser = await firebaseAdmin.getUserByEmail(user.email || identifier);
+    } catch {
+      throw new Error('Email must be verified before signing in.');
+    }
+    if (firebaseUser?.emailVerified !== true) throw new Error('Email must be verified before signing in.');
+
+    const verifiedRecord = await firebaseCore.saveById('users', user.id, {
+      isVerified: true,
+      emailVerified: true,
+      firebaseUid: firebaseUser.uid,
+    }, true);
+    user = { ...user, ...verifiedRecord, isVerified: true, emailVerified: true };
+  }
   if (user.isVerified !== true) throw new Error('Email must be verified before signing in.');
   user.roles = normalizeRoles(user);
 
