@@ -161,7 +161,7 @@ describe('public registration controller diagnostics', () => {
     firebaseData.isFirebaseDataConfigured.mockReturnValue(true);
     firebaseAdmin.isFirebaseConfigured.mockReturnValue(true);
     schoolService.createSchool.mockResolvedValue({ schoolId: 'GLB-2026-MAIL-PARTIAL' });
-    sendEmail.mockResolvedValue({ ok: false, reason: 'BREVO_NOT_CONFIGURED' });
+    sendEmail.mockResolvedValue({ ok: false, reason: 'EMAIL_PROVIDER_NOT_CONFIGURED' });
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await postRegistration(createRegistrationPayload(email));

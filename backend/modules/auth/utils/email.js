@@ -10,6 +10,13 @@ function getBrevoConfig() {
   };
 }
 
+function getResendConfig() {
+  return {
+    apiKey: String(process.env.RESEND_API_KEY || '').trim(),
+    fromEmail: String(process.env.RESEND_FROM_EMAIL || '').trim(),
+  };
+}
+
 function isBrevoConfigured() {
   const { apiKey, senderEmail } = getBrevoConfig();
   return Boolean(apiKey && senderEmail);
@@ -23,14 +30,64 @@ async function sendEmail(to, subject, html) {
     return { ok: false, reason: 'MISSING_RECIPIENT' };
   }
 
-  if (!isBrevoConfigured()) {
-    console.warn('[email] Brevo is not configured; email delivery was skipped.');
-    return { ok: false, reason: 'BREVO_NOT_CONFIGURED' };
+  const brevoConfigured = isBrevoConfigured();
+  const resendConfig = getResendConfig();
+  const resendConfigured = Boolean(resendConfig.apiKey && resendConfig.fromEmail);
+
+  if (!brevoConfigured && !resendConfigured) {
+    console.warn('[email] No transactional email provider is configured; email delivery was skipped.');
+    return { ok: false, reason: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
   }
 
   if (typeof fetch !== 'function') {
     console.error('[email] Fetch API is unavailable in the current runtime.');
     return { ok: false, reason: 'EMAIL_TRANSPORT_UNAVAILABLE' };
+  }
+
+  if (!brevoConfigured) {
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${resendConfig.apiKey}`,
+        },
+        body: JSON.stringify({
+          from: resendConfig.fromEmail,
+          to: [recipient],
+          subject: emailSubject,
+          html: String(html || ''),
+        }),
+      });
+
+      const rawResponse = await response.text();
+      let parsedResponse = {};
+      try {
+        parsedResponse = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch (error) {
+        parsedResponse = { raw: rawResponse };
+      }
+
+      if (!response.ok) {
+        const errorDetail = typeof parsedResponse?.message === 'string' ? parsedResponse.message : rawResponse;
+        console.error('[email] Resend delivery failed', {
+          status: response.status,
+          detail: String(errorDetail || '').slice(0, 500),
+        });
+        return { ok: false, reason: 'RESEND_API_ERROR', status: response.status };
+      }
+
+      return {
+        ok: true,
+        status: response.status,
+        messageId: parsedResponse?.id || null,
+      };
+    } catch (error) {
+      console.error('[email] Resend request failed', {
+        message: error && error.message ? String(error.message).slice(0, 300) : 'Unknown error',
+      });
+      return { ok: false, reason: 'RESEND_REQUEST_FAILED' };
+    }
   }
 
   const { apiKey, senderEmail, senderName } = getBrevoConfig();
