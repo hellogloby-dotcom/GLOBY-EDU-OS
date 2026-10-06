@@ -167,7 +167,12 @@ describe('public registration controller diagnostics', () => {
     const result = await postRegistration(createRegistrationPayload(email));
 
     expect(result.response.status).toBe(503);
-    expect(result.body.code).toBe('REGISTRATION_VERIFICATION_SETUP_FAILED');
+    expect(result.body).toMatchObject({
+      code: 'EMAIL_PROVIDER_NOT_CONFIGURED',
+      retryable: true,
+    });
+    expect(result.body.message).toContain('configured email provider');
+    expect(result.body).not.toHaveProperty('providerDetail');
     expect(firebaseCore.deletePendingTenantRegistration).toHaveBeenCalledWith('GLB-2026-MAIL-PARTIAL', email);
     expect(firebaseAdmin.deleteUser).toHaveBeenCalledWith('firebase-user-test');
     expect(result.body.accessToken).toBeUndefined();

@@ -266,10 +266,21 @@ router.post('/register', async (req, res) => {
       });
     }
     if (firebaseMode && phase.startsWith('firebase.')) {
+      const providerFailure = err?.code === 'EMAIL_PROVIDER_NOT_CONFIGURED'
+        || err?.code === 'EMAIL_TRANSPORT_UNAVAILABLE'
+        || err?.code === 'RESEND_API_ERROR'
+        || err?.code === 'RESEND_REQUEST_FAILED'
+        || err?.code === 'BREVO_API_ERROR'
+        || err?.code === 'BREVO_REQUEST_FAILED'
+        ? err.code
+        : null;
       return res.status(503).json({
         status: 'error',
-        code: 'REGISTRATION_VERIFICATION_SETUP_FAILED',
-        message: 'Registration was rolled back because email verification setup could not be completed. Please retry later.',
+        code: providerFailure || 'REGISTRATION_VERIFICATION_SETUP_FAILED',
+        message: providerFailure
+          ? 'Registration was rolled back because the configured email provider could not deliver the verification message. Configure a verified sender and retry later.'
+          : 'Registration was rolled back because email verification setup could not be completed. Please retry later.',
+        ...(providerFailure ? { retryable: true } : {}),
       });
     }
     return res.status(500).json({ status: 'error', message: 'We could not create your school account right now. Please try again.' });
