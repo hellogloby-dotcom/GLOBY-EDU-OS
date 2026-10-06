@@ -1,4 +1,4 @@
-const CACHE_NAME = 'globyedu-pwa-v9';
+const CACHE_NAME = 'globyedu-pwa-v10';
 const DB_NAME = 'globyedu_pwa_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'offlineQueue';
@@ -7,9 +7,13 @@ const ASSETS_TO_CACHE = [
   '/index.html',
   '/offline.html',
   '/manifest.json',
-  '/marketing/src/main.js?v=20260926-teacher-student-fix',
-  '/marketing/src/styles.generated.css?v=20260926-teacher-student-fix',
-  '/src/utils/school-dashboard-actions.js?v=20260718'
+  '/config/firebase.js?v=20260926-teacher-student-fix',
+  '/src/main.js?v=20260926-teacher-student-fix',
+  '/src/styles.generated.css?v=20260926-teacher-student-fix',
+  '/src/assets/images/ui/globyedu-favicon-32.png',
+  '/src/assets/images/ui/globyedu-touch-180.png',
+  '/src/assets/images/ui/globyedu-icon-192.png',
+  '/src/assets/images/ui/globyedu-icon-512.png'
 ];
 
 function openOfflineQueueDb() {

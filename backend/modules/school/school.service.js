@@ -751,7 +751,7 @@ async function createSchoolFirebase(data) {
   const resolvedHeadEmail = headEmail || `head@${schoolId}.globyedu.com`;
   const headPassword = data.headPassword || `Head@${Math.random().toString(36).slice(2, 8)}`;
   const headFullName = data.headFullName || 'School Head';
-  const tenant = await runStep('tenant.write', () => firebaseCore.saveTenant(schoolId, {
+  const tenantData = {
     id: schoolId,
     name: data.name,
     subdomain,
@@ -775,10 +775,9 @@ async function createSchoolFirebase(data) {
     schoolStatus: data.schoolStatus || 'active',
     status: data.schoolStatus || 'active',
     createdAt: now,
-  }, false));
-
+  };
   const passwordHash = await runStep('password.hash', () => bcrypt.hash(headPassword, config.bcrypt.saltRounds));
-  await runStep('user.write', () => firebaseCore.saveById('users', `${schoolId}:${resolvedHeadEmail}`, {
+  const userData = {
     schoolId,
     tenantId: schoolId,
     username: resolvedHeadEmail,
@@ -791,10 +790,14 @@ async function createSchoolFirebase(data) {
     passwordHash,
     passwordNeedsReset: !data.headPassword,
     createdAt: now,
-  }, false));
-  await runStep('role.write', () => firebaseCore.saveById('roles', `${schoolId}:school_head`, { schoolId, name: 'school_head', permissions: ['school.manage', 'classes.manage', 'users.manage'] }, true));
-  await runStep('class.write', () => firebaseCore.saveById('classes', `${schoolId}:class-01`, { schoolId, classId: 'class-01', name: 'Form 1', grade: data.defaultClassGrade || 'Grade 10', status: 'active', students: [] }, false));
-  await runStep('enrollment.write', () => firebaseCore.saveById('enrollments', `${schoolId}:${resolvedHeadEmail}`, { schoolId, userId: `${schoolId}:${resolvedHeadEmail}`, role: 'school_head', status: 'active', createdAt: now }, false));
+  };
+  const tenant = await runStep('workspace.write', () => firebaseCore.createTenantRegistration(schoolId, {
+    tenant: tenantData,
+    user: userData,
+    role: { schoolId, name: 'school_head', permissions: ['school.manage', 'classes.manage', 'users.manage'] },
+    defaultClass: { schoolId, classId: 'class-01', name: 'Form 1', grade: data.defaultClassGrade || 'Grade 10', status: 'active', students: [] },
+    enrollment: { schoolId, userId: `${schoolId}:${resolvedHeadEmail}`, role: 'school_head', status: 'active', createdAt: now },
+  }));
 
   return { ...tenant, headAccount: { username: resolvedHeadEmail, password: headPassword } };
 }
@@ -1434,6 +1437,16 @@ async function updateSchoolCredentials(schoolId, updates = {}) {
 }
 
 async function deleteSchool(id) {
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const school = await firebaseCore.getTenant(id);
+    if (!school) throw new Error('School not found');
+    const updated = await firebaseCore.saveTenant(id, {
+      schoolStatus: 'suspended',
+      status: 'suspended',
+    });
+    return resolveSchoolLifecycleStatus({ ...school, ...updated });
+  }
+
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const index = schools.findIndex((entry) => entry.id === id || entry.schoolId === id);

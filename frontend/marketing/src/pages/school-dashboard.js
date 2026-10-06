@@ -242,7 +242,7 @@ export function SchoolDashboardPage(summary = {}, section = 'overview', sectionD
       <div class="space-y-6">
         <div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
           <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Profile</p>
-          <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage your profile, password, devices, and security</h2>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-900">Manage your profile and contact information</h2>
         </div>
         <div class="rounded-4xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
           <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
@@ -263,7 +263,6 @@ export function SchoolDashboardPage(summary = {}, section = 'overview', sectionD
                 <label class="text-sm text-slate-700">Full name<input id="workspace-profile-fullname" value="${escapeHtml((sectionData.profile && sectionData.profile.fullName) || school.name || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
                 <label class="text-sm text-slate-700">Email<input id="workspace-profile-email" value="${escapeHtml((sectionData.profile && sectionData.profile.email) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
                 <label class="text-sm text-slate-700">Phone<input id="workspace-profile-phone" value="${escapeHtml((sectionData.profile && sectionData.profile.phone) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
-                <label class="text-sm text-slate-700">Password<input id="workspace-profile-password" type="password" value="${escapeHtml((sectionData.profile && sectionData.profile.password) || '')}" class="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
               </div>
               <div class="mt-4 flex flex-wrap gap-3">
                 <button type="button" data-workspace-profile-save class="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white">Save profile</button>

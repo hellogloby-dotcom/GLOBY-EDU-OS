@@ -222,6 +222,7 @@ function renderSectionContent(activeSection, userFullName, summary = {}, schools
     return renderRestrictedAccessNotice(normalizedSection);
   }
 
+  if (normalizedSection === 'profile') return renderPlatformProfile(userFullName);
   if (normalizedSection === 'schools') return renderSchoolManagement(schools);
   if (normalizedSection === 'archived-schools') return renderArchivedSchools(schools);
   if (normalizedSection === 'website-cms') return renderWebsiteCMS();
@@ -244,6 +245,29 @@ function renderSectionContent(activeSection, userFullName, summary = {}, schools
   if (normalizedSection === 'security') return renderSecurity();
   if (normalizedSection === 'overview') return renderDashboardOverview(userFullName, summary);
   return renderModulePlaceholder(normalizedSection);
+}
+
+function renderPlatformProfile(userFullName) {
+  const email = localStorage.getItem('globyedu_userEmail') || '';
+  const escape = (value) => String(value || '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
+
+  return `
+    <section class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Platform account</p>
+      <h2 class="mt-2 text-2xl font-semibold text-slate-900">Profile</h2>
+      <dl class="mt-6 grid gap-4 sm:grid-cols-2">
+        <div class="rounded-xl bg-slate-50 p-4"><dt class="text-sm text-slate-500">Name</dt><dd class="mt-1 font-semibold text-slate-900">${escape(userFullName)}</dd></div>
+        <div class="rounded-xl bg-slate-50 p-4"><dt class="text-sm text-slate-500">Email</dt><dd class="mt-1 break-all font-semibold text-slate-900">${escape(email)}</dd></div>
+        <div class="rounded-xl bg-slate-50 p-4"><dt class="text-sm text-slate-500">Role</dt><dd class="mt-1 font-semibold text-slate-900">Super Admin</dd></div>
+      </dl>
+    </section>
+  `;
 }
 
 function renderDashboardOverview(userFullName, summary = {}) {

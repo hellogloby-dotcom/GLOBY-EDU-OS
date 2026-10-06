@@ -24,6 +24,7 @@ const SCHOOL = {
 };
 
 const protectedRoutes = [
+  ['delete', '/:schoolId'],
   ['get', '/archived'],
   ['post', '/:schoolId/archive'],
   ['post', '/:schoolId/restore'],
@@ -82,6 +83,25 @@ describe('Super Admin school archive routes', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('routes active-school DELETE through the protected soft-suspend service and records an audit event', async () => {
+    const school = { ...SCHOOL, id: 'firebase-tenant-id' };
+    jest.spyOn(schoolService, 'getSchoolBySchoolId').mockResolvedValue(school);
+    const suspend = jest.spyOn(schoolService, 'deleteSchool').mockResolvedValue({ ...school, schoolStatus: 'suspended' });
+    const handlers = routeHandlers('delete', '/:schoolId');
+    const req = createRequest();
+    const res = createResponse();
+
+    await handlers[2].handle(req, res);
+
+    expect(suspend).toHaveBeenCalledWith('firebase-tenant-id');
+    expect(recordAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: SCHOOL_ID,
+      action: 'school.suspended',
+      resourceId: SCHOOL_ID,
+    }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
   });
 
   it.each([

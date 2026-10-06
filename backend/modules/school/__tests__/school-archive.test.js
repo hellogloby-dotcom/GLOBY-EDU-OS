@@ -126,6 +126,34 @@ describe('Super Admin school archive service', () => {
     expect(activated.trialEndsAt).toBe(trialEndsAt);
   });
 
+  it('suspends the existing Firebase tenant without changing subscription state', async () => {
+    const tenant = { ...createSchool(), trialEndsAt: '2026-10-10T00:00:00.000Z' };
+    const firebaseMode = jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+    jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(tenant);
+    const saveTenant = jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, updates) => ({ ...tenant, ...updates, schoolId }));
+
+    const suspended = await schoolService.deleteSchool(SCHOOL_ID);
+
+    expect(saveTenant).toHaveBeenCalledWith(SCHOOL_ID, { schoolStatus: 'suspended', status: 'suspended' });
+    expect(suspended.schoolStatus).toBe('suspended');
+    expect(suspended.status).toBe('suspended');
+    expect(suspended.subscriptionStatus).toBe('trial');
+    expect(suspended.trialEndsAt).toBe(tenant.trialEndsAt);
+    firebaseMode.mockRestore();
+    jest.restoreAllMocks();
+  });
+
+  it('does not create a Firebase tenant when the suspend target is missing', async () => {
+    const firebaseMode = jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
+    jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(null);
+    const saveTenant = jest.spyOn(firebaseCore, 'saveTenant');
+
+    await expect(schoolService.deleteSchool(SCHOOL_ID)).rejects.toThrow('School not found');
+    expect(saveTenant).not.toHaveBeenCalled();
+    firebaseMode.mockRestore();
+    jest.restoreAllMocks();
+  });
+
   it('reactivates operational status without renewing an expired subscription', async () => {
     const trialEndsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     global.__workspaceSnapshot = [{

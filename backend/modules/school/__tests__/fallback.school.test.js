@@ -57,8 +57,7 @@ test('Firebase school creation allocates collision-resistant IDs without the loc
   jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
   jest.spyOn(firebaseCore, 'findTenantByHeadEmail').mockResolvedValue(null);
   const getTenant = jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(null);
-  jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, data) => ({ id: schoolId, schoolId, ...data }));
-  jest.spyOn(firebaseCore, 'saveById').mockImplementation(async (collection, id, data) => ({ id, ...data }));
+  jest.spyOn(firebaseCore, 'createTenantRegistration').mockImplementation(async (schoolId, registration) => ({ id: schoolId, schoolId, ...registration.tenant }));
 
   const first = await schoolService.createSchool({
     name: 'Firebase ID Allocation Test',
@@ -82,11 +81,10 @@ test('Firebase school creation stores an unverified tenant-linked school_head re
   jest.spyOn(firebaseCore, 'isFirebaseCoreMode').mockReturnValue(true);
   jest.spyOn(firebaseCore, 'findTenantByHeadEmail').mockResolvedValue(null);
   jest.spyOn(firebaseCore, 'getTenant').mockResolvedValue(null);
-  jest.spyOn(firebaseCore, 'saveTenant').mockImplementation(async (schoolId, data) => ({ id: schoolId, schoolId, ...data }));
-  const saved = new Map();
-  jest.spyOn(firebaseCore, 'saveById').mockImplementation(async (collection, id, data) => {
-    saved.set(`${collection}:${id}`, { id, ...data });
-    return { id, ...data };
+  let registration;
+  jest.spyOn(firebaseCore, 'createTenantRegistration').mockImplementation(async (schoolId, payload) => {
+    registration = payload;
+    return { id: schoolId, schoolId, ...payload.tenant };
   });
 
   const created = await schoolService.createSchool({
@@ -94,7 +92,7 @@ test('Firebase school creation stores an unverified tenant-linked school_head re
     headEmail: 'authority@verification-state.example.test',
     headPassword: 'StrongPassword!123',
   });
-  const user = saved.get(`users:${created.schoolId}:authority@verification-state.example.test`);
+  const user = registration.user;
 
   expect(user).toMatchObject({
     schoolId: created.schoolId,

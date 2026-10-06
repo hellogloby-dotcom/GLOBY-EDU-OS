@@ -54,6 +54,82 @@ async function listTenants() {
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
+async function findUserByEmail(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  const snapshot = await collectionRef(CORE_COLLECTIONS.users)
+    .where('email', '==', normalizedEmail)
+    .limit(1)
+    .get();
+  if (snapshot.empty) return null;
+  const document = snapshot.docs[0];
+  return { id: document.id, ...document.data() };
+}
+
+async function createTenantRegistration(schoolId, registration) {
+  const id = assertSchoolId(schoolId);
+  const firestore = firebaseData.getFirestore();
+  const tenantDocument = tenantRef(id);
+  const headEmail = String(registration.user.email || '').trim().toLowerCase();
+  const userDocument = collectionRef(CORE_COLLECTIONS.users).doc(`${id}:${headEmail}`);
+  const roleDocument = collectionRef(CORE_COLLECTIONS.roles).doc(`${id}:school_head`);
+  const classDocument = collectionRef(CORE_COLLECTIONS.classes).doc(`${id}:class-01`);
+  const enrollmentDocument = collectionRef(CORE_COLLECTIONS.enrollments).doc(`${id}:${headEmail}`);
+
+  await firestore.runTransaction(async (transaction) => {
+    const [tenantSnapshot, ownerSnapshot, userSnapshot] = await Promise.all([
+      transaction.get(tenantDocument),
+      transaction.get(collectionRef(CORE_COLLECTIONS.tenants).where('headEmail', '==', headEmail).limit(1)),
+      transaction.get(collectionRef(CORE_COLLECTIONS.users).where('email', '==', headEmail).limit(1)),
+    ]);
+    if (tenantSnapshot.exists) {
+      const error = new Error('A school with that ID already exists');
+      error.code = 'SCHOOL_ID_EXISTS';
+      throw error;
+    }
+    if (!ownerSnapshot.empty || !userSnapshot.empty) {
+      const error = new Error('A school registration already exists for this authority email.');
+      error.code = 'SCHOOL_REGISTRATION_EXISTS';
+      throw error;
+    }
+
+    transaction.create(tenantDocument, { ...registration.tenant, id, schoolId: id });
+    transaction.create(userDocument, registration.user);
+    transaction.create(roleDocument, registration.role);
+    transaction.create(classDocument, registration.defaultClass);
+    transaction.create(enrollmentDocument, registration.enrollment);
+  });
+
+  return { id, schoolId: id, ...registration.tenant };
+}
+
+async function deletePendingTenantRegistration(schoolId, email) {
+  const id = assertSchoolId(schoolId);
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const firestore = firebaseData.getFirestore();
+  const documents = [
+    tenantRef(id),
+    collectionRef(CORE_COLLECTIONS.users).doc(`${id}:${normalizedEmail}`),
+    collectionRef(CORE_COLLECTIONS.roles).doc(`${id}:school_head`),
+    collectionRef(CORE_COLLECTIONS.classes).doc(`${id}:class-01`),
+    collectionRef(CORE_COLLECTIONS.enrollments).doc(`${id}:${normalizedEmail}`),
+  ];
+
+  return firestore.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(documents.map((document) => transaction.get(document)));
+    const tenant = snapshots[0].exists ? snapshots[0].data() : null;
+    const user = snapshots[1].exists ? snapshots[1].data() : null;
+    if (!tenant) return true;
+    if (String(tenant.headEmail || '').trim().toLowerCase() !== normalizedEmail ||
+        !user || String(user.email || '').trim().toLowerCase() !== normalizedEmail ||
+        user.isVerified === true || user.emailVerified === true) {
+      return false;
+    }
+    documents.forEach((document) => transaction.delete(document));
+    return true;
+  });
+}
+
 async function saveTenant(schoolId, data, merge = true) {
   const id = assertSchoolId(schoolId);
   const payload = { ...data, schoolId: id, updatedAt: new Date().toISOString() };
@@ -160,6 +236,9 @@ module.exports = {
   getTenant,
   findTenantByHeadEmail,
   listTenants,
+  findUserByEmail,
+  createTenantRegistration,
+  deletePendingTenantRegistration,
   saveTenant,
   deleteArchivedTenantIfEmpty,
   listBySchool,

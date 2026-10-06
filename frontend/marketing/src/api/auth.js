@@ -69,6 +69,13 @@ export async function platformAdminLogin(email, password) {
   return postJson('/api/v1/auth/platform-login', payload);
 }
 
+export async function logout(accessToken) {
+  if (!accessToken) {
+    return { ok: false, status: 401, data: { status: 'error', message: 'Authenticated session is required.' } };
+  }
+  return postJsonWithToken('/api/v1/auth/logout', {}, accessToken);
+}
+
 export async function forgotPassword(email, loginType = 'school') {
   return postJson('/api/v1/auth/forgot-password', { email, loginType });
 }

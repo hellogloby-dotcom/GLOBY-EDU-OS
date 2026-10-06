@@ -25,11 +25,15 @@ describe('production static asset caching', () => {
   });
 
   test('serves production JS and service worker assets without stale-cache headers', async () => {
-    const [rootIndex, mainJs, legacyMainJs, swJs, heroImage, missingAsset] = await Promise.all([
+    const [rootIndex, mainJs, legacyMainJs, swJs, manifest, favicon, touchIcon, pwaIcon, heroImage, missingAsset] = await Promise.all([
       request(baseUrl, '/'),
       request(baseUrl, '/marketing/src/main.js'),
       request(baseUrl, '/src/main.js'),
       request(baseUrl, '/sw.js'),
+      request(baseUrl, '/marketing/manifest.json'),
+      request(baseUrl, '/src/assets/images/ui/globyedu-favicon-32.png'),
+      request(baseUrl, '/src/assets/images/ui/globyedu-touch-180.png'),
+      request(baseUrl, '/src/assets/images/ui/globyedu-icon-192.png'),
       request(baseUrl, '/src/assets/images/homepage/homepage-students-classroom.jpg'),
       request(baseUrl, '/main.js'),
     ]);
@@ -46,6 +50,13 @@ describe('production static asset caching', () => {
     expect(swJs.status).toBe(200);
     expect(swJs.headers['content-type']).toMatch(/javascript/i);
     expect(swJs.headers['cache-control']).toMatch(/no-store|must-revalidate/i);
+
+    expect(manifest.status).toBe(200);
+    expect(manifest.headers['content-type']).toMatch(/json/i);
+    [favicon, touchIcon, pwaIcon].forEach((icon) => {
+      expect(icon.status).toBe(200);
+      expect(icon.headers['content-type']).toMatch(/image\/png/i);
+    });
 
     expect(heroImage.status).toBe(200);
     expect(heroImage.headers['content-type']).toMatch(/image\//i);

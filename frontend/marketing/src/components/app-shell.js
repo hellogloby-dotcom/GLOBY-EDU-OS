@@ -91,10 +91,16 @@ export function AppShell({
                 <div class="flex flex-wrap items-center gap-2">
                   <button type="button" data-app-action="notifications" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">🔔</button>
                   <button type="button" data-app-action="messages" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">💬</button>
-                  <button type="button" data-app-action="profile" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">${profileName}</button>
-                  <button type="button" data-app-action="settings" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">⚙️</button>
                   <button type="button" data-app-action="help" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">❓</button>
-                  <button type="button" data-app-action="logout" class="rounded-full bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">Logout</button>
+                  <div class="relative" data-account-menu>
+                    <button type="button" data-account-menu-toggle aria-haspopup="true" aria-expanded="false" aria-controls="account-actions-menu" class="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">${profileName}</button>
+                    <div id="account-actions-menu" data-account-menu-panel class="absolute right-0 top-full z-30 mt-2 hidden w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                      <button type="button" data-app-action="profile" class="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50">Profile</button>
+                      <button type="button" data-app-action="settings" class="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50">Settings</button>
+                      <button type="button" data-app-action="logout" class="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-rose-700 hover:bg-rose-50">Logout</button>
+                      <p id="account-action-status" class="hidden px-3 py-2 text-xs text-rose-700" role="status"></p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

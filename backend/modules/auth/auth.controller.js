@@ -9,6 +9,7 @@ const config = require('../../config/auth.config');
 const { getAppUrl } = require('../../config/app-url.config');
 const firebaseAdmin = require('../../firebase.admin');
 const firebaseData = require('../../firebase.data');
+const firebaseCore = require('../../firebase.core');
 const router = express.Router();
 const authService = require('./auth.service');
 const { sendEmail, resetTemplate, verificationTemplate } = require('./utils/email');
@@ -77,26 +78,51 @@ router.post('/register', async (req, res) => {
   const payload = req.body || {};
   const schoolHead = payload.head || {};
   const agreements = payload.agreements || {};
-  const existingSchools = loadSchoolData();
-  const validation = validateRegistrationPayload({ ...payload, head: { ...schoolHead, confirmPassword: payload.head?.confirmPassword }, agreements }, existingSchools);
-
-  if (!validation.ok) {
-    return res.status(400).json({ status: 'error', message: validation.message || 'Please review the registration details and try again.' });
-  }
-
-  let phase = 'school.create';
+  let phase = 'registration.preflight';
   let firebaseMode = false;
   let createdSchoolId = null;
+  let createdAuthUser = null;
   try {
-    const trialEndsAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
     firebaseMode = firebaseData.isFirebaseDataConfigured();
     let appUrl = '';
+    let existingSchools;
     if (firebaseMode) {
       phase = 'firebase.configuration';
       if (!firebaseAdmin.isFirebaseConfigured()) throw new Error('Firebase Authentication is not configured.');
       appUrl = getAppUrl();
+      phase = 'firebase.tenant.lookup';
+      existingSchools = await firebaseCore.listTenants();
+    } else {
+      existingSchools = loadSchoolData();
     }
 
+    const validation = validateRegistrationPayload({ ...payload, head: { ...schoolHead, confirmPassword: payload.head?.confirmPassword }, agreements }, existingSchools);
+    if (!validation.ok) {
+      return res.status(400).json({ status: 'error', message: validation.message || 'Please review the registration details and try again.' });
+    }
+
+    const normalizedHeadEmail = String(schoolHead.email || payload.email || '').trim().toLowerCase();
+    if (firebaseMode) {
+      phase = 'firebase.account.lookup';
+      const existingUserRecord = await firebaseCore.findUserByEmail(normalizedHeadEmail);
+      if (existingUserRecord) {
+        const error = new Error('A school registration already exists for this authority email.');
+        error.code = 'SCHOOL_REGISTRATION_EXISTS';
+        throw error;
+      }
+      try {
+        const existingAuthUser = await firebaseAdmin.getUserByEmail(normalizedHeadEmail);
+        if (existingAuthUser) {
+          const error = new Error('A school registration already exists for this authority email.');
+          error.code = 'SCHOOL_REGISTRATION_EXISTS';
+          throw error;
+        }
+      } catch (error) {
+        if (error?.code !== 'auth/user-not-found') throw error;
+      }
+    }
+
+    const trialEndsAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
     const schoolId = payload.schoolId || null;
     const schoolPayload = {
       name: payload.schoolName,
@@ -128,18 +154,31 @@ router.post('/register', async (req, res) => {
       schoolStatus: 'active',
     };
 
+    if (firebaseMode) {
+      phase = 'firebase.auth.create';
+      try {
+        createdAuthUser = await firebaseAdmin.createUser({
+          email: schoolPayload.headEmail,
+          password: schoolHead.password,
+          displayName: schoolHead.fullName,
+        });
+      } catch (error) {
+        if (error?.code === 'auth/email-already-exists') {
+          error.code = 'SCHOOL_REGISTRATION_EXISTS';
+          error.registrationOperation = 'firebase.auth.create';
+        }
+        throw error;
+      }
+      if (!createdAuthUser?.uid) throw new Error('Firebase Auth did not return the created account identifier.');
+    }
+
+    phase = 'school.create';
     const created = await schoolService.createSchool(schoolPayload);
     const tenantId = created.schoolId || created.id || (created.school && created.school.schoolId) || schoolId;
     if (!tenantId) throw new Error('School creation did not return a school ID.');
     createdSchoolId = tenantId;
 
     if (firebaseMode) {
-      phase = 'firebase.auth.create';
-      await firebaseAdmin.createUser({
-        email: schoolPayload.headEmail,
-        password: schoolHead.password,
-        displayName: schoolHead.fullName,
-      });
       phase = 'firebase.verification.link';
       const verificationLink = await firebaseAdmin.generateEmailVerificationLink(schoolPayload.headEmail, {
         url: `${appUrl}/#/login`,
@@ -189,18 +228,48 @@ router.post('/register', async (req, res) => {
 
     return res.json(response);
   } catch (err) {
+    let rollbackFailed = false;
+    if (firebaseMode && createdAuthUser?.uid) {
+      if (createdSchoolId) {
+        try {
+          const removed = await firebaseCore.deletePendingTenantRegistration(createdSchoolId, schoolHead.email || payload.email);
+          if (!removed) rollbackFailed = true;
+        } catch {
+          rollbackFailed = true;
+        }
+      }
+      try {
+        await firebaseAdmin.deleteUser(createdAuthUser.uid);
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+
     if (err?.code === 'SCHOOL_REGISTRATION_EXISTS') {
+      if (rollbackFailed) {
+        return res.status(503).json({
+          status: 'error',
+          code: 'REGISTRATION_CLEANUP_REQUIRED',
+          message: 'Registration could not be completed or fully rolled back. Contact support before retrying.',
+        });
+      }
       return res.status(409).json({ status: 'error', message: 'A school registration for this authority email already exists. Please contact support before retrying.' });
     }
+
     console.error('[auth.register] School signup failed', registrationErrorDetails(err, phase));
+    if (rollbackFailed) {
+      return res.status(503).json({
+        status: 'error',
+        code: 'REGISTRATION_CLEANUP_REQUIRED',
+        message: 'Registration could not be completed or fully rolled back. Contact support before retrying.',
+        ...(createdSchoolId ? { schoolId: createdSchoolId, tenantId: createdSchoolId } : {}),
+      });
+    }
     if (firebaseMode && phase.startsWith('firebase.')) {
       return res.status(503).json({
         status: 'error',
         code: 'REGISTRATION_VERIFICATION_SETUP_FAILED',
-        message: createdSchoolId
-          ? 'Your school workspace was created, but email verification setup could not be completed. Contact support before retrying.'
-          : 'Registration is temporarily unavailable. Please try again later.',
-        ...(createdSchoolId ? { schoolId: createdSchoolId, tenantId: createdSchoolId } : {}),
+        message: 'Registration was rolled back because email verification setup could not be completed. Please retry later.',
       });
     }
     return res.status(500).json({ status: 'error', message: 'We could not create your school account right now. Please try again.' });

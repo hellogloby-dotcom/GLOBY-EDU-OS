@@ -21,7 +21,7 @@ import { getAdminState } from './pages/admin-state.js';
 import { PlatformAdminPage } from './pages/platform-admin.js';
 import { SchoolDashboardPage, SchoolAuthorityDashboard, TeacherDashboard, StudentDashboard } from './pages/school-dashboard.js';
 import { fetchSchoolSummary, fetchSchoolDetails, updateSchoolDetails, createFeePayment, searchSchoolData, fetchSchoolEntities, createSchoolEntity, updateSchoolEntity, deleteSchoolEntity, fetchAdminDashboardSummary, fetchPlatformAuditLogs, fetchAdminSchoolList, fetchArchivedAdminSchools, createAdminSchool, updateAdminSchool, deleteAdminSchool, activateAdminSchool, fetchWorkspaceMessages, fetchMessageRecipients, createWorkspaceMessage, updateWorkspaceMessage, deleteWorkspaceMessage, fetchSupportTickets, createSupportTicket, updateSupportTicket, deleteSupportTicket, fetchAssignments, fetchLessons, createAssignment, createLesson, submitAssignment } from './api/school.js';
-import { studentLogin, teacherLogin, schoolAuthorityLogin, schoolLogin as apiLogin, firebaseLogin as apiFirebaseLogin, linkFirebaseIdentity, platformAdminLogin, forgotPassword as apiForgot, register as apiRegister, confirmFirebasePasswordReset, changePassword as apiChangePassword } from './api/auth.js';
+import { studentLogin, teacherLogin, schoolAuthorityLogin, schoolLogin as apiLogin, firebaseLogin as apiFirebaseLogin, linkFirebaseIdentity, platformAdminLogin, logout as apiLogout, forgotPassword as apiForgot, register as apiRegister, confirmFirebasePasswordReset, changePassword as apiChangePassword } from './api/auth.js';
 import { isFirebaseConfigured, firebaseSignInWithGoogle, firebaseLinkGoogle, firebaseSendPasswordResetEmail, firebaseApplyActionCode, firebaseConfirmPasswordReset as firebaseConfirmPasswordResetClient } from './firebase/firebase-client.js';
 import { buildChangedFieldsPayload, buildSchoolCollectionPayload, buildSchoolEntityPayload, buildAttendanceRoster, replaceAttendanceSession } from './utils/school-dashboard-actions.js?v=20260718';
 import { showGlobalPwaNotice } from './utils/pwa-notifications.js';
@@ -248,7 +248,6 @@ function seedWorkspaceData() {
       fullName: localStorage.getItem('globyedu_userFullName') || 'User',
       email: localStorage.getItem('globyedu_userEmail') || '',
       phone: '',
-      password: '',
       twoFactorEnabled: false,
       securityNote: 'Password updates are protected locally and can be expanded to the backend later.',
       avatar: '',
@@ -256,6 +255,7 @@ function seedWorkspaceData() {
   } else {
     profile.fullName = localStorage.getItem('globyedu_userFullName') || profile.fullName || 'User';
     profile.email = localStorage.getItem('globyedu_userEmail') || profile.email || '';
+    delete profile.password;
     writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
   }
 
@@ -291,7 +291,6 @@ function getWorkspaceProfile() {
     fullName: localStorage.getItem('globyedu_userFullName') || 'User',
     email: localStorage.getItem('globyedu_userEmail') || '',
     phone: '',
-    password: '',
     twoFactorEnabled: false,
     securityNote: 'Password updates are protected locally and can be expanded to the backend later.',
     avatar: '',
@@ -1283,7 +1282,7 @@ function renderAuthenticatedAppShell(section = 'overview', role = 'super_admin',
   seedWorkspaceData();
   applyWorkspaceTheme();
   const userName = localStorage.getItem('globyedu_userFullName') || 'User';
-  const roleKey = role === 'school_authority' ? 'school_authority' : role === 'teacher' ? 'teacher' : role === 'student' ? 'student' : 'super_admin';
+  const roleKey = role === 'school_authority' || role === 'school_head' ? 'school_authority' : role === 'teacher' ? 'teacher' : role === 'student' ? 'student' : 'super_admin';
   const navItems = getAppNavItems(roleKey);
 
   const content = childrenContent ?? getAuthenticatedModuleContent(section, roleKey, userName);
@@ -1480,6 +1479,30 @@ function getAuthenticatedModuleContent(section, role, userName) {
 function attachAuthenticatedShellHandlers(role, section) {
   const sidebar = document.getElementById('app-sidebar');
   const backdrop = document.getElementById('app-sidebar-backdrop');
+  const accountMenu = document.querySelector('[data-account-menu]');
+  const accountMenuToggle = accountMenu?.querySelector('[data-account-menu-toggle]');
+  const accountMenuPanel = accountMenu?.querySelector('[data-account-menu-panel]');
+
+  accountMenuToggle?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = !accountMenuPanel?.classList.contains('hidden');
+    accountMenuPanel?.classList.toggle('hidden', isOpen);
+    accountMenuToggle.setAttribute('aria-expanded', String(!isOpen));
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!accountMenu?.contains(event.target)) {
+      accountMenuPanel?.classList.add('hidden');
+      accountMenuToggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      accountMenuPanel?.classList.add('hidden');
+      accountMenuToggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
 
   if (role === 'student') {
     document.querySelectorAll('[data-student-assignment-id]').forEach((button) => {
@@ -1530,11 +1553,21 @@ function attachAuthenticatedShellHandlers(role, section) {
   window.addEventListener('resize', () => setSidebarOpen(window.innerWidth >= 1024));
 
   document.querySelectorAll('[data-app-action]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const action = button.getAttribute('data-app-action');
       if (action === 'logout') {
+        const status = document.getElementById('account-action-status');
+        const result = await apiLogout(getAccessToken());
+        if (!result.ok || result.data?.status !== 'ok') {
+          if (status) {
+            status.textContent = result.data?.message || 'Unable to securely end this session. Please try again.';
+            status.classList.remove('hidden');
+          }
+          return;
+        }
+        const loginRoute = role === 'super_admin' ? '#/platform-admin' : '#/login';
         clearAuthenticationState();
-        location.hash = '#/login';
+        location.replace(loginRoute);
         return;
       }
       if (action === 'notifications') {
@@ -1560,6 +1593,8 @@ function attachAuthenticatedShellHandlers(role, section) {
         }
       }
       if (action === 'profile') {
+        accountMenuPanel?.classList.add('hidden');
+        accountMenuToggle?.setAttribute('aria-expanded', 'false');
         if (role === 'school_authority') {
           location.hash = '#/school/profile';
         } else if (role === 'teacher') {
@@ -1571,6 +1606,8 @@ function attachAuthenticatedShellHandlers(role, section) {
         }
       }
       if (action === 'settings') {
+        accountMenuPanel?.classList.add('hidden');
+        accountMenuToggle?.setAttribute('aria-expanded', 'false');
         if (role === 'school_authority') {
           location.hash = '#/school/settings';
         } else if (role === 'teacher') {
@@ -2640,7 +2677,6 @@ function attachWorkspaceModuleHandlers() {
       profile.fullName = document.getElementById('workspace-profile-fullname')?.value || profile.fullName;
       profile.email = document.getElementById('workspace-profile-email')?.value || profile.email;
       profile.phone = document.getElementById('workspace-profile-phone')?.value || profile.phone;
-      profile.password = document.getElementById('workspace-profile-password')?.value || profile.password;
       writeWorkspaceStorage(WORKSPACE_STORAGE_KEYS.profile, profile);
       localStorage.setItem('globyedu_userFullName', profile.fullName);
       localStorage.setItem('globyedu_userEmail', profile.email);
@@ -5180,6 +5216,7 @@ function isAuthenticated() {
 
 function getDashboardPathForRole(role, platformAdmin = false) {
   if (platformAdmin || role === 'platform_admin' || role === 'super_admin') return '#/admin/overview';
+  if (role === 'school_authority' || role === 'school_head') return '#/school/overview';
   if (role === 'teacher' || role === 'student') return `#/role/${role}`;
   return '#/school/overview';
 }
@@ -5568,7 +5605,8 @@ function attachLoginHandlers() {
           return;
         }
 
-        const roleFromResponse = Array.isArray(response.data.user?.roles) ? response.data.user.roles[0] : 'school_authority';
+        const sessionRole = Array.isArray(response.data.user?.roles) ? response.data.user.roles[0] : 'school_authority';
+        const roleFromResponse = sessionRole === 'school_head' ? 'school_authority' : sessionRole;
         localStorage.setItem('globyedu_accessToken', response.data.accessToken || '');
         localStorage.setItem('globyedu_userRole', roleFromResponse);
         localStorage.setItem('globyedu_platformAdmin', role === 'platform_admin' ? 'true' : 'false');
@@ -5863,7 +5901,7 @@ async function route() {
     if (!requireAuth()) return;
     if (await ensureSchoolAccessIsActive()) return;
     const authenticatedRole = getUserRole();
-    if (authenticatedRole !== 'school_authority' && authenticatedRole !== 'super_admin' && !getPlatformAdminFlag()) {
+    if (authenticatedRole !== 'school_authority' && authenticatedRole !== 'school_head' && authenticatedRole !== 'super_admin' && !getPlatformAdminFlag()) {
       const redirectRole = authenticatedRole === 'teacher' ? 'teacher' : authenticatedRole === 'student' ? 'student' : 'student';
       const redirectPath = redirectRole === 'teacher' ? '#/role/teacher' : '#/role/student';
       location.hash = redirectPath;
@@ -5881,6 +5919,7 @@ async function route() {
       student: '#/role/student',
       teacher: '#/role/teacher',
       school_authority: '#/school/overview',
+      school_head: '#/school/overview',
       super_admin: '#/admin/overview',
     };
     if (role && authenticatedRole && authenticatedRole !== role) {

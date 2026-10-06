@@ -53,7 +53,11 @@ function validateRegistrationPayload(payload, existingSchools = []) {
   } else {
     const duplicateEmail = (existingSchools || []).some((school) => {
       const users = Array.isArray(school?.users) ? school.users : [];
-      return users.some((user) => String(user?.username || '').toLowerCase() === String(payload.head.email).trim().toLowerCase());
+      const email = String(payload.head.email).trim().toLowerCase();
+      return String(school?.headEmail || '').trim().toLowerCase() === email ||
+        users.some((user) => [user?.username, user?.email]
+          .filter(Boolean)
+          .some((value) => String(value).trim().toLowerCase() === email));
     });
     if (duplicateEmail) {
       errors.push('An account already exists for this email.');

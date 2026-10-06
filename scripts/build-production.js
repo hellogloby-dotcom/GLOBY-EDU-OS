@@ -52,10 +52,51 @@ function validateOutput() {
     path.join(outputRoot, 'src', 'main.js'),
     generatedCssPath,
     path.join(outputRoot, 'config', 'firebase.js'),
+    path.join(outputRoot, 'manifest.json'),
+    path.join(outputRoot, 'sw.js'),
   ];
   requiredFiles.forEach((filePath) => {
     if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
       throw new Error(`Missing production asset: ${path.relative(projectRoot, filePath)}`);
+    }
+  });
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(outputRoot, 'manifest.json'), 'utf8'));
+  if (manifest.name !== 'GlobyEdu OS' || manifest.short_name !== 'GlobyEdu') {
+    throw new Error('Production manifest is missing the GlobyEdu app name.');
+  }
+  manifest.icons.forEach((icon) => {
+    if (!icon.src.startsWith('/') || icon.src.includes('..')) {
+      throw new Error(`Invalid production app icon path: ${icon.src}`);
+    }
+    const iconPath = path.join(outputRoot, icon.src.slice(1));
+    if (!fs.existsSync(iconPath) || fs.statSync(iconPath).size === 0) {
+      throw new Error(`Missing production app icon: ${icon.src}`);
+    }
+    const imageHeader = fs.readFileSync(iconPath);
+    const width = imageHeader.readUInt32BE(16);
+    const height = imageHeader.readUInt32BE(20);
+    const expectedSize = Number.parseInt(icon.sizes.split('x')[0], 10);
+    if (width !== expectedSize || height !== expectedSize) {
+      throw new Error(`Production app icon dimensions do not match manifest: ${icon.src}`);
+    }
+  });
+
+  const html = fs.readFileSync(path.join(outputRoot, 'index.html'), 'utf8');
+  const serviceWorker = fs.readFileSync(path.join(outputRoot, 'sw.js'), 'utf8');
+  const metadataLinks = [...html.matchAll(/<link\b[^>]*>/gi)].map(([link]) => link);
+  metadataLinks.forEach((link) => {
+    if (!/rel=["'](?:icon|apple-touch-icon)["']/i.test(link)) return;
+    const href = link.match(/href=["']([^"']+)["']/i)?.[1];
+    if (!href || !href.startsWith('/')) throw new Error(`Invalid production icon link: ${link}`);
+    const assetPath = path.join(outputRoot, href.slice(1));
+    if (!fs.existsSync(assetPath) || fs.statSync(assetPath).size === 0) {
+      throw new Error(`Missing production document icon: ${href}`);
+    }
+  });
+  manifest.icons.forEach((icon) => {
+    if (!serviceWorker.includes(icon.src)) {
+      throw new Error(`Service worker does not precache the app icon: ${icon.src}`);
     }
   });
 
@@ -69,6 +110,14 @@ function validateOutput() {
   };
   visit(path.join(outputRoot, 'src'));
   javascriptFiles.forEach((filePath) => {
+    const frontendSourceRoot = `${path.join(outputRoot, 'src')}${path.sep}`;
+    if (filePath.startsWith(frontendSourceRoot)) {
+      execFileSync(process.execPath, ['--input-type=module', '--check'], {
+        input: fs.readFileSync(filePath),
+        stdio: ['pipe', 'inherit', 'inherit'],
+      });
+      return;
+    }
     execFileSync(process.execPath, ['--check', filePath], { stdio: 'inherit' });
   });
 }
