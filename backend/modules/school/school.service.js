@@ -3235,17 +3235,168 @@ async function listSupportTickets(schoolId, query = {}) {
 }
 
 async function getDashboardSummary(schoolId) {
+  if (firebaseCore.isFirebaseCoreMode()) {
+    const tenant = await firebaseCore.getSchoolAggregate(schoolId);
+    if (!tenant) throw new Error('School not found');
+    const users = Array.isArray(tenant.users) ? tenant.users : [];
+    const teacherUsers = users.filter((user) => String(user.role || user.roles?.[0] || '').toLowerCase() === 'teacher');
+    const studentUsers = users.filter((user) => String(user.role || user.roles?.[0] || '').toLowerCase() === 'student');
+    const totalUsers = users.length;
+    const tenantId = tenant.id;
+    const teacherCounts = teacherUsers.reduce(
+      (acc, user) => {
+        const status = String(user.status || 'active').toLowerCase();
+        const leaveStatus = String(user.metadata?.leaveStatus || '').toLowerCase();
+        acc.total += 1;
+        if (leaveStatus === 'on leave' || leaveStatus === 'sick leave' || leaveStatus === 'annual leave' || leaveStatus === 'emergency leave' || leaveStatus === 'study leave') {
+          acc.onLeave += 1;
+        } else if (status === 'inactive') {
+          acc.inactive += 1;
+        } else if (Boolean(user.metadata?.pendingApproval)) {
+          acc.pendingApproval += 1;
+        } else {
+          acc.active += 1;
+        }
+        return acc;
+      },
+      { total: 0, active: 0, inactive: 0, onLeave: 0, pendingApproval: 0 }
+    );
+    const teacherDepartments = new Set(teacherUsers.map((user) => String(user.metadata?.department || '').trim()).filter(Boolean));
+    const assignedClassSet = new Set(teacherUsers.reduce((acc, user) => acc.concat(normalizeArray(user.metadata?.assignedClasses)), []));
+    const assignedSubjectSet = new Set(teacherUsers.reduce((acc, user) => acc.concat(normalizeArray(user.metadata?.assignedSubjects)), []));
+    const statusCounts = studentUsers.reduce(
+      (acc, user) => {
+        const status = String(user.status || 'active').toLowerCase();
+        acc.total += 1;
+        if (status === 'graduated') acc.graduated += 1;
+        else if (status === 'transfer' || status === 'transferred') acc.transferred += 1;
+        else if (status === 'suspended') acc.suspended += 1;
+        else if (status === 'archived') acc.archived += 1;
+        else acc.active += 1;
+        return acc;
+      },
+      { total: 0, active: 0, graduated: 0, transferred: 0, suspended: 0, archived: 0 }
+    );
+    const academicYear = (tenant.academicYears || []).find((item) => String(item.status || '').toLowerCase() === 'active') || (tenant.academicYears || [])[0] || null;
+    const term = (tenant.terms || []).find((item) => String(item.status || '').toLowerCase() === 'active') || (tenant.terms || [])[0] || null;
+    const currency = getSchoolCurrency(tenant);
+    const attendanceMetrics = calculateAttendanceMetrics(Array.isArray(tenant.attendanceRecords) ? tenant.attendanceRecords : []);
+    const feeMetrics = calculateFeeCollection(Array.isArray(tenant.payments) ? tenant.payments : [], currency);
+    const dashboardSummary = {
+      schoolId: tenant.schoolId,
+      name: tenant.name,
+      description: tenant.description || null,
+      logo: tenant.logo || null,
+      coverImage: tenant.coverImage || null,
+      schoolStatus: tenant.status || tenant.schoolStatus || 'active',
+      region: tenant.region || tenant.country || null,
+      country: tenant.country || null,
+      timezone: tenant.timezone || null,
+      website: tenant.website || null,
+      address: tenant.address || null,
+      phone: tenant.phone || null,
+      email: tenant.email || null,
+      branding: tenant.branding || null,
+      totalUsers,
+      teacherCount: teacherCounts.total,
+      teacherActive: teacherCounts.active,
+      teacherInactive: teacherCounts.inactive,
+      teacherOnLeave: teacherCounts.onLeave,
+      teacherPendingApproval: teacherCounts.pendingApproval,
+      teacherDepartmentCount: teacherDepartments.size,
+      teacherAssignedClassesCount: assignedClassSet.size,
+      teacherAssignedSubjectsCount: assignedSubjectSet.size,
+      studentCount: studentUsers.length,
+      activeStudents: statusCounts.active,
+      graduatedStudents: statusCounts.graduated,
+      transferredStudents: statusCounts.transferred,
+      suspendedStudents: statusCounts.suspended,
+      archivedStudents: statusCounts.archived,
+      recentAdmissions: studentUsers.slice(0, 5).map((user) => ({
+        id: user.id,
+        fullName: user.fullName || user.displayName || user.email || '',
+        email: user.email || null,
+        status: user.status,
+        createdAt: user.createdAt || null,
+        studentId: user.metadata?.studentId || null,
+        admissionNumber: user.metadata?.admissionNumber || null,
+        className: user.metadata?.className || null,
+      })),
+      staffCount: users.filter((user) => String(user.status || '').toLowerCase() === 'active' && !['teacher', 'student', 'school_authority', 'school_head', 'super_admin'].includes(String(user.role || '').toLowerCase())).length,
+      classCount: Array.isArray(tenant.classes) ? tenant.classes.length : 0,
+      departmentCount: Array.isArray(tenant.departments) ? tenant.departments.length : 0,
+      streamCount: Array.isArray(tenant.streams) ? tenant.streams.length : 0,
+      subjectCount: Array.isArray(tenant.subjects) ? tenant.subjects.length : 0,
+      academicYearCount: Array.isArray(tenant.academicYears) ? tenant.academicYears.length : 0,
+      termCount: Array.isArray(tenant.terms) ? tenant.terms.length : 0,
+      semesterCount: Array.isArray(tenant.semesters) ? tenant.semesters.length : 0,
+      attendanceSummary: {
+        attendanceToday: attendanceMetrics.attendanceToday,
+        attendanceTrendData: attendanceMetrics.trendData,
+        counts: attendanceMetrics.counts,
+      },
+      feesSummary: {
+        collectedToday: feeMetrics.collectedLabel,
+        outstanding: feeMetrics.outstandingLabel,
+        partial: feeMetrics.partialLabel,
+        collected: feeMetrics.collected,
+        outstandingValue: feeMetrics.outstanding,
+        partialValue: feeMetrics.partial,
+      },
+      performanceSummary: {
+        aiTutorStatus: tenant.aiTutorStatus || 'Available',
+        academicYear: academicYear ? academicYear.label || academicYear.name || academicYear.title || academicYear.id : '—',
+        currentTerm: term ? term.label || term.name || term.title || term.id : '—',
+      },
+      schoolNotices: Array.isArray(tenant.announcements) ? tenant.announcements.slice(0, 4) : Array.isArray(tenant.events) ? tenant.events.slice(0, 4) : [],
+      recentActivities: Array.isArray(tenant.recentActivities) && tenant.recentActivities.length > 0
+        ? tenant.recentActivities.slice(0, 5)
+        : [
+          { title: 'School profile updated', detail: 'The school head refreshed the tenant profile.' },
+          { title: 'Academic structure prepared', detail: 'New academic structure items can be created from the dashboard.' },
+          { title: 'Tenant dashboard opened', detail: 'The school head reviewed the live school overview.' },
+        ],
+      upcomingEvents: Array.isArray(tenant.events) && tenant.events.length > 0
+        ? tenant.events.slice(0, 4)
+        : [
+          { title: 'Term planning review', detail: 'Review class and subject coverage for the next cycle.' },
+          { title: 'Parent engagement week', detail: 'Share updates and upcoming school events with families.' },
+        ],
+      recentTeacherActivity: teacherUsers.slice(0, 5).map((user) => ({
+        id: user.id,
+        fullName: user.fullName || user.displayName || user.email || '',
+        email: user.email || null,
+        status: user.status,
+        updatedAt: user.updatedAt || null,
+        department: user.metadata?.department || null,
+        assignedClasses: normalizeArray(user.metadata?.assignedClasses),
+        assignedSubjects: normalizeArray(user.metadata?.assignedSubjects),
+      })),
+      attendanceTrendData: attendanceMetrics.trendData,
+      feeCollectionData: {
+        collected: feeMetrics.collected,
+        outstanding: feeMetrics.outstanding,
+        partial: feeMetrics.partial,
+        currency,
+      },
+      monthlyRevenueData: calculateMonthlyRevenue(Array.isArray(tenant.payments) ? tenant.payments : []),
+      completedSetupSteps: deriveCompletedSetupSteps(tenant),
+    };
+    return dashboardSummary;
+  }
+
   if (prisma && prisma.__stub) {
     const schools = loadSchoolData();
     const school = findSchoolBySchoolId(schools, schoolId);
-    if (!school) {
-      throw new Error('School not found');
-    }
-
+    if (!school) throw new Error('School not found');
     return buildDashboardSnapshot(school, school.users || []);
   }
 
-  const tenant = await prisma.tenant.findUnique({
+  let tenant;
+  let totalUsers;
+  let teacherUsers;
+  let studentUsers;
+  tenant = await prisma.tenant.findUnique({
     where: { schoolId },
     include: {
       users: true,
@@ -3258,14 +3409,12 @@ async function getDashboardSummary(schoolId) {
       semesters: true,
     },
   }).catch(() => null);
-  if (!tenant) {
-    throw new Error('School not found');
-  }
+  if (!tenant) throw new Error('School not found');
 
   const tenantId = tenant.id;
-  const totalUsers = await prisma.user.count({ where: { tenantId } });
-  const teacherUsers = await prisma.user.findMany({ where: { tenantId, roles: { some: { role: { name: 'teacher' } } } } });
-  const studentUsers = await prisma.user.findMany({ where: { tenantId, roles: { some: { role: { name: 'student' } } } } });
+  totalUsers = await prisma.user.count({ where: { tenantId } });
+  teacherUsers = await prisma.user.findMany({ where: { tenantId, roles: { some: { role: { name: 'teacher' } } } } });
+  studentUsers = await prisma.user.findMany({ where: { tenantId, roles: { some: { role: { name: 'student' } } } } });
 
   const teacherCounts = teacherUsers.reduce(
     (acc, user) => {
