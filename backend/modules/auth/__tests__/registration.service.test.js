@@ -36,13 +36,31 @@ describe('registration service', () => {
           phone: '+233200000001',
           password: 'weakpass',
         },
-        agreements: { terms: true, privacy: true },
+        agreements: { terms: true, privacy: true, emailVerification: true },
       },
       existingSchools,
     );
 
     expect(result.ok).toBe(false);
     expect(result.message).toContain('email');
+  });
+
+  test('rejects registrations that do not acknowledge required email verification', () => {
+    const result = validateRegistrationPayload({
+      schoolName: 'New School',
+      country: 'Ghana',
+      head: {
+        fullName: 'Jane Doe',
+        email: 'jane@newschool.edu',
+        phone: '+233200000002',
+        password: 'StrongPass@123',
+        confirmPassword: 'StrongPass@123',
+      },
+      agreements: { terms: true, privacy: true },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('email verification is required');
   });
 
   test('rejects registrations that omit a supported country', () => {
@@ -56,7 +74,7 @@ describe('registration service', () => {
         password: 'StrongPass@123',
         confirmPassword: 'StrongPass@123',
       },
-      agreements: { terms: true, privacy: true },
+      agreements: { terms: true, privacy: true, emailVerification: true },
     });
 
     expect(result.ok).toBe(false);

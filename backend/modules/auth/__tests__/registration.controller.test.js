@@ -46,7 +46,7 @@ function createRegistrationPayload(email) {
       password: 'ValidPassword!1',
       confirmPassword: 'ValidPassword!1',
     },
-    agreements: { terms: true, privacy: true },
+    agreements: { terms: true, privacy: true, emailVerification: true },
   };
 }
 

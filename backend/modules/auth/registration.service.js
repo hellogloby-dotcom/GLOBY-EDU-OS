@@ -80,6 +80,10 @@ function validateRegistrationPayload(payload, existingSchools = []) {
     errors.push('You must accept the Terms of Service and Privacy Policy.');
   }
 
+  if (!payload?.agreements?.emailVerification) {
+    errors.push('You must acknowledge that email verification is required before sign-in.');
+  }
+
   return {
     ok: errors.length === 0,
     message: errors[0] || null,

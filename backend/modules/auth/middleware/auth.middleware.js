@@ -191,13 +191,11 @@ async function authMiddleware(req, res, next) {
         const firebaseUser = await firebaseAdmin.getUser(user.firebaseUid);
         const claims = firebaseUser.customClaims || {};
         const claimRoles = Array.isArray(claims.roles) ? claims.roles : [claims.role].filter(Boolean);
-        const hasValidPlatformAdminClaims = roles.includes('super_admin')
-          ? (claims.role === 'super_admin' && claims.platformAdmin === true && claimRoles.includes('super_admin'))
-          : true;
         const hasUnexpectedPlatformAdminClaims = !roles.includes('super_admin') &&
           (claims.role === 'super_admin' || claims.platformAdmin === true || claimRoles.includes('super_admin'));
-        if (firebaseUser.disabled || roles.some((role) => !claimRoles.includes(role)) ||
-            !hasValidPlatformAdminClaims || hasUnexpectedPlatformAdminClaims) {
+        const hasInvalidPlatformAdminClaims = roles.includes('super_admin') &&
+          (claims.role !== 'super_admin' || claims.platformAdmin !== true || !claimRoles.includes('super_admin'));
+        if (firebaseUser.disabled || hasUnexpectedPlatformAdminClaims || hasInvalidPlatformAdminClaims) {
           if (isPlatformAdminRecord && typeof firebaseAdmin.setCustomUserClaims === 'function') {
             await firebaseAdmin.setCustomUserClaims(user.firebaseUid, {
               tenantId: user.tenantId || user.schoolId || null,

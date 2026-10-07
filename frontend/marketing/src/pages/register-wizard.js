@@ -59,6 +59,7 @@ function readFormValues() {
     agreements: {
       terms: document.getElementById('agree-terms').checked,
       privacy: document.getElementById('agree-privacy').checked,
+      emailVerification: document.getElementById('agree-email-verification').checked,
       acceptableUse: document.getElementById('agree-acceptable-use').checked,
       updates: document.getElementById('agree-updates').checked,
     },
@@ -174,6 +175,10 @@ export function RegisterWizardPage() {
                 <label class="inline-flex w-full items-start gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <input type="checkbox" id="agree-privacy" data-required class="mt-1 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
                   <span>I accept the ${'<a href="#/legal/privacy" class="font-semibold text-sky-700">Privacy Policy</a>'}.</span>
+                </label>
+                <label class="inline-flex w-full items-start gap-3 rounded-3xl border border-sky-200 bg-sky-50 p-4 text-sm text-slate-700">
+                  <input type="checkbox" id="agree-email-verification" data-required class="mt-1 h-5 w-5 rounded border-sky-300 text-sky-600 focus:ring-sky-500" />
+                  <span>I understand that my school authority account must be verified by email before I can sign in. A verification link will be sent to the email address above.</span>
                 </label>
                 <label class="inline-flex w-full items-start gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <input type="checkbox" id="agree-acceptable-use" data-required class="mt-1 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
@@ -462,13 +467,13 @@ export function attachRegisterWizardHandlers() {
 
         const heading = document.createElement('p');
         heading.className = 'font-semibold';
-        heading.textContent = 'Verify your email to finish setting up your school';
+        heading.textContent = 'Email verification is required before sign-in';
         const instructions = document.createElement('p');
         instructions.className = 'mt-2 text-sm';
-        instructions.textContent = `We sent a verification link to ${result.data.verificationEmail || values.head.email}. Open that link, then sign in with your email and password.`;
+        instructions.textContent = `We sent a verification link to ${result.data.verificationEmail || values.head.email}. Open that link to activate the account. New school accounts cannot sign in until their email is verified.`;
         const schoolId = document.createElement('p');
         schoolId.className = 'mt-2 text-sm';
-        schoolId.textContent = `School ID: ${result.data.schoolId}. You will need it to sign in.`;
+        schoolId.textContent = `School ID: ${result.data.schoolId}. You will need it to sign in after verification.`;
         const loginLink = document.createElement('a');
         loginLink.href = '#/login';
         loginLink.className = 'mt-4 inline-flex font-semibold text-sky-800 underline underline-offset-4';
