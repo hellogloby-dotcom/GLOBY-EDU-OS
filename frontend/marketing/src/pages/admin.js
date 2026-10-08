@@ -35,7 +35,7 @@ const ADMIN_NAV_ITEMS = [
 
 export function AdminPage(activeSection = 'overview', userFullName = 'Benjamin', summary = {}, schools = [], pricingPlans = [], auditLogs = []) {
   return `
-    <div class="space-y-6">
+    <div data-admin-page class="min-w-0 space-y-6">
       <div class="rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-xl">
         <p class="text-sm uppercase tracking-[0.3em] text-slate-500">Super Admin Control Panel</p>
         <h2 class="mt-2 text-2xl font-semibold text-slate-900">${renderTopbarTitle(activeSection)}</h2>

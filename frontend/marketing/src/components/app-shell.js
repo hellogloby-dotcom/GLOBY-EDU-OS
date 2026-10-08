@@ -44,9 +44,9 @@ export function AppShell({
   return `
     <div class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
       <div class="flex min-h-screen flex-col lg:flex-row">
-        <div id="app-sidebar-backdrop" class="fixed inset-0 z-30 hidden bg-slate-950/70 lg:hidden"></div>
+        <div id="app-sidebar-backdrop" class="fixed inset-0 z-30 hidden bg-slate-950/70 lg:hidden" aria-hidden="true"></div>
 
-        <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-40 flex w-72 -translate-x-full flex-col border-r border-slate-800 bg-[#0B0F19] p-5 text-slate-100 transition-transform duration-200 lg:static lg:w-72 lg:translate-x-0 lg:border-r lg:border-slate-800 lg:p-6 lg:shadow-none">
+        <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-40 flex h-dvh w-[min(88vw,20rem)] -translate-x-full flex-col border-r border-slate-800 bg-[#0B0F19] p-5 text-slate-100 shadow-2xl transition-transform duration-200 lg:static lg:h-auto lg:w-72 lg:translate-x-0 lg:border-r lg:border-slate-800 lg:p-6 lg:shadow-none" aria-label="${roleLabel} navigation">
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-3">
               <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br from-sky-500 to-emerald-500 text-lg font-bold text-white">
@@ -71,21 +71,21 @@ export function AppShell({
           </div>
         </aside>
 
-        <div class="min-w-0 flex-1">
+        <div data-app-shell-content class="min-w-0 flex-1">
           <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-xl">
             <div class="flex flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
               <div class="flex items-center gap-3">
-                <button type="button" data-app-sidebar-toggle class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden">☰</button>
-                <div>
+                <button type="button" data-app-sidebar-toggle class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false">☰</button>
+                <div class="min-w-0">
                   <p class="text-xs uppercase tracking-[0.3em] text-slate-500">${title}</p>
-                  <h1 class="text-2xl font-semibold text-slate-900">${subtitle}</h1>
+                  <h1 class="truncate text-xl font-semibold text-slate-900 sm:text-2xl">${subtitle}</h1>
                 </div>
               </div>
 
-              <div class="min-w-0 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <label class="flex min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+              <div class="min-w-0 flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+                <label class="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 sm:w-48 sm:flex-none">
                   <span>🔎</span>
-                  <input type="search" placeholder="${searchPlaceholder}" class="w-full min-w-0 bg-transparent outline-none sm:w-44" />
+                  <input type="search" placeholder="${searchPlaceholder}" class="w-full min-w-0 bg-transparent outline-none" />
                 </label>
 
                 <div class="flex flex-wrap items-center gap-2">

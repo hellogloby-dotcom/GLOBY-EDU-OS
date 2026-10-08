@@ -67,7 +67,7 @@
       "users": [
         {
           "username": "hellogloby@gmail.com",
-          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
+          "passwordHash": "$2b$04$k3u39GC0hhKeRfztWi.QE.1vy0fjP.uHEDgLm5FKqcUqgbuaYAB4u",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -78,7 +78,7 @@
         },
         {
           "username": "ataetaben@gmail.com",
-          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
+          "passwordHash": "$2b$04$k3u39GC0hhKeRfztWi.QE.1vy0fjP.uHEDgLm5FKqcUqgbuaYAB4u",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -89,7 +89,7 @@
         },
         {
           "username": "ataetabenjamin@gmail.com",
-          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
+          "passwordHash": "$2b$04$k3u39GC0hhKeRfztWi.QE.1vy0fjP.uHEDgLm5FKqcUqgbuaYAB4u",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -100,7 +100,7 @@
         },
         {
           "username": "benjaminataeta@gmail.com",
-          "passwordHash": "$2b$04$qt2ZP9rQwrKqiYFh7GE1B.4VYclWhC.x/S19txFHKheXTjrhy37FG",
+          "passwordHash": "$2b$04$k3u39GC0hhKeRfztWi.QE.1vy0fjP.uHEDgLm5FKqcUqgbuaYAB4u",
           "role": "super_admin",
           "grade": "N/A",
           "fullName": "Benjamin",
@@ -111,7 +111,7 @@
         },
         {
           "username": "authority@globyedu.test",
-          "passwordHash": "$2b$04$LFffdAIFkwwo1zpt6hwSg./dp7vcDmdGgll5oLO6Wh0kVovhOLhQW",
+          "passwordHash": "$2b$04$yvivJ5XylIvvJOmLXf9ToeIN4Y3VEducDuYrdUNK9BFFpS.g6ALUq",
           "role": "school_authority",
           "grade": "N/A",
           "fullName": "Globy School Authority",
@@ -122,7 +122,7 @@
         },
         {
           "username": "T001",
-          "passwordHash": "$2b$04$DXXIa17hGDc5NvRaOmrLK.0IH/sXjBgNlkztBPZSKuMCEW9R7LrTm",
+          "passwordHash": "$2b$04$qjmr/86F2ANNrf5hsTWqyetDgC3MF68SL/ZdFagaXS4TC7YW9O/v2",
           "role": "teacher",
           "grade": "JHS 3",
           "fullName": "Test Teacher",
@@ -136,7 +136,7 @@
         },
         {
           "username": "STU001",
-          "studentPasswordHash": "$2b$04$vgJTWeq3hvNvpOur11JLLuJ4LuA1P/cS4A804gxbUZjPW/saTS5iK",
+          "studentPasswordHash": "$2b$04$HmdA6KKs3iovK5TnKGg7GOPwsfAZtF0XMjvUiGygDkL7QtwKxVWtu",
           "role": "student",
           "grade": "JHS 3",
           "fullName": "Test Student",

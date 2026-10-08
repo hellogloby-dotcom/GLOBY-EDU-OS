@@ -219,6 +219,22 @@ main > section { padding-top: 0; }
     align-items: flex-start;
     gap: .75rem;
   }
+
+  [data-app-shell-content],
+  [data-admin-page] {
+    min-width: 0;
+  }
+
+  [data-admin-page] table {
+    min-width: 720px;
+  }
+
+  [data-admin-page] button,
+  [data-admin-page] input,
+  [data-admin-page] select,
+  [data-admin-page] textarea {
+    max-width: 100%;
+  }
 }
 
 /* Simple visually-hidden helper */

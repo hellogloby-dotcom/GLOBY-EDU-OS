@@ -9,6 +9,19 @@ describe('authenticated dashboard shell', () => {
     expect(adminSource).toContain('Super Admin Control Panel');
   });
 
+  it('keeps the authenticated mobile drawer and responsive content within the viewport', () => {
+    const shellSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'components', 'app-shell.js'), 'utf8');
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
+    const styles = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'styles.css'), 'utf8');
+
+    expect(shellSource).toContain('h-dvh w-[min(88vw,20rem)]');
+    expect(shellSource).toContain('data-app-shell-content');
+    expect(shellSource).toContain('aria-controls="app-sidebar"');
+    expect(adminSource).toContain('data-admin-page');
+    expect(styles).toMatch(/\[data-admin-page\]\s+table\s*\{[^}]*min-width:\s*720px;/);
+    expect(styles).toMatch(/\[data-app-shell-content\],\s*\[data-admin-page\]\s*\{[^}]*min-width:\s*0;/);
+  });
+
   it('includes privacy masking and super-admin-only section guards', () => {
     const adminSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'marketing', 'src', 'pages', 'admin.js'), 'utf8');
     expect(adminSource).toContain('maskSensitiveValue');

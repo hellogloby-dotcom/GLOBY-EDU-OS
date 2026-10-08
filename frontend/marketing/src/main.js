@@ -1531,13 +1531,18 @@ function attachAuthenticatedShellHandlers(role, section) {
 
   const setSidebarOpen = (open) => {
     if (!sidebar) return;
-    if (window.innerWidth < 1024) {
-      sidebar.classList.toggle('-translate-x-full', !open);
-      sidebar.classList.toggle('translate-x-0', open);
-      backdrop?.classList.toggle('hidden', !open);
-    } else {
+    const isMobile = window.innerWidth < 1024;
+    sidebar.classList.toggle('-translate-x-full', !open);
+    sidebar.classList.toggle('translate-x-0', open);
+    backdrop?.classList.toggle('hidden', !open);
+    document.body.classList.toggle('overflow-hidden', isMobile && open);
+    document.querySelectorAll('[data-app-sidebar-toggle]').forEach((button) => {
+      button.setAttribute('aria-expanded', String(isMobile && open));
+    });
+    if (!isMobile) {
       sidebar.classList.remove('-translate-x-full', 'translate-x-0');
       backdrop?.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
     }
   };
 
